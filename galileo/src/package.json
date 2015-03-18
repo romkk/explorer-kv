@@ -1,0 +1,16 @@
+{
+  "name": "Explorer-galileo",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "litianzhao@tangpool.com",
+  "private": true,
+  "license": "ISC",
+  "devDependencies": {
+    "chai": "^2.1.2",
+    "mocha": "^2.2.1"
+  }
+}

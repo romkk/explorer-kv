@@ -17,7 +17,7 @@
  */
 
 #include "Common.h"
-#include "MySQLConnection.h"
+#include "Parser.h"
 
 int main(int argc, char **argv) {
   MySQLConnection mysql("asdf");

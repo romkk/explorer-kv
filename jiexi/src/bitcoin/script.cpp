@@ -1183,8 +1183,8 @@ uint256 SignatureHash(const CScript &scriptCode, const CTransaction& txTo, unsig
 //    return true;
 //}
 //
-//
-//
+
+
 
 
 
@@ -1314,7 +1314,7 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsi
     typeRet = TX_NONSTANDARD;
     return false;
 }
-
+//
 //
 //bool Sign1(const CKeyID& address, const CKeyStore& keystore, uint256 hash, int nHashType, CScript& scriptSigRet)
 //{
@@ -1389,48 +1389,48 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsi
 //    }
 //    return false;
 //}
-//
-//int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned char> >& vSolutions)
-//{
-//    switch (t)
-//    {
-//    case TX_NONSTANDARD:
-//    case TX_NULL_DATA:
-//        return -1;
-//    case TX_PUBKEY:
-//        return 1;
-//    case TX_PUBKEYHASH:
-//        return 2;
-//    case TX_MULTISIG:
-//        if (vSolutions.size() < 1 || vSolutions[0].size() < 1)
-//            return -1;
-//        return vSolutions[0][0] + 1;
-//    case TX_SCRIPTHASH:
-//        return 1; // doesn't include args needed by the script
-//    }
-//    return -1;
-//}
-//
-//bool IsStandard(const CScript& scriptPubKey, txnouttype& whichType)
-//{
-//    vector<valtype> vSolutions;
-//    if (!Solver(scriptPubKey, whichType, vSolutions))
-//        return false;
-//
-//    if (whichType == TX_MULTISIG)
-//    {
-//        unsigned char m = vSolutions.front()[0];
-//        unsigned char n = vSolutions.back()[0];
-//        // Support up to x-of-3 multisig txns as standard
-//        if (n < 1 || n > 3)
-//            return false;
-//        if (m < 1 || m > n)
-//            return false;
-//    }
-//
-//    return whichType != TX_NONSTANDARD;
-//}
-//
+
+int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned char> >& vSolutions)
+{
+    switch (t)
+    {
+    case TX_NONSTANDARD:
+    case TX_NULL_DATA:
+        return -1;
+    case TX_PUBKEY:
+        return 1;
+    case TX_PUBKEYHASH:
+        return 2;
+    case TX_MULTISIG:
+        if (vSolutions.size() < 1 || vSolutions[0].size() < 1)
+            return -1;
+        return vSolutions[0][0] + 1;
+    case TX_SCRIPTHASH:
+        return 1; // doesn't include args needed by the script
+    }
+    return -1;
+}
+
+bool IsStandard(const CScript& scriptPubKey, txnouttype& whichType)
+{
+    vector<valtype> vSolutions;
+    if (!Solver(scriptPubKey, whichType, vSolutions))
+        return false;
+
+    if (whichType == TX_MULTISIG)
+    {
+        unsigned char m = vSolutions.front()[0];
+        unsigned char n = vSolutions.back()[0];
+        // Support up to x-of-3 multisig txns as standard
+        if (n < 1 || n > 3)
+            return false;
+        if (m < 1 || m > n)
+            return false;
+    }
+
+    return whichType != TX_NONSTANDARD;
+}
+
 //
 //unsigned int HaveKeys(const vector<valtype>& pubkeys, const CKeyStore& keystore)
 //{
@@ -1500,66 +1500,67 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsi
 //    }
 //    return false;
 //}
-//
-//bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
-//{
-//    vector<valtype> vSolutions;
-//    txnouttype whichType;
-//    if (!Solver(scriptPubKey, whichType, vSolutions))
-//        return false;
-//
-//    if (whichType == TX_PUBKEY)
-//    {
-//        addressRet = CPubKey(vSolutions[0]).GetID();
-//        return true;
-//    }
-//    else if (whichType == TX_PUBKEYHASH)
-//    {
-//        addressRet = CKeyID(uint160(vSolutions[0]));
-//        return true;
-//    }
-//    else if (whichType == TX_SCRIPTHASH)
-//    {
-//        addressRet = CScriptID(uint160(vSolutions[0]));
-//        return true;
-//    }
-//    // Multisig txns have more than one address...
-//    return false;
-//}
-//
-//bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet, vector<CTxDestination>& addressRet, int& nRequiredRet)
-//{
-//    addressRet.clear();
-//    typeRet = TX_NONSTANDARD;
-//    vector<valtype> vSolutions;
-//    if (!Solver(scriptPubKey, typeRet, vSolutions))
-//        return false;
-//    if (typeRet == TX_NULL_DATA){
-//        // This is data, not addresses
-//        return false;
-//    }
-//
-//    if (typeRet == TX_MULTISIG)
-//    {
-//        nRequiredRet = vSolutions.front()[0];
-//        for (unsigned int i = 1; i < vSolutions.size()-1; i++)
-//        {
-//            CTxDestination address = CPubKey(vSolutions[i]).GetID();
-//            addressRet.push_back(address);
-//        }
-//    }
-//    else
-//    {
-//        nRequiredRet = 1;
-//        CTxDestination address;
-//        if (!ExtractDestination(scriptPubKey, address))
-//           return false;
-//        addressRet.push_back(address);
-//    }
-//
-//    return true;
-//}
-//
+
+bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
+{
+    vector<valtype> vSolutions;
+    txnouttype whichType;
+    if (!Solver(scriptPubKey, whichType, vSolutions))
+        return false;
+
+    if (whichType == TX_PUBKEY)
+    {
+        addressRet = CPubKey(vSolutions[0]).GetID();
+        return true;
+    }
+    else if (whichType == TX_PUBKEYHASH)
+    {
+        addressRet = CKeyID(uint160(vSolutions[0]));
+        return true;
+    }
+    else if (whichType == TX_SCRIPTHASH)
+    {
+        addressRet = CScriptID(uint160(vSolutions[0]));
+        return true;
+    }
+    // Multisig txns have more than one address...
+    return false;
+}
+
+bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet,
+                         vector<CTxDestination>& addressRet, int& nRequiredRet)
+{
+    addressRet.clear();
+    typeRet = TX_NONSTANDARD;
+    vector<valtype> vSolutions;
+    if (!Solver(scriptPubKey, typeRet, vSolutions))
+        return false;
+    if (typeRet == TX_NULL_DATA){
+        // This is data, not addresses
+        return false;
+    }
+
+    if (typeRet == TX_MULTISIG)
+    {
+        nRequiredRet = vSolutions.front()[0];
+        for (unsigned int i = 1; i < vSolutions.size()-1; i++)
+        {
+            CTxDestination address = CPubKey(vSolutions[i]).GetID();
+            addressRet.push_back(address);
+        }
+    }
+    else
+    {
+        nRequiredRet = 1;
+        CTxDestination address;
+        if (!ExtractDestination(scriptPubKey, address))
+           return false;
+        addressRet.push_back(address);
+    }
+
+    return true;
+}
+
 //class CAffectedKeysVisitor : public boost::static_visitor<void> {
 //private:
 //    const CKeyStore &keystore;

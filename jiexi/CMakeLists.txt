@@ -1,27 +1,38 @@
 cmake_minimum_required (VERSION 2.6)
 
 project (explorer)
-
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 set(CMAKE_BUILD_TYPE Release)
 
 set(CMAKE_CXX_COMPILER "g++")
 set(CMAKE_C_COMPILER "gcc")
 set(CMAKE_CXX_COMPILER_ARG1 "-std=c++0x ")
+set(CMAKE_CXX_FLAGS "-g -O0")
 
-execute_process(COMMAND mysql_config --libs_r OUTPUT_VARIABLE MYSQL_LIB OUTPUT_STRIP_TRAILING_WHITESPACE)
-execute_process(COMMAND mysql_config --include OUTPUT_VARIABLE MYSQL_INCLUDE OUTPUT_STRIP_TRAILING_WHITESPACE)
+find_package(OpenSSL)
+if(NOT OPENSSL_FOUND)
+  message(FATAL_ERROR "OpenSSL not found!")
+endif(NOT OPENSSL_FOUND)
 
-set(CMAKE_CXX_FLAGS "-g ${MYSQL_INCLUDE}")
+find_package(Boost 1.36.0 COMPONENTS thread filesystem system regex)
+if(NOT Boost_FOUND)
+  message(FATAL_ERROR "Boost not found!")
+endif(NOT Boost_FOUND)
 
-include_directories(src test)
+find_package(Mysql)
+if(NOT MYSQL_FOUND)
+  message(FATAL_ERROR "Mysql not found!")
+endif(NOT MYSQL_FOUND)
+
+include_directories(src test ${OPENSSL_INCLUDE_DIR} ${Boost_INCLUDE_DIRS} ${MYSQL_INCLUDE_DIR})
 
 file(GLOB LIB_SOURCES src/*.cc src/bitcoin/*.cpp)
 add_library(explorer STATIC ${LIB_SOURCES})
 
-#file(GLOB SSERVER_SOURCES src/sserver/*.cc)
-#add_executable(tparser ${SSERVER_SOURCES})
-#target_link_libraries(tparser explorer ${MYSQL_LIB} -lssl -lcrypto)
-#
+file(GLOB TPARSER_SOURCES src/tparser/*.cc)
+add_executable(tparser ${TPARSER_SOURCES})
+target_link_libraries(tparser explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES})
+
 #file(GLOB_RECURSE TEST_SOURCES test/*.cc)
 #add_executable(unittest ${TEST_SOURCES})
 #target_link_libraries(unittest explorer ${MYSQL_LIB} -lssl -lcrypto)

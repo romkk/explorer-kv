@@ -27,7 +27,7 @@
 //   -1   临时块（未确认的交易组成的虚拟块）
 //   >= 0 有效的块高度
 //
-TxLog::TxLog():logId_(0), status_(0), type_(0), blkHeight_(-2) {
+TxLog::TxLog():logId_(0), tableIdx_(-1), status_(0), type_(0), blkHeight_(-2) {
 }
 TxLog::~TxLog() {}
 
@@ -93,13 +93,13 @@ bool Parser::txs_hash2id(const std::set<uint256> &hashVec,
   return true;
 }
 
-bool Parser::accept_tx_inputs(const CTransaction &tx) {
-
-}
-
-void Parser::accept_tx_outputs(const CTransaction &tx) {
-
-}
+//bool Parser::accept_tx_inputs(const CTransaction &tx) {
+//
+//}
+//
+//void Parser::accept_tx_outputs(const CTransaction &tx) {
+//
+//}
 
 void Parser::addressChanges(const CTransaction &tx,
                             vector<std::pair<CTxDestination, int64_t> > &items) {
@@ -126,36 +126,90 @@ void Parser::addressChanges(const CTransaction &tx,
   }
 }
 
-bool Parser::tryFetchLog(class TxLog *txLog) {
+int32_t Parser::getTxLogMaxIdx() {
   MySQLResult res;
-  int64_t lastTxLogId = 0;
-  char **row;
-  string sql;
+  string sql = "SELECT `value` FROM `a_explorer_meta` WHERE `key` = 'latest_txlogs_tablename_index' ";
+  char **row = nullptr;
 
-  // find last tx log ID
-  sql = "SELECT `value` FROM `explorer_meta` WHERE `key`='jiexi.last_tx_log_id'";
   dbExplorer_.query(sql, res);
   if (res.numRows() == 1) {
     row = res.nextRow();
-    lastTxLogId = strtoll(row[0], nullptr, 10);
-    assert(lastTxLogId > 0);
+    return atoi(row[0]);
   }
+  return 0;  // default value is zero
+}
 
-  // fetch tx log
+void Parser::updateLastTxlogId(const int64_t newId) {
+  string sql = Strings::Format("UPDATE `a_explorer_meta` SET `value` = %lld "
+                               " WHERE `key`='jiexi.last_txlog_offset'",
+                               newId);
+  if (!dbExplorer_.execute(sql.c_str())) {
+    LOG_ERROR("failed to update 'jiexi.last_txlog_offset' to %lld", newId);
+  }
+}
+
+int64_t Parser::getLastTxLogOffset() {
+  MySQLResult res;
+  int64_t lastTxLogOffset = 0;
+  char **row = nullptr;
+  string sql;
+
+  // find last tx log ID
+  sql = "SELECT `value` FROM `a_explorer_meta` WHERE `key`='jiexi.last_txlog_offset'";
+  dbExplorer_.query(sql, res);
+  if (res.numRows() == 1) {
+    row = res.nextRow();
+    lastTxLogOffset = strtoll(row[0], nullptr, 10);
+    assert(lastTxLogOffset > 0);
+  } else {
+    lastTxLogOffset = 0;  // default value is zero
+  }
+  return lastTxLogOffset;
+}
+
+bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
+  MySQLResult res;
+  int32_t tableNameIdx = -1, logId = -1;
+  char **row = nullptr;
+  string sql;
+
+  // id / 100000000 是表名称索引
+  tableNameIdx = (int32_t)(lastTxLogOffset / 100000000);
+  // id % 100000000 是该表中的id序列
+  logId        = (int32_t)(lastTxLogOffset % 100000000);
+
+  // fetch tx log, 每次处理一条日志记录
   sql = Strings::Format(" SELECT `id`,`handle_status`,`handle_type`, "
                         "   `block_height`,`tx_hash`,`created_at` "
-                        " FROM `txlogs` "
+                        " FROM `txlogs_%04d` "
                         " WHERE `id` > %d ORDER BY `id` ASC LIMIT 1 ",
-                        lastTxLogId);
+                        tableNameIdx, logId);
   dbExplorer_.query(sql, res);
   if (res.numRows() == 0) {
+    // 检测是否发生txlog表切换
+    // 若读取不到数据且表名索引出现新的，则更新 'jiexi.last_txlog_offset'
+    int32_t txLogMaxIdx = getTxLogMaxIdx();
+    assert(txLogMaxIdx >= tableNameIdx);
+
+    if (txLogMaxIdx > tableNameIdx) {
+      updateLastTxlogId((tableNameIdx + 1)*100000000 + 0);
+      LOG_INFO("switch table.txlogs from `txlogs_%04d` to `txlogs_%04d`",
+               tableNameIdx, tableNameIdx + 1);
+    } else if (txLogMaxIdx < tableNameIdx) {
+      LOG_FATAL("table.txlogs name index(%d) is too larger than exist(%d)",
+                tableNameIdx, txLogMaxIdx);
+    } else {
+      // do nothing
+      assert(txLogMaxIdx == tableNameIdx);
+    }
     return false;
   }
 
   row = res.nextRow();
-  txLog->logId_  = strtoll(row[0], nullptr, 10);
-  txLog->status_ = atoi(row[1]);
-  txLog->type_   = atoi(row[2]);
+  txLog->tableIdx_  = tableNameIdx;
+  txLog->logId_     = strtoll(row[0], nullptr, 10);
+  txLog->status_    = atoi(row[1]);
+  txLog->type_      = atoi(row[2]);
   txLog->blkHeight_ = atoi(row[3]);
   txLog->txHash_    = uint256(row[4]);
   txLog->createdAt_ = string(row[5]);
@@ -168,6 +222,11 @@ bool Parser::tryFetchLog(class TxLog *txLog) {
     LOG_FATAL("invalid type: %d", txLog->status_);
     return false;
   }
+
+  LOG_INFO("process txlog, tableIdx: %d, logId: %d, type: %d, "
+           "height: %d, tx hash: %s, created: %s",
+           tableNameIdx, logId, txLog->type_, txLog->blkHeight_,
+           txLog->txHash_.ToString().c_str(), txLog->createdAt_.c_str());
 
   // find raw tx hex
   string txHashStr = txLog->txHash_.ToString();

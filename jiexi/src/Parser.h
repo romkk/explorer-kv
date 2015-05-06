@@ -30,11 +30,12 @@
 
 class TxLog {
 public:
-  int64_t logId_;
-  int32_t status_;  // handle status
-  int32_t type_;    // 1: accept, 2: rollback
+  int64_t logId_;     // id in table
+  int32_t tableIdx_;  // txlogs table name index
+  int32_t status_;    // handle status
+  int32_t type_;      // 1: accept, 2: rollback
   int32_t blkHeight_;
-  string createdAt_;
+  string  createdAt_;
 
   string txHex_;
   uint256 txHash_;
@@ -50,7 +51,15 @@ private:
   atomic<bool> running_;
   MySQLConnection dbExplorer_;
 
-  bool tryFetchLog(class TxLog *txLog);
+  bool tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset);
+  int64_t getLastTxLogOffset();
+
+  int32_t getTxLogMaxIdx();
+  void updateLastTxlogId(const int64_t newId);
+
+  bool acceptBlock  (uint256 blkhash, const int height);
+  bool rollbackBlock(uint256 blkhash, const int height);
+
   void addressChanges(const CTransaction &tx,
                       vector<std::pair<CTxDestination, int64_t> > &items);
 

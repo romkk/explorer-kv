@@ -23,7 +23,6 @@ DROP TABLE IF EXISTS `address_txs`;
 CREATE TABLE `address_txs` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `address_id` bigint(20) NOT NULL,
-  `counter` bigint(20) NOT NULL,
   `tx_id` bigint(20) NOT NULL,
   `tx_height` bigint(20) NOT NULL,
   `total_received` bigint(20) NOT NULL,
@@ -33,13 +32,13 @@ CREATE TABLE `address_txs` (
   `next_ymd` int(11) NOT NULL,
   `created_at` datetime NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `address_id_counter_chain_id` (`address_id`,`counter`)
+  UNIQUE KEY `address_id_counter_chain_id` (`address_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 
 DROP TABLE IF EXISTS `blocks`;
 CREATE TABLE `blocks` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `block_id` bigint(20) NOT NULL,
   `height` bigint(20) NOT NULL,
   `hash` char(64) NOT NULL,
   `version` int(11) NOT NULL,
@@ -56,9 +55,9 @@ CREATE TABLE `blocks` (
   `reward_block` bigint(20) NOT NULL,
   `reward_fees` bigint(20) NOT NULL,
   `created_at` datetime NOT NULL,
-  PRIMARY KEY (`id`),
   UNIQUE KEY `block_hash` (`hash`),
-  UNIQUE KEY `height_chain_id` (`height`,`chain_id`)
+  UNIQUE KEY `height_chain_id` (`height`,`chain_id`),
+  UNIQUE KEY `block_id` (`block_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 
@@ -123,7 +122,7 @@ CREATE TABLE `txlogs` (
 
 DROP TABLE IF EXISTS `txs`;
 CREATE TABLE `txs` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `tx_id` bigint(20) NOT NULL,
   `hash` char(64) NOT NULL,
   `height` bigint(20) NOT NULL,
   `is_coinbase` tinyint(1) NOT NULL,
@@ -136,8 +135,8 @@ CREATE TABLE `txs` (
   `inputs_count` int(11) NOT NULL,
   `outputs_count` int(11) NOT NULL,
   `created_at` datetime NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `hash` (`hash`)
+  UNIQUE KEY `hash` (`hash`),
+  UNIQUE KEY `tx_id` (`tx_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 
@@ -199,4 +198,4 @@ CREATE TABLE `unspent_outputs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 
--- 2015-05-05 10:36:43
+-- 2015-05-06 02:02:49

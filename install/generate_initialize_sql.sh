@@ -178,6 +178,20 @@ CREATE TABLE `0_tpl_address_txs` (
 echo "$tpl_address_txs"
 
 # normal tables
+
+raw_blocks='
+DROP TABLE IF EXISTS `raw_blocks`;
+CREATE TABLE `raw_blocks` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `block_hash` char(64) NOT NULL,
+  `hex` longtext NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `block_id` (`block_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
+
+echo "$raw_blocks"
+
 explorer_meta='
 DROP TABLE IF EXISTS `0_explorer_meta`;
 CREATE TABLE `0_explorer_meta` (

@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-#include "parser.h"
+#include "Parser.h"
 #include "Common.h"
 
 #include "bitcoin/base58.h"
@@ -49,10 +49,10 @@ void Parser::run() {
 
   while (running_) {
     TxLog txlog;
-    if (tryFetchLog(&txlog) == false) {
-      sleepMs(1000);
-      continue;
-    }
+//    if (tryFetchLog(&txlog) == false) {
+//      sleepMs(1000);
+//      continue;
+//    }
 
 
   } /* /while */
@@ -128,7 +128,7 @@ void Parser::addressChanges(const CTransaction &tx,
 
 int32_t Parser::getTxLogMaxIdx() {
   MySQLResult res;
-  string sql = "SELECT `value` FROM `a_explorer_meta` WHERE `key` = 'latest_txlogs_tablename_index' ";
+  string sql = "SELECT `value` FROM `0_explorer_meta` WHERE `key` = 'latest_txlogs_tablename_index' ";
   char **row = nullptr;
 
   dbExplorer_.query(sql, res);
@@ -140,7 +140,7 @@ int32_t Parser::getTxLogMaxIdx() {
 }
 
 void Parser::updateLastTxlogId(const int64_t newId) {
-  string sql = Strings::Format("UPDATE `a_explorer_meta` SET `value` = %lld "
+  string sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %lld "
                                " WHERE `key`='jiexi.last_txlog_offset'",
                                newId);
   if (!dbExplorer_.execute(sql.c_str())) {
@@ -155,7 +155,7 @@ int64_t Parser::getLastTxLogOffset() {
   string sql;
 
   // find last tx log ID
-  sql = "SELECT `value` FROM `a_explorer_meta` WHERE `key`='jiexi.last_txlog_offset'";
+  sql = "SELECT `value` FROM `0_explorer_meta` WHERE `key`='jiexi.last_txlog_offset'";
   dbExplorer_.query(sql, res);
   if (res.numRows() == 1) {
     row = res.nextRow();

@@ -52,8 +52,4 @@ class Txlogs extends Model {
         Log::debug(sprintf('新建了 txlogs 表 %s', self::$currentTable));
         return $currentTable;
     }
-
-    public function setTableName($name) {
-        $this->tableName = $name;
-    }
 }

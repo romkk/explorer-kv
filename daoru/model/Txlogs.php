@@ -56,7 +56,7 @@ class Txlogs extends Model {
 
     public static function clearTempLogs($tempLogs) {
         if (!count($tempLogs)) {
-            return true;
+            return;
         }
 
         $rows = array_map(function(Txlogs $tx) {
@@ -69,7 +69,16 @@ class Txlogs extends Model {
             return $tx;
         }, $tempLogs);
 
-        return static::insert($rows);
+        $conn = App::$container->make('capsule')->getConnection();
+
+        $conn->transaction(function() use ($rows) {
+            foreach (array_chunk($rows, Config::get('app.batch_insert')) as $subsetRows) {
+                static::insert($subsetRows);
+            }
+        });
+
+
+        Log::debug('清理完毕');
     }
 
     public static function getTempLogs($pageSize = 50) {
@@ -94,6 +103,7 @@ class Txlogs extends Model {
             $offset++;
         }
 
+        Log::debug(sprintf('获取要需要清理的临时记录，共计 %s 条', count($ret)));
         return $ret;
     }
 

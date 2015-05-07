@@ -57,8 +57,10 @@ private:
   int32_t getTxLogMaxIdx();
   void updateLastTxlogId(const int64_t newId);
 
-  bool acceptBlock  (uint256 blkhash, const int height);
-  bool rollbackBlock(uint256 blkhash, const int height);
+  bool acceptBlock  (const uint256 &blkhash, const int height);
+  bool rollbackBlock(const uint256 &blkhash, const int height);
+
+  bool acceptTx(const uint256 &txHash);
 
   void addressChanges(const CTransaction &tx,
                       vector<std::pair<CTxDestination, int64_t> > &items);
@@ -77,6 +79,10 @@ public:
   void run();
   void stop();
 
-  bool txs_hash2id(const std::set<uint256> &hashVec,
+  bool txsHash2ids(const std::set<uint256> &hashVec,
                    std::map<uint256, int64_t> &hash2id);
 };
+
+
+bool multiInsert(MySQLConnection &db, const string &table,
+                 const string &fields, const vector<string> &values)

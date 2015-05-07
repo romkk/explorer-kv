@@ -185,11 +185,12 @@ CREATE TABLE `0_raw_blocks` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `block_hash` char(64) NOT NULL,
   `block_height` int(11) NOT NULL,
+  `chain_id` int(11) NOT NULL DEFAULT '0',
   `hex` longtext NOT NULL,
   `created_at` datetime NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `block_id` (`block_hash`),
-  UNIQUE KEY `block_height` (`block_height`)
+  UNIQUE KEY `block_height_chain_id` (`block_height`,`chain_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 echo "$raw_blocks"

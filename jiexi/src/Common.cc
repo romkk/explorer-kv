@@ -136,7 +136,7 @@ void Bin2HexR(const vector<char> &in, string &str) {
 static int __isDebug = -1;
 bool IsDebug() {
   if (__isDebug == -1) {
-    __isDebug = Config::GConfig.getBool("debug") ? 1 : 0;
+    __isDebug = Config::GConfig.getBool("debug", true) ? 1 : 0;
   }
   return __isDebug == 1 ? true : false;
 }

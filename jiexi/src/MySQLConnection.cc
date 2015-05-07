@@ -126,7 +126,7 @@ bool MySQLConnection::execute(const char * sql) {
   uint32_t error_no;
   int queryTimes = 0;
 
-  if (IsDebug() && Config::GConfig.getBool("debug.sql")) {
+  if (IsDebug() && Config::GConfig.getBool("debug.sql", true)) {
     LOG_DEBUG("[MySQLConnection::execute] SQL: %s", sql);
   }
   
@@ -136,7 +136,7 @@ query:
   if (mysql_query(conn, sql) == 0) {
     return true;  // exec sql success
   }
-  
+
   // get mysql error
   error_no = mysql_errno(conn);
   LOG_WARN("exec sql failure, error_no: %u, error_info: %s",

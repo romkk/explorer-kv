@@ -27,12 +27,18 @@ TEST(MySQLConnection, query) {
   }
 
   MySQLConnection conn(uri);
-  conn.execute("DROP TABLE IF EXISTS test");
-  conn.execute("CREATE TABLE test(id INT, label CHAR(2))");
-  uint64 ret = conn.update("INSERT INTO test(id, label) VALUES (1, 'a')");
+  if (!conn.ping()) {
+    LOG_WARN("connect to MySQL DB failure");
+    return;
+  }
+
+  conn.execute("DROP TABLE IF EXISTS `test_explorer`");
+  conn.execute("CREATE TABLE `test_explorer`(id INT, label CHAR(2))");
+  uint64 ret = conn.update("INSERT INTO `test_explorer`(id, label) VALUES (1, 'a')");
   ASSERT_EQ(1, ret);
   MySQLResult result;
-  conn.query("SELECT * from test", result);
+  conn.query("SELECT * FROM `test_explorer`", result);
   ASSERT_EQ(1, result.numRows());
   ASSERT_EQ(2, result.fields());
+  conn.execute("DROP TABLE IF EXISTS `test_explorer`");
 }

@@ -20,7 +20,7 @@ mysql -D BitcoinExplorerDB -uroot -proot -Nse 'show tables' | while read table; 
 
 ```shell
 cd bitcoin-0.10.0
-patch -p1 < bitcoind-bm-rpc.patch
+patch -p1 < bitcoind-bm-rpc-v0.10.0.patch
 ```
 
 打补丁后，会多两个RPC命令： `bm_get_best_block`, `bm_get_block_detail`.

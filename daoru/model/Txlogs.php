@@ -5,8 +5,6 @@ use Illuminate\Database\Eloquent\Model;
 class Txlogs extends Model {
     protected $tableName = null;
 
-    private static $currentTable = null;
-
     public static function createNewTable($currentTable) {
         if (is_null($currentTable)) {
             $nextTable = 'txlogs_0000';
@@ -49,7 +47,7 @@ class Txlogs extends Model {
 
         // 计算当前表
         $currentTable = self::createNewTable($latestTable);
-        Log::debug(sprintf('新建了 txlogs 表 %s', self::$currentTable));
+        Log::debug(sprintf('新建了 txlogs 表 %s', $currentTable));
         return $currentTable;
     }
 }

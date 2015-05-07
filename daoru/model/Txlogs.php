@@ -1,10 +1,9 @@
 <?php
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 
 class Txlogs extends Model {
-    protected $tableName = null;
-
     public static function createNewTable($currentTable) {
         if (is_null($currentTable)) {
             $nextTable = 'txlogs_0000';
@@ -49,5 +48,56 @@ class Txlogs extends Model {
         $currentTable = self::createNewTable($latestTable);
         Log::debug(sprintf('新建了 txlogs 表 %s', $currentTable));
         return $currentTable;
+    }
+
+    public function getTable() {
+        return $this->table = static::getCurrentTable();
+    }
+
+    public static function clearTempLogs($tempLogs) {
+        if (!count($tempLogs)) {
+            return true;
+        }
+
+        $rows = array_map(function(Txlogs $tx) {
+            $tx = $tx->toArray();
+            unset($tx['id']);
+            $tx['handle_type'] = 2;
+            $tx['handle_status'] = 100;
+            $tx['created_at'] = $tx['updated_at'] = Carbon::now();
+
+            return $tx;
+        }, $tempLogs);
+
+        return static::insert($rows);
+    }
+
+    public static function getTempLogs($pageSize = 50) {
+        $q = static::query()
+            ->orderBy('id', 'desc')
+            ->take($pageSize);
+
+        $offset = 0;
+        $done = false;
+        $ret = [];
+
+        while (!$done && ($txs = $q->skip($offset * $pageSize)->get()) && count($txs)) {
+            foreach ($txs as $tx) {
+                if ($tx->isTempLog()) {
+                    $ret[] = $tx;
+                    continue;
+                }
+                $done = true;
+                break;
+            }
+
+            $offset++;
+        }
+
+        return $ret;
+    }
+
+    public function isTempLog() {
+        return $this->handle_type === 1 && $this->block_height === -1;
     }
 }

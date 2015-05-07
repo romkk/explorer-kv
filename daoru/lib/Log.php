@@ -1,14 +1,14 @@
 <?php
 
+use Monolog\Handler\AbstractHandler;
 use Monolog\Logger;
-use Monolog\Handler\RotatingFileHandler;
 
 class Log {
     private static $logger;
 
-    public static function init() {
+    public static function init(AbstractHandler $handler) {
         self::$logger = new Logger('daoru');
-        self::$logger->pushHandler(new RotatingFileHandler(Config::get('app.log_path') . '/daoru.log', 3));
+        self::$logger->pushHandler($handler);
     }
 
     public static function __callStatic($name, $args) {

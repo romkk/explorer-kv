@@ -180,14 +180,16 @@ echo "$tpl_address_txs"
 # normal tables
 
 raw_blocks='
-DROP TABLE IF EXISTS `raw_blocks`;
-CREATE TABLE `raw_blocks` (
+DROP TABLE IF EXISTS `0_raw_blocks`;
+CREATE TABLE `0_raw_blocks` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `block_hash` char(64) NOT NULL,
+  `block_height` int(11) NOT NULL,
   `hex` longtext NOT NULL,
   `created_at` datetime NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `block_id` (`block_hash`)
+  UNIQUE KEY `block_id` (`block_hash`),
+  UNIQUE KEY `block_height` (`block_height`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 echo "$raw_blocks"

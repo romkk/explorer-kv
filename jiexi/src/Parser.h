@@ -27,6 +27,19 @@
 #define TXLOG_TYPE_ACCEPT   1
 #define TXLOG_TYPE_ROLLBACK 2
 
+class DBTxOutput {
+public:
+  int64_t txId;
+  int32_t position;
+  int64_t addressId;
+  int64_t value;
+  int64_t spentTxId;
+  int32_t spentPosition;
+
+  DBTxOutput(): txId(0), position(-1), addressId(0), value(-1), spentTxId(0), spentPosition(-1) {
+  }
+};
+
 
 class TxLog {
 public:
@@ -40,6 +53,7 @@ public:
   string txHex_;
   uint256 txHash_;
   CTransaction tx_;
+  int64_t txId_;
 
   TxLog();
   ~TxLog();
@@ -60,7 +74,7 @@ private:
   bool acceptBlock  (const uint256 &blkhash, const int height);
   bool rollbackBlock(const uint256 &blkhash, const int height);
 
-  bool acceptTx(const uint256 &txHash);
+  bool acceptTx(class TxLog *txLog);
 
   void addressChanges(const CTransaction &tx,
                       vector<std::pair<CTxDestination, int64_t> > &items);
@@ -81,8 +95,10 @@ public:
 
   bool txsHash2ids(const std::set<uint256> &hashVec,
                    std::map<uint256, int64_t> &hash2id);
+
 };
 
-
+int64_t txHash2Id(MySQLConnection &db, const uint256 &txHash);
+DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t position);
 bool multiInsert(MySQLConnection &db, const string &table,
                  const string &fields, const vector<string> &values)

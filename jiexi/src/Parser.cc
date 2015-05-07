@@ -114,7 +114,7 @@ bool multiInsert(MySQLConnection &db, const string &table,
 //   -1   临时块（未确认的交易组成的虚拟块）
 //   >= 0 有效的块高度
 //
-TxLog::TxLog():logId_(0), tableIdx_(-1), status_(0), type_(0), blkHeight_(-2) {
+TxLog::TxLog():logId_(0), tableIdx_(-1), status_(0), type_(0), blkHeight_(-2), txId_(0) {
 }
 TxLog::~TxLog() {}
 
@@ -213,6 +213,7 @@ void Parser::addressChanges(const CTransaction &tx,
   }
 }
 
+// 获取当前txlogs的最大表索引
 int32_t Parser::getTxLogMaxIdx() {
   MySQLResult res;
   string sql = "SELECT `value` FROM `0_explorer_meta` WHERE `key` = 'latest_txlogs_tablename_index' ";
@@ -405,9 +406,73 @@ bool Parser::acceptBlock(const uint256 &blkhash, const int height) {
   return false;
 }
 
-// 接收一个新的交易
-bool Parser::acceptTx(const uint256 &txHash) {
+
+
+bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
+                     const int64_t txId) {
+  int n;
+  const string tableName = Strings::Format("tx_inputs_%04d", txId % 100);
+  const string now = date("%F %T");
+  const string fields = "`tx_id`, `position`, `script`, `sequence`, `prev_tx_id`, "
+  "`prev_position`, `prev_address_id`, `prev_value`, `created_at`";
+  vector<string> values;
+
+  n = 0;
+  for (auto &in : tx.vin) {
+    const uint256 prevHash = in.prevout.hash;
+    const int64_t prevTxId = txHash2Id(db, prevHash);
+    const int32_t prevPos  = (int32_t)in.prevout.n;
+
+    // 将前向交易标记为已花费
+    string sql = Strings::Format("UPDATE `tx_outputs_%04d` SET "
+                                 " `spent_tx_id`=%lld, `spent_position`=%d"
+                                 " WHERE `tx_id`=%lld AND `position`=%d "
+                                 " AND `spent_tx_id`=0 AND `spent_position`=-1 ",
+                                 prevTxId % 100, txId, n,
+                                 prevTxId, prevPos);
+    if (db.update(sql.c_str()) != 1) {
+      LOG_ERROR("mark tx(hash: %s, id: %lld) as spent failure, spend txId: %lld",
+                in.prevout.hash.ToString().c_str(), prevTxId, txId);
+      return false;
+    }
+
+    // 插入当前交易的inputs
+    DBTxOutput dbTxOutput = getTxOutput(db, prevTxId, prevPos);
+    if (dbTxOutput.txId == 0) {
+      LOG_ERROR("can't find tx output, txId: %lld, hash: %s, position: %d",
+                prevTxId, prevHash.ToString().c_str(), prevPos);
+      return false;
+    }
+    values.push_back(Strings::Format("%lld,%d,'%s',%u,%lld,%d,"
+                                     "%lld,%lld,'%s'",
+                                     txId, n, in.scriptSig.ToString().c_str(),
+                                     in.nSequence, prevTxId, prevPos,
+                                     dbTxOutput.addressId,
+                                     dbTxOutput.value, now.c_str()));
+
+    n++;
+  }
+}
+
+bool _insertTxOutputs() {
   // TODO
+}
+
+// 接收一个新的交易
+bool Parser::acceptTx(class TxLog *txLog) {
+  // 处理inputs
+  if (!_insertTxInputs(dbExplorer_, txLog->tx_, txLog->txId_)) {
+    // TODO: error
+  }
+
+  // 处理outputs
+
+  // 将prev_outputs标记为已花费
+
+  // 清理 table.unspent_outputs 记录
+
+  // 变更地址相关信息
+
 }
 
 // 获取上次txlog的进度偏移量
@@ -493,7 +558,7 @@ bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
 
   // find raw tx hex
   string txHashStr = txLog->txHash_.ToString();
-  sql = Strings::Format("SELECT `hex` FROM `raw_txs` WHERE `tx_hash` = '%s' ",
+  sql = Strings::Format("SELECT `hex`,`id` FROM `raw_txs` WHERE `tx_hash` = '%s' ",
                         txHashStr.c_str());
   dbExplorer_.query(sql, res);
   if (res.numRows() == 0) {
@@ -502,6 +567,7 @@ bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
   }
   row = res.nextRow();
   txLog->txHex_ = string(row[0]);
+  txLog->txId_  = atoi64(row[1]);
 
   // parse hex string from parameter
   vector<unsigned char> txData(ParseHex(txLog->txHex_));

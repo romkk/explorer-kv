@@ -4,6 +4,9 @@ require __DIR__ . '/vendor/autoload.php';
 # load dotenv
 Dotenv::load(__DIR__);
 
+# bootstrap the app
+App::init();
+
 # path
 Config::init(require __DIR__ . '/bootstrap/paths.php');
 

@@ -2,10 +2,11 @@
 
 use Illuminate\Database\Capsule\Manager as Capsule;
 use Illuminate\Events\Dispatcher;
-use Illuminate\Container\Container;
 
 call_user_func(function () {
     $capsule = new Capsule;
+
+    App::$container->instance('capsule', $capsule);
 
     $capsule->addConnection([
         'driver' => 'mysql',
@@ -20,7 +21,7 @@ call_user_func(function () {
     ]);
 
     // Set the event dispatcher used by Eloquent models... (optional)
-    $capsule->setEventDispatcher(new Dispatcher(new Container));
+    $capsule->setEventDispatcher(new Dispatcher(App::$container));
 
     // Make this Capsule instance available globally via static methods... (optional)
     $capsule->setAsGlobal();

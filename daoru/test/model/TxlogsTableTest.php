@@ -1,18 +1,17 @@
 <?php
 
-class TxlogsTest extends ExplorerDatabaseTestCase {
+class TxlogsTableTest extends ExplorerDatabaseTestCase {
 
     protected $conn;
 
     protected function setUp() {
         $this->conn = $this->getPDO();
+        parent::setUp();
     }
 
     protected function tearDown() {
-        $sql = "drop table if exists txlogs_0000;
-                drop table if exists txlogs_0001;
-                drop table if exists txlogs_0002";
-        $this->conn->exec($sql);
+        $this->tableDeleteLike('txlogs_%');
+        parent::tearDown();
     }
 
     public function testCreateFirstTable() {

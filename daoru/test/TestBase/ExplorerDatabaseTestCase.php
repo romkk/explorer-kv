@@ -31,6 +31,30 @@ abstract class ExplorerDatabaseTestCase extends PHPUnit_Extensions_Database_Test
         return $stmt->fetch() !== false;
     }
 
+    public function tableCreateLike($table, $tpl) {
+        return $this->getPDO()->exec("create table $table like $tpl");
+    }
+
+    public function tableDelete($table) {
+        $sql = sprintf("drop table if exists %s", $table);
+        return $this->getPDO()->exec($sql);
+    }
+
+    public function tableDeleteLike($tablePattern) {
+        $sql = "show tables like '$tablePattern'";
+        $stmt = $this->getPDO()->query($sql);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $affected =  0;
+        foreach ($rows as $r) {
+            $t = array_values($r)[0];
+            $sql = sprintf("drop table %s", $t);
+            $affected += $this->getPDO()->exec($sql);
+        }
+
+        return $affected;
+    }
+
     public function getPDO() {
         return $this->getConnection()->getConnection();
     }

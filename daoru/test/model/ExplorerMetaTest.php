@@ -22,24 +22,6 @@ class ExplorerMetaTest extends ExplorerDatabaseTestCase {
         $this->assertEquals('v2', ExplorerMeta::get('k2'));
     }
 
-    public function testGetCurrentId() {
-        $this->assertEquals(0, RawTx::currentId());
-
-        $this->tableInsert('0_explorer_meta', [
-            [
-                'id' => 1,
-                'key' => 'raw_txs_id',
-                'value' => '100',
-                'created_at' => Carbon::now()->toDateTimeString(),
-                'updated_at' => Carbon::now()->toDateTimeString(),
-            ]
-        ]);
-
-        $this->assertEquals(100, RawTx::currentId());
-
-        $this->tableTruncate('0_explorer_meta');
-    }
-
     /**
      * Returns the test dataset.
      *

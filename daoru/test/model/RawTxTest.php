@@ -14,6 +14,30 @@ class RawTxTest extends ExplorerDatabaseTestCase {
         $this->assertEquals('raw_txs_0023', RawTx::getTableByHash($tx));
     }
 
+    public function testGetCurrentId() {
+        $this->assertEquals(0, RawTx::currentId());
+
+        $this->tableInsert('0_explorer_meta', [
+            [
+                'id' => 10,
+                'key' => 'raw_tx_id',
+                'value' => '100',
+                'created_at' => Carbon::now()->toDateTimeString(),
+                'updated_at' => Carbon::now()->toDateTimeString(),
+            ]
+        ]);
+
+        $this->assertEquals(100, RawTx::currentId());
+
+        $this->tableTruncate('0_explorer_meta');
+    }
+
+    public function testMoveNextId() {
+        $id = RawTx::currentId();
+        RawTx::moveNextId();
+        $this->assertEquals($id + 1, RawTx::currentId());
+    }
+
     /**
      * Returns the test dataset.
      *
@@ -22,6 +46,7 @@ class RawTxTest extends ExplorerDatabaseTestCase {
     protected function getDataSet() {
         return new DbUnit_ArrayDataSet([
             'raw_txs_0000' => [],
+            '0_explorer_meta' => [],
         ]);
     }
 }

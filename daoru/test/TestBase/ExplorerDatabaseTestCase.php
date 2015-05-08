@@ -60,7 +60,9 @@ abstract class ExplorerDatabaseTestCase extends PHPUnit_Extensions_Database_Test
         $sql = sprintf(
             'insert into %s (%s) values (%s)',
             $tableName,
-            join(',', $cols),
+            join(',', array_map(function($c) {
+                return "`$c`";
+            }, $cols)),
             join(',', array_map(function($c) {
                 return ":$c";
             }, $cols))

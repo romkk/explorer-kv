@@ -28,8 +28,9 @@ patch -p1 < bitcoind-bm-rpc-v0.10.0.patch
 ```
 $ bitcoin-cli -testnet -conf=/data/.bitcoin/bitcoin.conf bm_get_best_block
 {
-    "height" : 393928,
-    "hash" : "00000000aba3469119e413c750b26e4821c84cc323b7282b0e50130da49221c5"
+    "height" : 394802,
+    "hash" : "0000000013b8bb8a15aea258b1057daec5f844e38be42a05b2f1e858cf3df737",
+    "prev_hash" : "0000000000003f40adc278bdacd5ba0138f334d5d1f1936b6aa765a7e46c8d44"
 }
 
 $ bitcoin-cli -testnet -conf=/data/.bitcoin/bitcoin.conf bm_get_block_detail 00000000aba3469119e413c750b26e4821c84cc323b7282b0e50130da49221c5

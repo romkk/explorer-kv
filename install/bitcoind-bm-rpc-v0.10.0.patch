@@ -1,6 +1,6 @@
 diff -uNr bitcoin-0.10.0/src/rpcblockchain.cpp bitcoin-0.10.0-bm/src/rpcblockchain.cpp
 --- bitcoin-0.10.0/src/rpcblockchain.cpp	2015-02-13 16:55:11.000000000 +0800
-+++ bitcoin-0.10.0-bm/src/rpcblockchain.cpp	2015-05-06 19:44:20.000000000 +0800
++++ bitcoin-0.10.0-bm/src/rpcblockchain.cpp	2015-05-08 15:35:21.000000000 +0800
 @@ -4,6 +4,7 @@
  // file COPYING or http://www.opensource.org/licenses/mit-license.php.
  
@@ -9,7 +9,7 @@ diff -uNr bitcoin-0.10.0/src/rpcblockchain.cpp bitcoin-0.10.0-bm/src/rpcblockcha
  #include "main.h"
  #include "rpcserver.h"
  #include "sync.h"
-@@ -680,3 +681,70 @@
+@@ -680,3 +681,74 @@
  
      return Value::null;
  }
@@ -58,9 +58,13 @@ diff -uNr bitcoin-0.10.0/src/rpcblockchain.cpp bitcoin-0.10.0-bm/src/rpcblockcha
 +
 +Value bm_get_best_block(const json_spirit::Array& params, bool fHelp)
 +{
++    CBlockIndex *blockindex = chainActive.Tip();
 +    Object ret;
 +    ret.push_back(Pair("height", (int)chainActive.Height()));
-+    ret.push_back(Pair("hash",   chainActive.Tip()->GetBlockHash().GetHex()));
++    ret.push_back(Pair("hash",   blockindex->GetBlockHash().GetHex()));
++    if (blockindex->pprev) {
++        ret.push_back(Pair("prev_hash", blockindex->pprev->GetBlockHash().GetHex()));
++    }
 +    return ret;
 +}
 +
@@ -82,7 +86,7 @@ diff -uNr bitcoin-0.10.0/src/rpcblockchain.cpp bitcoin-0.10.0-bm/src/rpcblockcha
 +}
 diff -uNr bitcoin-0.10.0/src/rpcserver.cpp bitcoin-0.10.0-bm/src/rpcserver.cpp
 --- bitcoin-0.10.0/src/rpcserver.cpp	2015-02-13 16:55:11.000000000 +0800
-+++ bitcoin-0.10.0-bm/src/rpcserver.cpp	2015-05-06 19:13:39.000000000 +0800
++++ bitcoin-0.10.0-bm/src/rpcserver.cpp	2015-05-08 15:27:20.000000000 +0800
 @@ -271,6 +271,8 @@
      { "blockchain",         "verifychain",            &verifychain,            true,      false,      false },
      { "blockchain",         "invalidateblock",        &invalidateblock,        true,      true,       false },
@@ -94,7 +98,7 @@ diff -uNr bitcoin-0.10.0/src/rpcserver.cpp bitcoin-0.10.0-bm/src/rpcserver.cpp
      { "mining",             "getblocktemplate",       &getblocktemplate,       true,      false,      false },
 diff -uNr bitcoin-0.10.0/src/rpcserver.h bitcoin-0.10.0-bm/src/rpcserver.h
 --- bitcoin-0.10.0/src/rpcserver.h	2015-02-13 16:55:11.000000000 +0800
-+++ bitcoin-0.10.0-bm/src/rpcserver.h	2015-05-06 19:11:54.000000000 +0800
++++ bitcoin-0.10.0-bm/src/rpcserver.h	2015-05-08 15:27:20.000000000 +0800
 @@ -224,6 +224,8 @@
  extern json_spirit::Value getchaintips(const json_spirit::Array& params, bool fHelp);
  extern json_spirit::Value invalidateblock(const json_spirit::Array& params, bool fHelp);

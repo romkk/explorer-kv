@@ -21,12 +21,12 @@ echo 'SET NAMES utf8;'
 tpl_raw_txs='
 DROP TABLE IF EXISTS `raw_txs_%04d`;
 CREATE TABLE `raw_txs_%04d` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `id` bigint(20) NOT NULL,
   `tx_hash` char(64) NOT NULL,
   `hex` longtext NOT NULL,
   `created_at` datetime NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `tx_id` (`tx_hash`)
+  UNIQUE KEY `id` (`id`),
+  UNIQUE KEY `tx_hash` (`tx_hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 loop 0 63 "$tpl_raw_txs"

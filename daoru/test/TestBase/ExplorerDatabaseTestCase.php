@@ -55,6 +55,36 @@ abstract class ExplorerDatabaseTestCase extends PHPUnit_Extensions_Database_Test
         return $affected;
     }
 
+    public function tableInsert($tableName, $rows) {
+        $cols = array_keys($rows[0]);
+        $sql = sprintf(
+            'insert into %s (%s) values (%s)',
+            $tableName,
+            join(',', $cols),
+            join(',', array_map(function($c) {
+                return ":$c";
+            }, $cols))
+        );
+
+        $stmt = $this->getPDO()->prepare($sql);
+
+        $this->getPDO()->beginTransaction();
+
+        foreach ($rows as $r) {
+            foreach ($r as $k => $v) {
+                $stmt->bindValue(":$k", $v);
+            }
+            if ($stmt->execute() === false) {
+                $this->getPDO()->rollBack();
+                return false;
+            };
+        }
+
+        $this->getPDO()->commit();
+
+        return true;
+    }
+
     public function getPDO() {
         return $this->getConnection()->getConnection();
     }

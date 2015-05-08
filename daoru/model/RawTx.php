@@ -9,7 +9,12 @@ class RawTx extends Model {
     protected $hash;
 
     public function getTable() {
+        return static::getTableByHash($this);
+    }
 
+    public static function currentId() {
+        $id = ExplorerMeta::get('raw_txs_id', '0');
+        return intval($id);
     }
 
     public static function getTableByHash(RawTx $tx) {

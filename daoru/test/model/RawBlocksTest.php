@@ -5,7 +5,7 @@ use Carbon\Carbon;
 class RawBlocksTest extends ExplorerDatabaseTestCase {
 
     public function testFindLatestBlockEmpty() {
-        $this->assertNull(RawBlocks::findLatestBlock());
+        $this->assertNull(RawBlock::findLatestBlock());
     }
 
     public function testFindLatestBlockOne() {
@@ -29,7 +29,7 @@ class RawBlocksTest extends ExplorerDatabaseTestCase {
         ]);
         $this->assertTableRowCount('0_raw_blocks', 2);
 
-        $this->assertNotNull($block = RawBlocks::findLatestBlock());
+        $this->assertNotNull($block = RawBlock::findLatestBlock());
         $this->assertEquals(2, $block['id']);
         $this->assertEquals(1, $block['block_height']);
     }

@@ -3,7 +3,7 @@
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 
-class RawBlocks extends Model {
+class RawBlock extends Model {
     protected $table = '0_raw_blocks';
 
     public static function findLatestBlock() {

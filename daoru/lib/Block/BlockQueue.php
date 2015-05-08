@@ -3,7 +3,7 @@
 class BlockQueue {
 
     public static function getLocalBlockInfo() {
-        $i = RawBlocks::findLatestBlock();
+        $i = RawBlock::findLatestBlock();
 
         if (is_null($i)) {
             return [

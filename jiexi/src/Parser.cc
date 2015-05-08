@@ -419,39 +419,58 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
 
   n = 0;
   for (auto &in : tx.vin) {
-    const uint256 prevHash = in.prevout.hash;
-    const int64_t prevTxId = txHash2Id(db, prevHash);
-    const int32_t prevPos  = (int32_t)in.prevout.n;
+    uint256 prevHash;
+    int64_t prevTxId;
+    int32_t prevPos;
 
-    // 将前向交易标记为已花费
-    string sql = Strings::Format("UPDATE `tx_outputs_%04d` SET "
-                                 " `spent_tx_id`=%lld, `spent_position`=%d"
-                                 " WHERE `tx_id`=%lld AND `position`=%d "
-                                 " AND `spent_tx_id`=0 AND `spent_position`=-1 ",
-                                 prevTxId % 100, txId, n,
-                                 prevTxId, prevPos);
-    if (db.update(sql.c_str()) != 1) {
-      LOG_ERROR("mark tx(hash: %s, id: %lld) as spent failure, spend txId: %lld",
-                in.prevout.hash.ToString().c_str(), prevTxId, txId);
-      return false;
-    }
+    if (tx.IsCoinBase()) {
+      prevHash = 0;
+      prevTxId = 0;
+      prevPos  = -1;
 
-    // 插入当前交易的inputs
-    DBTxOutput dbTxOutput = getTxOutput(db, prevTxId, prevPos);
-    if (dbTxOutput.txId == 0) {
-      LOG_ERROR("can't find tx output, txId: %lld, hash: %s, position: %d",
-                prevTxId, prevHash.ToString().c_str(), prevPos);
-      return false;
+      // 插入当前交易的inputs
+      values.push_back(Strings::Format("%lld,%d,'%s',%u,%lld,%d,"
+                                       "%lld,%lld,'%s'",
+                                       txId, n, in.scriptSig.ToString().c_str(),
+                                       in.nSequence, prevTxId, prevPos,
+                                       0/* prev_address_id */,
+                                       0/* prev_value */, now.c_str()));
+    } else
+    {
+      prevHash = in.prevout.hash;
+      prevTxId = txHash2Id(db, prevHash);
+      prevPos  = (int32_t)in.prevout.n;
+
+      // 将前向交易标记为已花费
+      string sql = Strings::Format("UPDATE `tx_outputs_%04d` SET "
+                                   " `spent_tx_id`=%lld, `spent_position`=%d"
+                                   " WHERE `tx_id`=%lld AND `position`=%d "
+                                   " AND `spent_tx_id`=0 AND `spent_position`=-1 ",
+                                   prevTxId % 100, txId, n,
+                                   prevTxId, prevPos);
+      if (db.update(sql.c_str()) != 1) {
+        LOG_ERROR("mark tx(hash: %s, id: %lld) as spent failure, spend txId: %lld",
+                  in.prevout.hash.ToString().c_str(), prevTxId, txId);
+        return false;
+      }
+
+      // 插入当前交易的inputs
+      DBTxOutput dbTxOutput = getTxOutput(db, prevTxId, prevPos);
+      if (dbTxOutput.txId == 0) {
+        LOG_ERROR("can't find tx output, txId: %lld, hash: %s, position: %d",
+                  prevTxId, prevHash.ToString().c_str(), prevPos);
+        return false;
+      }
+      values.push_back(Strings::Format("%lld,%d,'%s',%u,%lld,%d,"
+                                       "%lld,%lld,'%s'",
+                                       txId, n, in.scriptSig.ToString().c_str(),
+                                       in.nSequence, prevTxId, prevPos,
+                                       dbTxOutput.addressId,
+                                       dbTxOutput.value, now.c_str()));
     }
-    values.push_back(Strings::Format("%lld,%d,'%s',%u,%lld,%d,"
-                                     "%lld,%lld,'%s'",
-                                     txId, n, in.scriptSig.ToString().c_str(),
-                                     in.nSequence, prevTxId, prevPos,
-                                     dbTxOutput.addressId,
-                                     dbTxOutput.value, now.c_str()));
 
     n++;
-  }
+  } /* /for */
 }
 
 bool _insertTxOutputs() {

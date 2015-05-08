@@ -11,8 +11,10 @@ class BitcoindCustomAPITest extends PHPUnit_Framework_TestCase {
         $result = $this->client->bm_get_best_block();
         $this->assertArrayHasKey('hash', $result);
         $this->assertArrayHasKey('height', $result);
+        $this->assertArrayHasKey('prev_hash', $result);
         $this->assertGreaterThan(0, $result['height']);
         $this->assertEquals(64, strlen($result['hash']));
+        $this->assertEquals(64, strlen($result['prev_hash']));
     }
 
     public function testGetBlockDetail() {

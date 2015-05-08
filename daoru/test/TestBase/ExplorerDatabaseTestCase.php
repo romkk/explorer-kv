@@ -85,6 +85,11 @@ abstract class ExplorerDatabaseTestCase extends PHPUnit_Extensions_Database_Test
         return true;
     }
 
+    public function tableTruncate($tableName) {
+        $sql = "truncate $tableName";
+        $this->getPDO()->exec($sql);
+    }
+
     public function getPDO() {
         return $this->getConnection()->getConnection();
     }

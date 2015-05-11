@@ -18,6 +18,7 @@
 
 #include "Parser.h"
 #include "Common.h"
+#include "Util.h"
 
 #include "bitcoin/base58.h"
 #include "bitcoin/util.h"
@@ -153,32 +154,32 @@ void get_inputs_txs(const CTransaction &tx, std::set<uint256> &hashVec) {
   }
 }
 
-// hash(uint256) -> (id)int64
-bool Parser::txs_hash2id(const std::set<uint256> &hashVec,
-                         std::map<uint256, int64_t> &hash2id) {
-  string sql = "SELECT `id`,`hash` FROM `txs` WHERE `hash` IN (";
-  for (auto &it : hashVec) {
-    sql += "'" + it.ToString() + "',";
-  }
-  sql.resize(sql.length() - 1);  // remove last ','
-  sql += ")";
-
-  MySQLResult res;
-  char **row;
-  dbExplorer_.query(sql, res);
-  if (hashVec.size() != res.numRows()) {
-    LOG_FATAL("inputs in db is not match, db: %llu, tx: %llu ",
-              res.numRows(), hashVec.size());
-    return false;
-  }
-
-  while ((row = res.nextRow()) != nullptr) {
-    hash2id.insert(std::make_pair(uint256(row[1]), atoi64(row[0])));
-  }
-  assert(hash2id.size() == hashVec.size());
-
-  return true;
-}
+//// hash(uint256) -> (id)int64
+//bool Parser::txs_hash2id(const std::set<uint256> &hashVec,
+//                         std::map<uint256, int64_t> &hash2id) {
+//  string sql = "SELECT `id`,`hash` FROM `txs` WHERE `hash` IN (";
+//  for (auto &it : hashVec) {
+//    sql += "'" + it.ToString() + "',";
+//  }
+//  sql.resize(sql.length() - 1);  // remove last ','
+//  sql += ")";
+//
+//  MySQLResult res;
+//  char **row;
+//  dbExplorer_.query(sql, res);
+//  if (hashVec.size() != res.numRows()) {
+//    LOG_FATAL("inputs in db is not match, db: %llu, tx: %llu ",
+//              res.numRows(), hashVec.size());
+//    return false;
+//  }
+//
+//  while ((row = res.nextRow()) != nullptr) {
+//    hash2id.insert(std::make_pair(uint256(row[1]), atoi64(row[0])));
+//  }
+//  assert(hash2id.size() == hashVec.size());
+//
+//  return true;
+//}
 
 //bool Parser::accept_tx_inputs(const CTransaction &tx) {
 //
@@ -413,8 +414,9 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
   int n;
   const string tableName = Strings::Format("tx_inputs_%04d", txId % 100);
   const string now = date("%F %T");
-  const string fields = "`tx_id`, `position`, `script`, `sequence`, `prev_tx_id`, "
-  "`prev_position`, `prev_address_id`, `prev_value`, `created_at`";
+  // table.tx_inputs_xxxx
+  const string fields = "`tx_id`, `position`, `input_script_asm`, `input_script_hex`,"
+  " `sequence`, `prev_tx_id`, `prev_position`, `prev_address_id`, `prev_value`, `created_at`";
   vector<string> values;
 
   n = 0;
@@ -429,9 +431,11 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
       prevPos  = -1;
 
       // 插入当前交易的inputs
-      values.push_back(Strings::Format("%lld,%d,'%s',%u,%lld,%d,"
+      values.push_back(Strings::Format("%lld,%d,'%s','%s',%u,%lld,%d,"
                                        "%lld,%lld,'%s'",
-                                       txId, n, in.scriptSig.ToString().c_str(),
+                                       txId, n,
+                                       in.scriptSig.ToString().c_str(),
+                                       HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
                                        in.nSequence, prevTxId, prevPos,
                                        0/* prev_address_id */,
                                        0/* prev_value */, now.c_str()));
@@ -468,13 +472,50 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
                                        dbTxOutput.addressId,
                                        dbTxOutput.value, now.c_str()));
     }
-
     n++;
   } /* /for */
+
+  // 执行插入 inputs
+  if (!multiInsert(db, tableName, fields, values)) {
+    LOG_ERROR("insert inputs fail, txId: %lld, hash: %s",
+              txId, tx.GetHash().ToString().c_str());
+    return false;
+  }
+
+  return true;
 }
 
-bool _insertTxOutputs() {
-  // TODO
+
+bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
+                      const int64_t txId) {
+  int n;
+  const string tableName = Strings::Format("tx_outputs_%04d", txId % 100);
+  const string now = date("%F %T");
+  // table.tx_outputs_xxxx
+  const string fields = "`tx_id`,`position`,`address_id`,`value`,`output_script_asm`,"
+  "`output_script_hex`,`output_script_type`,`is_spendable`,`spent_tx_id`,`spent_position`,`created_at`";
+  vector<string> itemValues;
+  set<string> allAddresss;
+
+  // 提取涉及到的所有地址
+  for (auto &out : tx.vout) {
+    txnouttype type;
+    vector<CTxDestination> addresses;
+    int nRequired;
+    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
+      LOG_WARN("extract destinations failure, txId: %lld, hash: %s",
+               txId, tx.GetHash().ToString().c_str());
+      continue;
+    }
+    for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
+      allAddresss.insert(CBitcoinAddress(addr).ToString());
+    }
+  }
+
+//  n = 0;
+//  for (auto &out : tx.vout) {
+//  }
+  return false;
 }
 
 // 接收一个新的交易
@@ -492,6 +533,7 @@ bool Parser::acceptTx(class TxLog *txLog) {
 
   // 变更地址相关信息
 
+  return false;
 }
 
 // 获取上次txlog的进度偏移量

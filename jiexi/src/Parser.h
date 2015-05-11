@@ -15,6 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#ifndef Explorer_Parser_h
+#define Explorer_Parser_h
 
 #include "Common.h"
 #include "MySQLConnection.h"
@@ -101,4 +103,6 @@ public:
 int64_t txHash2Id(MySQLConnection &db, const uint256 &txHash);
 DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t position);
 bool multiInsert(MySQLConnection &db, const string &table,
-                 const string &fields, const vector<string> &values)
+                 const string &fields, const vector<string> &values);
+
+#endif

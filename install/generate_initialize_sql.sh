@@ -93,7 +93,8 @@ CREATE TABLE `tx_inputs_%04d` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `tx_id` bigint(20) NOT NULL,
   `position` int(11) NOT NULL,
-  `script` text NOT NULL,
+  `input_script_asm` text NOT NULL,
+  `input_script_hex` text NOT NULL,
   `sequence` bigint(20) NOT NULL,
   `prev_tx_id` bigint(20) NOT NULL,
   `prev_position` int(11) NOT NULL,
@@ -115,7 +116,10 @@ CREATE TABLE `tx_outputs_%04d` (
   `position` int(11) NOT NULL,
   `address_id` bigint(20) NOT NULL,
   `value` bigint(20) NOT NULL,
-  `script` text NOT NULL,
+  `output_script_asm` text NOT NULL,
+  `output_script_hex` text NOT NULL,
+  `output_script_type` enum("NonStandard","PubKey","PubKeyHash","ScriptHash","MultiSig","NullData") NOT NULL,
+  `is_spendable` tinyint(1) NOT NULL,
   `spent_tx_id` bigint(20) NOT NULL,
   `spent_position` int(11) NOT NULL,
   `created_at` datetime NOT NULL,
@@ -127,17 +131,18 @@ loop 0 99 "$tpl_tx_outputs"
 
 ## unspent_outputs: 0000-0009
 tpl_unspent_outputs='
-DROP TABLE IF EXISTS `unspent_outputs_%04d`;
-CREATE TABLE `unspent_outputs_%04d` (
+DROP TABLE IF EXISTS `address_unspent_outputs_%04d`;
+CREATE TABLE `address_unspent_outputs_%04d` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
+  `address_id` bigint(20) NOT NULL,
   `tx_id` bigint(20) NOT NULL,
-  `position` int(11) NOT NULL,
+  `position` smallint(6) NOT NULL,
+  `position2` smallint(6) NOT NULL DEFAULT '0',
   `block_height` bigint(20) NOT NULL,
   `value` bigint(20) NOT NULL,
   `created_at` int(11) NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `tx_id_position` (`tx_id`,`position`),
-  KEY `tx_id_block_height` (`tx_id`,`block_height`)
+  UNIQUE KEY `address_id_block_height_tx_id_position_position2` (`address_id`,`block_height`,`tx_id`,`position`,`position2`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 loop 0 9 "$tpl_unspent_outputs"

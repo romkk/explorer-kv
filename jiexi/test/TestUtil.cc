@@ -59,9 +59,80 @@ TEST(Util, GetMaxAddressId) {
   ASSERT_EQ(GetMaxAddressId(db), 2);
   ASSERT_EQ(GetMaxAddressId(db), 3);
 
+  // 不drop table.0_explorer_meta 后面测试用例会用到
+}
+
+
+TEST(Util, GetAddressIds) {
+  const string uri = Config::GConfig.get("testdb.uri", "");
+  if (uri.empty()) {
+    LOG_WARN("skipped, test: [Util][GetAddressIds]");
+    return;
+  }
+
+  string sql;
+  MySQLConnection db(uri);
   {
     // drop table
-    string sql = "DROP TABLE IF EXISTS `0_explorer_meta`;";
+    sql = "DROP TABLE IF EXISTS `addresses_0015`;";
+    db.update(sql);
+    sql = "DROP TABLE IF EXISTS `addresses_0022`;";
+    db.update(sql);
+  }
+
+  {
+    // create table
+    // 1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq -> addresses_0015
+    sql = "CREATE TABLE `addresses_0015` ("
+    "`id` bigint(20) NOT NULL,"
+    "`address` varchar(35) NOT NULL,"
+    "`tx_count` int(11) NOT NULL DEFAULT '0',"
+    "`total_received` bigint(20) NOT NULL DEFAULT '0',"
+    "`total_sent` bigint(20) NOT NULL DEFAULT '0',"
+    "`created_at` datetime NOT NULL,"
+    "`updated_at` datetime NOT NULL,"
+    "PRIMARY KEY (`id`),"
+    "UNIQUE KEY `address` (`address`)"
+    ") ENGINE=InnoDB DEFAULT CHARSET=utf8;";
+    db.update(sql);
+
+    // 1LrM4bojLAKfuoFMXkDtVPMGydX1rkaMqH -> addresses_0022
+    sql = "CREATE TABLE `addresses_0022` ("
+    "`id` bigint(20) NOT NULL,"
+    "`address` varchar(35) NOT NULL,"
+    "`tx_count` int(11) NOT NULL DEFAULT '0',"
+    "`total_received` bigint(20) NOT NULL DEFAULT '0',"
+    "`total_sent` bigint(20) NOT NULL DEFAULT '0',"
+    "`created_at` datetime NOT NULL,"
+    "`updated_at` datetime NOT NULL,"
+    "PRIMARY KEY (`id`),"
+    "UNIQUE KEY `address` (`address`)"
+    ") ENGINE=InnoDB DEFAULT CHARSET=utf8;";
+    db.update(sql);
+  }
+
+  {
+    std::set<std::string> allAddresss;
+    map<string, int64_t> addrMap;
+    allAddresss.insert("1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq");
+    ASSERT_EQ(GetAddressIds(uri, allAddresss, addrMap), true);
+    ASSERT_EQ(addrMap.size(), 1);
+    const int64_t addrId1 = addrMap["1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq"];
+
+    allAddresss.insert("1LrM4bojLAKfuoFMXkDtVPMGydX1rkaMqH");
+    addrMap.clear();
+    ASSERT_EQ(GetAddressIds(uri, allAddresss, addrMap), true);
+    ASSERT_EQ(addrMap.size(), 2);
+    ASSERT_EQ(addrMap["1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq"], addrId1);
+    ASSERT_EQ(addrMap["1LrM4bojLAKfuoFMXkDtVPMGydX1rkaMqH"], addrId1 + 1);
+
+  }
+
+  {
+    // drop table
+    sql = "DROP TABLE IF EXISTS `addresses_0015`;";
+    db.update(sql);
+    sql = "DROP TABLE IF EXISTS `addresses_0022`;";
     db.update(sql);
   }
 }

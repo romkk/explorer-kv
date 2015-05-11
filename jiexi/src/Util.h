@@ -30,6 +30,6 @@ int32_t AddressTableIndex(const string &address);
 
 int64_t GetMaxAddressId(MySQLConnection &db);
 bool GetAddressIds(const string &dbURI, const set<string> &allAddresss,
-                   map<string, int64_t> addrMap);
+                   map<string, int64_t> &addrMap);
 
 #endif

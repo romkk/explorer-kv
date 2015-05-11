@@ -32,7 +32,13 @@ int32_t AddressTableIndex(const string &address) {
   if (!CBitcoinAddress(address).GetKeyID(key)) {
     return 0;
   }
-  return HexToDecLast2Bytes(key.GetHex());
+  const string h = key.GetHex();
+  // 输出是反序的
+  // 例如：1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq
+  // 应该是：8b60195db4692837d7f61b7be8aa11ecdfaecdcf
+  // 实际string h是：cfcdaedfec11aae87b1bf6d7372869b45d19608b
+  // 所以取头部两个字符
+  return HexToDecLast2Bytes(h.substr(0, 1) + h.substr(1, 1));
 }
 
 
@@ -69,29 +75,42 @@ int64_t GetMaxAddressId(MySQLConnection &db) {
 }
 
 // 获取地址的ID映射关系
-// 不存在则创建一条记录，该函数执行在存储过程之外，独立的，不受DB事务影响
+// 不存在则创建一条记录，该函数执行在DB事务之外，独立的，不受DB事务影响
+// 由于自增ID是自行管理的，所以必须在DB事务之外
 bool GetAddressIds(const string &dbURI, const set<string> &allAddresss,
-                   map<string, int64_t> addrMap) {
+                   map<string, int64_t> &addrMap) {
   MySQLConnection db(dbURI);
   const string now = date("%F %T");
 
   for (auto &a : allAddresss) {
     MySQLResult res;
-    char **row;
-    const string tableName = Strings::Format("addresses_%04d", AddressTableIndex(a));
-    string sql = Strings::Format("SELECT `id` FROM `%s` WHERE `address`='%s' ",
-                                 tableName.c_str(), a.c_str());
-    db.query(sql, res);
+    char **row = nullptr;
+    const string tableName = Strings::Format("addresses_%04d", AddressTableIndex(a) % 64);
+    const string sqlSelect = Strings::Format("SELECT `id` FROM `%s` WHERE `address`='%s' ",
+                                             tableName.c_str(), a.c_str());
+    string sql;
+
+    db.query(sqlSelect, res);
     if (res.numRows() == 0) {
-      int64_t nextAddrId = GetMaxAddressId(db);
+      int64_t addrId = GetMaxAddressId(db);
+      if (addrId == 0) { return false; }
 
       // 地址不存在，创建一条记录
-      string sql2 = Strings::Format("INSERT INTO `%s` (`id`,`address`, `tx_count`,"
-                                    " `total_received`, `total_sent`, `created_at`, `updated_at`)"
-                                    " VALUES(%lld, '%s', 0, 0, 0, '%s', '%s')",
-                                    tableName.c_str(), nextAddrId, a.c_str(),
-                                    now.c_str(), now.c_str());
+      sql = Strings::Format("INSERT INTO `%s` (`id`,`address`, `tx_count`,"
+                            " `total_received`, `total_sent`, `created_at`, `updated_at`)"
+                            " VALUES(%lld, '%s', 0, 0, 0, '%s', '%s')",
+                            tableName.c_str(), addrId,
+                            a.c_str(), now.c_str(), now.c_str());
+      if (db.update(sql) == 0) {
+        return false;
+      }
+      db.query(sqlSelect, res);
     }
+
+    assert(res.numRows() == 1);
+    row = res.nextRow();
+    addrMap.insert(std::make_pair(a, atoi64(row[0])));
   }
-  return false;
+  return true;
 }
+

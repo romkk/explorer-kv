@@ -486,7 +486,8 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
 }
 
 
-bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
+bool _insertTxOutputs(MySQLConnection &db, const string &dbUri,
+                      const CTransaction &tx,
                       const int64_t txId) {
   int n;
   const string tableName = Strings::Format("tx_outputs_%04d", txId % 100);
@@ -511,10 +512,18 @@ bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
       allAddresss.insert(CBitcoinAddress(addr).ToString());
     }
   }
+  // 拿到所有地址的id
+  map<string, int64_t> addrMap;
+  if (!GetAddressIds(dbUri, allAddresss, addrMap)) {
+    return false;
+  }
 
-//  n = 0;
-//  for (auto &out : tx.vout) {
-//  }
+  // 处理输入
+  n = 0;
+  for (auto &out : tx.vout) {
+    // TODO
+  }
+
   return false;
 }
 

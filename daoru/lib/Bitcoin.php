@@ -87,6 +87,11 @@ class Bitcoin {
 
         return $response['result'];
     }
+
+    public function getBlockByHeight($height) {
+        $hash = $this->getblockhash($height);
+        return $this->bm_get_block_detail($hash);
+    }
 }
 
 class BitcoindException extends Exception {

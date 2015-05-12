@@ -5,37 +5,43 @@ use Carbon\Carbon;
 class RawTxTest extends ExplorerDatabaseTestCase {
 
     public function testGetTableByHash() {
-        $tx = new RawTx();
-        $tx->id = 1;
-        $tx->tx_hash = 'd7cd58480b6e0363eafb32e4ac778ffeaafd144cb690a2756bf527d78ff49c97';
-        $tx->hex = 'hex';
-        $tx->created_at = Carbon::now()->toDateTimeString();
-
-        $this->assertEquals('raw_txs_0023', RawTx::getTableByHash($tx));
+        $this->assertEquals('raw_txs_0023', RawTx::getTableByHash('d7cd58480b6e0363eafb32e4ac778ffeaafd144cb690a2756bf527d78ff49c97'));
     }
 
-    public function testGetCurrentId() {
-        $this->assertEquals(0, RawTx::currentId());
+    public function testGetTableById() {
+        $this->assertEquals('raw_txs_0000', RawTx::getTableById(123));
+        $this->assertEquals('raw_txs_0010', RawTx::getTableById(100e8));
+        $this->assertEquals('raw_txs_0063', RawTx::getTableById(63012345678));
+    }
 
-        $this->tableInsert('0_explorer_meta', [
-            [
-                'id' => 10,
-                'key' => 'raw_tx_id',
-                'value' => '100',
-                'created_at' => Carbon::now()->toDateTimeString(),
-                'updated_at' => Carbon::now()->toDateTimeString(),
-            ]
+    public function testSave() {
+        $this->assertTableRowCount('raw_txs_0023', 0);
+        $tx = new RawTx([
+            'tx_hash' => 'd7cd58480b6e0363eafb32e4ac778ffeaafd144cb690a2756bf527d78ff49c97',
+            'hex' => 'hex',
+            'created_at' => Carbon::now()->toDateTimeString(),
+        ]);
+        $tx->save();
+        $this->assertEquals(1, $tx->id);
+        $this->assertTableRowCount('raw_txs_0023', 1);
+    }
+
+    public function testGetId() {
+        $tx = new RawTx([
+            'tx_hash' => 'd7cd58480b6e0363eafb32e4ac778ffeaafd144cb690a2756bf527d78ff49c97',
         ]);
 
-        $this->assertEquals(100, RawTx::currentId());
+        $this->assertNull($tx->id);
+        $this->assertEquals(1, $tx->getId());
 
-        $this->tableTruncate('0_explorer_meta');
-    }
+        $this->tableInsert('raw_txs_0023', [
+           [ 'id' => 1, 'tx_hash' => 'hash1', 'hex' => 'hex1', 'created_at' => Carbon::now()->toDateTimeString()],
+           [ 'id' => 2, 'tx_hash' => 'hash2', 'hex' => 'hex2', 'created_at' => Carbon::now()->toDateTimeString()],
+        ]);
 
-    public function testMoveNextId() {
-        $id = RawTx::currentId();
-        RawTx::moveNextId();
-        $this->assertEquals($id + 1, RawTx::currentId());
+        $this->assertEquals(3, $tx->getId());
+
+        $this->tableTruncate('raw_txs_0023');
     }
 
     /**
@@ -46,6 +52,7 @@ class RawTxTest extends ExplorerDatabaseTestCase {
     protected function getDataSet() {
         return new DbUnit_ArrayDataSet([
             'raw_txs_0000' => [],
+            'raw_txs_0023' => [],
             '0_explorer_meta' => [],
         ]);
     }

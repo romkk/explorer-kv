@@ -114,7 +114,8 @@ CREATE TABLE `tx_outputs_%04d` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `tx_id` bigint(20) NOT NULL,
   `position` int(11) NOT NULL,
-  `address_id` bigint(20) NOT NULL,
+  `address` varchar(1024) NOT NULL,               
+  `address_ids` varchar(512) NOT NULL,
   `value` bigint(20) NOT NULL,
   `output_script_asm` text NOT NULL,
   `output_script_hex` text NOT NULL,
@@ -123,6 +124,7 @@ CREATE TABLE `tx_outputs_%04d` (
   `spent_tx_id` bigint(20) NOT NULL,
   `spent_position` int(11) NOT NULL,
   `created_at` datetime NOT NULL,
+  `updated_at` datetime NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `tx_id_position` (`tx_id`,`position`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'

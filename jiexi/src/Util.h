@@ -25,10 +25,13 @@
 #include "bitcoin/base58.h"
 #include "bitcoin/util.h"
 
+
+#define BILLION 1000000000  // 10亿, 10^9
+
+
 int32_t HexToDecLast2Bytes(const string &hex);
 int32_t AddressTableIndex(const string &address);
 
-int64_t GetMaxAddressId(MySQLConnection &db);
 bool GetAddressIds(const string &dbURI, const set<string> &allAddresss,
                    map<string, int64_t> &addrMap);
 

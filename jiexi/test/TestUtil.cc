@@ -27,42 +27,6 @@ TEST(Util, HexToDecLast2Bytes) {
   ASSERT_EQ(HexToDecLast2Bytes("8b60195db4692837d7f61b7be8aa11ecdfaecdcf"), 207);
 }
 
-TEST(Util, GetMaxAddressId) {
-  const string uri = Config::GConfig.get("testdb.uri", "");
-  if (uri.empty()) {
-    LOG_WARN("skipped, test: [Util][GetMaxAddressId]");
-    return;
-  }
-
-  MySQLConnection db(uri);
-  {
-    // drop table
-    string sql = "DROP TABLE IF EXISTS `0_explorer_meta`;";
-    db.update(sql);
-  }
-
-  {
-    // create table
-    string sql = "CREATE TABLE `0_explorer_meta` ("
-    "`id` int(11) NOT NULL,"
-    "`key` varchar(64) NOT NULL,"
-    "`value` varchar(1024) NOT NULL,"
-    "`created_at` datetime NOT NULL,"
-    "`updated_at` datetime NOT NULL,"
-    "PRIMARY KEY (`id`),"
-    "UNIQUE KEY `key` (`key`)"
-    ") ENGINE=InnoDB DEFAULT CHARSET=utf8;";
-    db.update(sql);
-  }
-
-  ASSERT_EQ(GetMaxAddressId(db), 1);
-  ASSERT_EQ(GetMaxAddressId(db), 2);
-  ASSERT_EQ(GetMaxAddressId(db), 3);
-
-  // 不drop table.0_explorer_meta 后面测试用例会用到
-}
-
-
 TEST(Util, GetAddressIds) {
   const string uri = Config::GConfig.get("testdb.uri", "");
   if (uri.empty()) {
@@ -117,15 +81,13 @@ TEST(Util, GetAddressIds) {
     allAddresss.insert("1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq");
     ASSERT_EQ(GetAddressIds(uri, allAddresss, addrMap), true);
     ASSERT_EQ(addrMap.size(), 1);
-    const int64_t addrId1 = addrMap["1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq"];
+    ASSERT_EQ(addrMap["1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq"], 15000000001);
 
     allAddresss.insert("1LrM4bojLAKfuoFMXkDtVPMGydX1rkaMqH");
     addrMap.clear();
     ASSERT_EQ(GetAddressIds(uri, allAddresss, addrMap), true);
     ASSERT_EQ(addrMap.size(), 2);
-    ASSERT_EQ(addrMap["1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq"], addrId1);
-    ASSERT_EQ(addrMap["1LrM4bojLAKfuoFMXkDtVPMGydX1rkaMqH"], addrId1 + 1);
-
+    ASSERT_EQ(addrMap["1LrM4bojLAKfuoFMXkDtVPMGydX1rkaMqH"], 22000000001);
   }
 
   {

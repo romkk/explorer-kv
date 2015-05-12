@@ -59,6 +59,38 @@ class TxlogsSimpleTempLogsTest extends ExplorerDatabaseTestCase {
         $this->assertEquals(1, $rows[2]->handle_type);
     }
 
+    public function testFindAndClearTempLogsWithMultiTables() {
+        $this->tableCreateLike('txlogs_0001', '0_tpl_txlogs');
+        $this->tableInsert('txlogs_0001', [
+            ['id' => 1, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'tx_hash' => 'txhash8', 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
+            ['id' => 2, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'tx_hash' => 'txhash9', 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
+        ]);
+
+        $logs = Txlogs::getTempLogs(1);
+        $this->assertEquals(4, count($logs));
+        $this->assertEquals('txhash9', $logs[0]['tx_hash']);
+        $this->assertEquals('txhash8', $logs[1]['tx_hash']);
+        $this->assertEquals('txhash7', $logs[2]['tx_hash']);
+        $this->assertEquals('txhash6', $logs[3]['tx_hash']);
+
+        $tmp = Config::get('app.txlogs_maximum_rows');
+        Config::put('app.txlogs_maximum_rows', 2);
+
+        Txlogs::clearTempLogs($logs);
+        $this->assertEquals('txlogs_0002', Txlogs::getLatestTable());
+        $this->assertTableRowCount('txlogs_0002', 4);
+
+        $all = Txlogs::orderBy('id', 'desc')->get();
+        $this->assertEquals('txhash6', $all[0]['tx_hash']);
+        $this->assertEquals('txhash7', $all[1]['tx_hash']);
+        $this->assertEquals('txhash8', $all[2]['tx_hash']);
+        $this->assertEquals('txhash9', $all[3]['tx_hash']);
+        $this->assertEquals(2, $all[3]['handle_type']);
+
+        $this->tableDeleteLike('txlogs_%');
+        Config::put('app.txlogs_maximum_rows', $tmp);
+    }
+
     /**
      * Returns the test dataset.
      *

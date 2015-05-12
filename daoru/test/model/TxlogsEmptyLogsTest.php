@@ -14,7 +14,6 @@ class TxlogsEmptyLogsTest extends ExplorerDatabaseTestCase {
 
     protected function tearDown() {
         $this->tableDeleteLike('txlogs_%');
-        PHPUnit_Extensions_Database_Operation_Factory::DELETE_ALL();
         parent::tearDown();
     }
 

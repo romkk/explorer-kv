@@ -32,38 +32,6 @@ class TxlogsTableTest extends ExplorerDatabaseTestCase {
         $this->assertEquals('txlogs_0002', $table);
     }
 
-    public function testGetCurrentTableWithoutCache() {
-        // 新建表
-        $this->assertFalse($this->tableExists('txlogs_0000'));
-        $this->assertFalse($this->tableExists('txlogs_0001'));
-        $table = Txlogs::getCurrentTable(false);
-        $this->assertEquals('txlogs_0000', $table);
-        $this->assertTrue($this->tableExists('txlogs_0000'));
-        $this->assertFalse($this->tableExists('txlogs_0001'));
-
-        // 数据没有达到阈值，不切换到下一张表
-        $table = Txlogs::getCurrentTable(false);
-        $this->assertEquals('txlogs_0000', $table);
-        $this->assertTrue($this->tableExists('txlogs_0000'));
-        $this->assertFalse($this->tableExists('txlogs_0001'));
-
-        // 数据达到阈值，切换表
-        $tmp = Config::get('app.txlogs_maximum_rows');      //临时设置为 0
-        Config::put('app.txlogs_maximum_rows', 0);
-
-        $table = Txlogs::getCurrentTable(false);
-        $this->assertEquals('txlogs_0001', $table);
-        $this->assertTrue($this->tableExists('txlogs_0001'));
-        $this->assertTrue($this->tableExists('txlogs_0001'));
-
-        $table = Txlogs::getCurrentTable(false);
-        $this->assertEquals('txlogs_0002', $table);
-        $this->assertTrue($this->tableExists('txlogs_0001'));
-        $this->assertTrue($this->tableExists('txlogs_0002'));
-
-        Config::put('app.txlogs_maximum_rows', $tmp);      //还原
-    }
-
     /**
      * Returns the test dataset.
      *

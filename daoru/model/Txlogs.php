@@ -4,6 +4,29 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 
 class Txlogs extends Model {
+
+    public $fillable = ['handle_status', 'handle_type', 'block_height', 'tx_hash'];
+
+    const ROW_TYPE_FORWARD = 1;
+    const ROW_TYPE_ROLLBACK = 2;
+
+    public static function getTableList(){
+        $conn = App::$container->make('capsule')->getConnection();
+        $sql = "SELECT table_name
+                FROM information_schema.tables
+                WHERE table_type = 'BASE TABLE' AND table_schema='BitcoinExplorerDB' AND table_name like 'txlogs_%'
+                ORDER BY table_name DESC";
+        $rows = $conn->select($sql);
+        return array_map(function ($r) {
+            return $r['table_name'];
+        }, $rows);
+    }
+
+    public static function getLatestTable() {
+        $tables = static::getTableList();
+        return count($tables) ? $tables[0] : null;
+    }
+
     public static function createNewTable($currentTable) {
         if (is_null($currentTable)) {
             $nextTable = 'txlogs_0000';
@@ -21,37 +44,8 @@ class Txlogs extends Model {
         return $nextTable;
     }
 
-    public static function getCurrentTable() {
-        $conn = App::$container->make('capsule')->getConnection();
-        $sql = "SELECT table_name
-                FROM information_schema.tables
-                WHERE table_type = 'BASE TABLE' AND table_schema='BitcoinExplorerDB' AND table_name like 'txlogs_%'
-                ORDER BY table_name DESC limit 1";
-        $latestTable = $conn->selectOne($sql)['table_name'];
-
-        if ($latestTable) {
-            Log::debug(sprintf('获取最新 txlogs 表 %s', $latestTable));
-        } else {
-            Log::debug('当前没有任何 txlogs 表');
-        }
-
-        // 检查当前表
-        if ($latestTable) {
-            $result = $conn->selectOne('select count(`id`) as cnt from ' . $latestTable)['cnt'];
-            if ($result < Config::get('app.txlogs_maximum_rows')) {
-                Log::debug(sprintf('找到了可用的 txlogs 表 %s', $latestTable));
-                return $latestTable;
-            }
-        }
-
-        // 计算当前表
-        $currentTable = self::createNewTable($latestTable);
-        Log::debug(sprintf('新建了 txlogs 表 %s', $currentTable));
-        return $currentTable;
-    }
-
     public function getTable() {
-        return $this->table = static::getCurrentTable();
+        return $this->table = static::getLatestTable();
     }
 
     public static function clearTempLogs($tempLogs) {
@@ -59,17 +53,32 @@ class Txlogs extends Model {
             return;
         }
 
-        $rows = array_map(function(Txlogs $tx) {
-            $tx = $tx->toArray();
-            unset($tx['id']);
-            $tx['handle_type'] = 2;
-            $tx['handle_status'] = 100;
-            $tx['created_at'] = $tx['updated_at'] = Carbon::now();
-
-            return $tx;
+        $rows = array_map(function($tx) {
+            $ret = [
+                'handle_status' => 100,
+                'handle_type' => static::ROW_TYPE_ROLLBACK,
+                'block_height' => $tx['block_height'],
+                'tx_hash' => $tx['tx_hash'],
+                'created_at' => Carbon::now()->toDateTimeString(),
+                'updated_at' => Carbon::now()->toDateTimeString(),
+            ];
+            return $ret;
         }, $tempLogs);
 
         $conn = App::$container->make('capsule')->getConnection();
+
+        $table = static::getLatestTable();
+        $rowCount = 0;
+
+        if (!is_null($table)) {
+            $rowCount = $conn->selectOne('select count(`id`) as cnt from ' . $table)['cnt'];
+        }
+
+        if (is_null($table) || $rowCount >= Config::get('app.txlogs_maximum_rows')) {
+            $table = static::createNewTable($table);
+        }
+
+        Log::debug(sprintf('找到了可用的 txlogs 表 %s', $table));
 
         $conn->transaction(function() use ($rows) {
             foreach (array_chunk($rows, Config::get('app.batch_insert')) as $subsetRows) {
@@ -77,37 +86,39 @@ class Txlogs extends Model {
             }
         });
 
-
-        Log::debug('清理完毕');
+        Log::debug('回滚完毕');
     }
 
     public static function getTempLogs($pageSize = 50) {
-        $q = static::query()
-            ->orderBy('id', 'desc')
-            ->take($pageSize);
+        $conn = App::$container->make('capsule')->getConnection();
+        $tables = static::getTableList();
 
-        $offset = 0;
         $done = false;
         $ret = [];
 
-        while (!$done && ($txs = $q->skip($offset * $pageSize)->get()) && count($txs)) {
-            foreach ($txs as $tx) {
-                if ($tx->isTempLog()) {
-                    $ret[] = $tx;
-                    continue;
+        while (!$done && count($tables)) {
+            $tbl = array_shift($tables);
+
+            $offset = 0;
+            $query = $conn->table($tbl)
+                ->orderBy('id', 'desc')
+                ->take($pageSize);
+
+            while (!$done && ($txs = $query->skip($offset * $pageSize)->get(['handle_type', 'block_height', 'tx_hash'])) && count($txs)) {
+                foreach ($txs as $tx) {
+                    if ($tx['handle_type'] === 1 && $tx['block_height'] === -1) {
+                        $ret[] = $tx;
+                        continue;
+                    }
+                    $done = true;
+                    break;
                 }
-                $done = true;
-                break;
+                $offset++;
             }
 
-            $offset++;
         }
 
         Log::debug(sprintf('获取要需要清理的临时记录，共计 %s 条', count($ret)));
         return $ret;
-    }
-
-    public function isTempLog() {
-        return $this->handle_type === 1 && $this->block_height === -1;
     }
 }

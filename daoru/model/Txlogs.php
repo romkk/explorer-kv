@@ -48,6 +48,23 @@ class Txlogs extends Model {
         return $this->table = static::getLatestTable();
     }
 
+    public static function ensureTable() {
+        $conn = App::$container->make('capsule')->getConnection();
+
+        $table = static::getLatestTable();
+        $rowCount = 0;
+
+        if (!is_null($table)) {
+            $rowCount = $conn->selectOne('select count(`id`) as cnt from ' . $table)['cnt'];
+        }
+
+        if (is_null($table) || $rowCount >= Config::get('app.txlogs_maximum_rows')) {
+            $table = static::createNewTable($table);
+        }
+
+        return $table;
+    }
+
     public static function clearTempLogs($tempLogs) {
         if (!count($tempLogs)) {
             return;
@@ -65,18 +82,8 @@ class Txlogs extends Model {
             return $ret;
         }, $tempLogs);
 
+        $table = static::ensureTable();
         $conn = App::$container->make('capsule')->getConnection();
-
-        $table = static::getLatestTable();
-        $rowCount = 0;
-
-        if (!is_null($table)) {
-            $rowCount = $conn->selectOne('select count(`id`) as cnt from ' . $table)['cnt'];
-        }
-
-        if (is_null($table) || $rowCount >= Config::get('app.txlogs_maximum_rows')) {
-            $table = static::createNewTable($table);
-        }
 
         Log::debug(sprintf('找到了可用的 txlogs 表 %s', $table));
 

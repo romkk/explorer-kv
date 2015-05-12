@@ -42,14 +42,14 @@ int32_t AddressTableIndex(const string &address) {
 }
 
 // 获取地址的ID映射关系
-// 不存在则创建一条记录，该函数执行在DB事务之外，独立的，不受DB事务影响
-// 由于自增ID是自行管理的，所以必须在DB事务之外
-bool GetAddressIds(const string &dbURI, const set<string> &allAddresss,
+bool GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
                    map<string, int64_t> &addrMap) {
-  MySQLConnection db(dbURI);
   const string now = date("%F %T");
 
   for (auto &a : allAddresss) {
+    if (addrMap.find(a) != addrMap.end()) {
+      continue;  // already in map
+    }
     MySQLResult res;
     char **row = nullptr;
     const int64_t tableIdx = AddressTableIndex(a) % 64;

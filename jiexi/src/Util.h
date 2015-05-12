@@ -32,7 +32,7 @@
 int32_t HexToDecLast2Bytes(const string &hex);
 int32_t AddressTableIndex(const string &address);
 
-bool GetAddressIds(const string &dbURI, const set<string> &allAddresss,
+bool GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
                    map<string, int64_t> &addrMap);
 
 #endif

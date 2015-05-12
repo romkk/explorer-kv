@@ -228,6 +228,12 @@ int32_t Parser::getTxLogMaxIdx() {
   return 0;  // default value is zero
 }
 
+bool Parser::txsHash2ids(const std::set<uint256> &hashVec,
+                         std::map<uint256, int64_t> &hash2id) {
+  // TODO
+  // tx <-> raw_tx， hash/ID均一一对应，表数量一致
+}
+
 void Parser::updateLastTxlogId(const int64_t newId) {
   string sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %lld "
                                " WHERE `key`='jiexi.last_txlog_offset'",
@@ -407,7 +413,40 @@ bool Parser::acceptBlock(const uint256 &blkhash, const int height) {
   return false;
 }
 
-
+//bool _markOutputAsSpent(MySQLConnection &db,
+//                        const int64_t txId, const int32_t position,
+//                        const int64_t spentTxId, const int32_t spentPosition) {
+//  string sql;
+//
+//  // 将交易标记为已花费
+//  sql = Strings::Format("UPDATE `tx_outputs_%04d` SET "
+//                        " `spent_tx_id`=%lld, `spent_position`=%d"
+//                        " WHERE `tx_id`=%lld AND `position`=%d "
+//                        " AND `spent_tx_id`=0 AND `spent_position`=-1 ",
+//                        txId % 100, spentTxId, spentPosition,
+//                        txId, position);
+//  if (db.update(sql.c_str()) != 1) {
+//    LOG_ERROR("mark txId: %lld : %d as spent failure, spend txId: %lld : %d",
+//              txId, position, spentTxId, spentPosition);
+//    return false;
+//  }
+//
+//  // 变更地址交易记录
+//  // 1. 获取对应的地址
+//  {
+//    sql = Strings::Format("");
+//  }
+//
+//    // 2. 获取地址的最后一条交易信息
+//
+//    // 3. 插入新的交易信息
+//
+//    const string tableName = Strings::Format("address_txs_%s", date("%Y%m%d").c_str());
+//    sql = Strings::Format("INSERT INTO `` ");
+//
+//  
+//  return true;
+//}
 
 bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
                      const int64_t txId) {
@@ -486,16 +525,14 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
 }
 
 
-bool _insertTxOutputs(MySQLConnection &db, const string &dbUri,
-                      const CTransaction &tx,
-                      const int64_t txId) {
+bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx, const int64_t txId) {
   int n;
   const string tableName = Strings::Format("tx_outputs_%04d", txId % 100);
   const string now = date("%F %T");
   // table.tx_outputs_xxxx
-  const string fields = "`tx_id`,`position`,`address_id`,`value`,`output_script_asm`,"
-  "`output_script_hex`,`output_script_type`,`is_spendable`,`spent_tx_id`,`spent_position`,`created_at`";
-  vector<string> itemValues;
+  const string fields = "`tx_id`,`position`,`address`,`address_ids`,`value`,"
+  "`output_script_asm`,`output_script_hex`,`output_script_type`,`is_spendable`,"
+  "`spent_tx_id`,`spent_position`,`created_at`,`updated_at`";
   set<string> allAddresss;
 
   // 提取涉及到的所有地址
@@ -514,16 +551,55 @@ bool _insertTxOutputs(MySQLConnection &db, const string &dbUri,
   }
   // 拿到所有地址的id
   map<string, int64_t> addrMap;
-  if (!GetAddressIds(dbUri, allAddresss, addrMap)) {
+  if (!GetAddressIds(db, allAddresss, addrMap)) {
     return false;
   }
 
   // 处理输入
   n = 0;
+  vector<string> itemValues;
   for (auto &out : tx.vout) {
-    // TODO
+    string addressStr;
+    string addressIdsStr;
+    txnouttype type;
+    vector<CTxDestination> addresses;
+    int nRequired;
+    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
+      LOG_WARN("extract destinations failure, txId: %lld, hash: %s",
+               txId, tx.GetHash().ToString().c_str());
+      continue;
+    }
+    for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
+      const string addrStr = CBitcoinAddress(addr).ToString();
+      addressStr    += "," + addrStr;
+      addressIdsStr += "," + addrMap[addrStr];
+    }
+    // 去掉拼接的最后一个逗号
+    if (addressStr.length())
+      addressStr.resize(addressStr.length() - 1);
+    if (addressIdsStr.length())
+      addressIdsStr.resize(addressIdsStr.length() - 1);
+
+    itemValues.push_back(Strings::Format("%lld,%d,'%s','%s',"
+                                         "%lld,'%s','%s','%s',"
+                                         "%d,%lld,%d,'%s','%s'",
+                                         // `tx_id`,`position`,`address`,`address_ids`
+                                         txId, n, addressStr.c_str(), addressIdsStr.c_str(),
+                                         // `value`,`output_script_asm`,`output_script_hex`,`output_script_type`
+                                         out.nValue, out.scriptPubKey.ToString().c_str(),
+                                         HexStr(out.scriptPubKey.begin(), out.scriptPubKey.end()).c_str(),
+                                         GetTxnOutputType(type) ? GetTxnOutputType(type) : "",
+                                         // `is_spendable`,`spent_tx_id`,`spent_position`,`created_at`,`updated_at`
+                                         (type != TX_NONSTANDARD && type != TX_NULL_DATA) ? 1 : 0,
+                                         0, -1, now.c_str(), now.c_str()));
   }
 
+  // multi insert outputs
+  if (!multiInsert(db, tableName, fields, itemValues)) {
+    LOG_ERROR("insert outputs fail, txId: %lld, hash: %s",
+              txId, tx.GetHash().ToString().c_str());
+    return false;
+  }
   return false;
 }
 
@@ -535,8 +611,9 @@ bool Parser::acceptTx(class TxLog *txLog) {
   }
 
   // 处理outputs
-
-  // 将prev_outputs标记为已花费
+  if (!_insertTxOutputs(dbExplorer_, txLog->tx_, txLog->txId_)) {
+    // TODO: error
+  }
 
   // 清理 table.unspent_outputs 记录
 

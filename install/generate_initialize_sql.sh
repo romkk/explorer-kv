@@ -144,7 +144,8 @@ CREATE TABLE `address_unspent_outputs_%04d` (
   `value` bigint(20) NOT NULL,
   `created_at` int(11) NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `address_id_block_height_tx_id_position_position2` (`address_id`,`block_height`,`tx_id`,`position`,`position2`)
+  UNIQUE KEY `address_id_tx_id_position_position2` (`address_id`,`tx_id`,`position`,`position2`),
+  KEY `address_id_block_height` (`address_id`,`block_height`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 loop 0 9 "$tpl_unspent_outputs"

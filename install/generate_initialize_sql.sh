@@ -35,7 +35,7 @@ loop 0 63 "$tpl_raw_txs"
 tpl_address='
 DROP TABLE IF EXISTS `addresses_%04d`;
 CREATE TABLE `addresses_%04d` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `id` bigint(20) NOT NULL,
   `address` varchar(35) NOT NULL,
   `tx_count` int(11) NOT NULL DEFAULT '0',
   `total_received` bigint(20) NOT NULL DEFAULT '0',

@@ -413,40 +413,43 @@ bool Parser::acceptBlock(const uint256 &blkhash, const int height) {
   return false;
 }
 
-//bool _markOutputAsSpent(MySQLConnection &db,
-//                        const int64_t txId, const int32_t position,
-//                        const int64_t spentTxId, const int32_t spentPosition) {
-//  string sql;
-//
-//  // 将交易标记为已花费
-//  sql = Strings::Format("UPDATE `tx_outputs_%04d` SET "
-//                        " `spent_tx_id`=%lld, `spent_position`=%d"
-//                        " WHERE `tx_id`=%lld AND `position`=%d "
-//                        " AND `spent_tx_id`=0 AND `spent_position`=-1 ",
-//                        txId % 100, spentTxId, spentPosition,
-//                        txId, position);
-//  if (db.update(sql.c_str()) != 1) {
-//    LOG_ERROR("mark txId: %lld : %d as spent failure, spend txId: %lld : %d",
-//              txId, position, spentTxId, spentPosition);
-//    return false;
-//  }
-//
-//  // 变更地址交易记录
-//  // 1. 获取对应的地址
-//  {
-//    sql = Strings::Format("");
-//  }
-//
-//    // 2. 获取地址的最后一条交易信息
-//
-//    // 3. 插入新的交易信息
-//
-//    const string tableName = Strings::Format("address_txs_%s", date("%Y%m%d").c_str());
-//    sql = Strings::Format("INSERT INTO `` ");
-//
-//  
-//  return true;
-//}
+
+bool _removeUnspentOutputs(MySQLConnection &db,
+                           const int64_t txId, const int32_t position) {
+  MySQLResult res;
+  string sql;
+  string tableName;
+  char **row;
+  int n;
+
+  // 获取相关output信息
+  tableName = Strings::Format("tx_outputs_%04d", txId % 100);
+  sql = Strings::Format("SELECT `address_ids` FROM `%s` WHERE `tx_id`=%lld AND `position`=%d",
+                        tableName.c_str(), txId, position);
+  db.query(sql, res);
+  row = res.nextRow();
+  assert(res.numRows() == 1);
+
+  // 获取地址
+  const string s = string(row[0]);
+  vector<string> addressIdsStrVec = split(s, ',');
+  n = -1;
+  for (auto &addrIdStr : addressIdsStrVec) {
+    n++;
+    const int64_t addrId = atoi64(addrIdStr.c_str());
+
+    // 将 address_unspent_outputs_xxxx 相关记录删除
+    tableName = Strings::Format("address_unspent_outputs_%04d", addrId % 10);
+    sql = Strings::Format("DELETE FROM `%s` WHERE `address_id`=%lld AND `tx_id`=%lld "
+                          " AND `position`=%d AND `position2`=%d ",
+                          tableName.c_str(), addrId, txId, position, n);
+    if (db.update(sql) != 1) {
+      return false;
+    }
+  }
+  return true;
+}
+
 
 bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
                      const int64_t txId) {
@@ -458,8 +461,9 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
   " `sequence`, `prev_tx_id`, `prev_position`, `prev_address_id`, `prev_value`, `created_at`";
   vector<string> values;
 
-  n = 0;
+  n = -1;
   for (auto &in : tx.vin) {
+    n++;
     uint256 prevHash;
     int64_t prevTxId;
     int32_t prevPos;
@@ -497,6 +501,13 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
         return false;
       }
 
+      // 将 address_unspent_outputs_xxxx 相关记录删除
+      if (!_removeUnspentOutputs(db, prevTxId, prevPos)) {
+        LOG_WARN("remove unspent outputs failure, tx(hash: %s, id: %lld)",
+                 in.prevout.hash.ToString().c_str(), prevTxId);
+        return false;
+      }
+
       // 插入当前交易的inputs
       DBTxOutput dbTxOutput = getTxOutput(db, prevTxId, prevPos);
       if (dbTxOutput.txId == 0) {
@@ -511,7 +522,6 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
                                        dbTxOutput.addressId,
                                        dbTxOutput.value, now.c_str()));
     }
-    n++;
   } /* /for */
 
   // 执行插入 inputs
@@ -556,9 +566,10 @@ bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx, const int64_t
   }
 
   // 处理输入
-  n = 0;
+  n = -1;
   vector<string> itemValues;
   for (auto &out : tx.vout) {
+    n++;
     string addressStr;
     string addressIdsStr;
     txnouttype type;

@@ -19,15 +19,19 @@
 #ifndef Explorer_Util_h
 #define Explorer_Util_h
 
+#include <string>
+#include <sstream>
+#include <vector>
+
 #include "Common.h"
 #include "MySQLConnection.h"
 
 #include "bitcoin/base58.h"
 #include "bitcoin/util.h"
 
-
 #define BILLION 1000000000  // 10亿, 10^9
 
+std::vector<std::string> split(const std::string &s, char delim);
 
 int32_t HexToDecLast2Bytes(const string &hex);
 int32_t AddressTableIndex(const string &address);

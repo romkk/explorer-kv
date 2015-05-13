@@ -415,7 +415,8 @@ bool Parser::acceptBlock(const uint256 &blkhash, const int height) {
 
 
 bool _removeUnspentOutputs(MySQLConnection &db,
-                           const int64_t txId, const int32_t position) {
+                           const int64_t txId, const int32_t position,
+                           map<int64_t, int64_t> &addressBalance) {
   MySQLResult res;
   string sql;
   string tableName;
@@ -424,7 +425,7 @@ bool _removeUnspentOutputs(MySQLConnection &db,
 
   // 获取相关output信息
   tableName = Strings::Format("tx_outputs_%04d", txId % 100);
-  sql = Strings::Format("SELECT `address_ids` FROM `%s` WHERE `tx_id`=%lld AND `position`=%d",
+  sql = Strings::Format("SELECT `address_ids`,`value` FROM `%s` WHERE `tx_id`=%lld AND `position`=%d",
                         tableName.c_str(), txId, position);
   db.query(sql, res);
   row = res.nextRow();
@@ -432,11 +433,15 @@ bool _removeUnspentOutputs(MySQLConnection &db,
 
   // 获取地址
   const string s = string(row[0]);
+  const int64_t value = atoi64(row[1]);
   vector<string> addressIdsStrVec = split(s, ',');
   n = -1;
   for (auto &addrIdStr : addressIdsStrVec) {
     n++;
     const int64_t addrId = atoi64(addrIdStr.c_str());
+
+    // 减扣该地址额度
+    addressBalance[addrId] += -1 * value;
 
     // 将 address_unspent_outputs_xxxx 相关记录删除
     tableName = Strings::Format("address_unspent_outputs_%04d", addrId % 10);
@@ -452,7 +457,7 @@ bool _removeUnspentOutputs(MySQLConnection &db,
 
 
 bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
-                     const int64_t txId) {
+                     const int64_t txId, map<int64_t, int64_t> &addressBalance) {
   int n;
   const string tableName = Strings::Format("tx_inputs_%04d", txId % 100);
   const string now = date("%F %T");
@@ -502,7 +507,7 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
       }
 
       // 将 address_unspent_outputs_xxxx 相关记录删除
-      if (!_removeUnspentOutputs(db, prevTxId, prevPos)) {
+      if (!_removeUnspentOutputs(db, prevTxId, prevPos, addressBalance)) {
         LOG_WARN("remove unspent outputs failure, tx(hash: %s, id: %lld)",
                  in.prevout.hash.ToString().c_str(), prevTxId);
         return false;
@@ -536,7 +541,8 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
 
 
 bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
-                      const int64_t txId, const int64_t blockHeight) {
+                      const int64_t txId, const int64_t blockHeight,
+                      map<int64_t, int64_t> &addressBalance) {
   int n;
   const string now = date("%F %T");
   set<string> allAddresss;
@@ -586,6 +592,9 @@ bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
       const int64_t addrId = addrMap[addrStr];
       addressStr    += "," + addrStr;
       addressIdsStr += "," + Strings::Format("%lld", addrId);
+
+      // 增加每个地址的余额
+      addressBalance[addrId] += out.nValue;
 
       // 每一个输出地址均生成一条 address_unspent_outputs 记录
       string sql = Strings::Format("INSERT INTO `address_unspent_outputs_%04d`"
@@ -637,13 +646,16 @@ bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
 
 // 接收一个新的交易
 bool Parser::acceptTx(class TxLog *txLog) {
+  // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
+  map<int64_t, int64_t> addressBalance;
+
   // 处理inputs
-  if (!_insertTxInputs(dbExplorer_, txLog->tx_, txLog->txId_)) {
+  if (!_insertTxInputs(dbExplorer_, txLog->tx_, txLog->txId_, addressBalance)) {
     // TODO: error
   }
 
   // 处理outputs
-  if (!_insertTxOutputs(dbExplorer_, txLog->tx_, txLog->txId_, txLog->blkHeight_)) {
+  if (!_insertTxOutputs(dbExplorer_, txLog->tx_, txLog->txId_, txLog->blkHeight_, addressBalance)) {
     // TODO: error
   }
 

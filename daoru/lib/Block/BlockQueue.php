@@ -89,14 +89,17 @@ class BlockQueue {
 
     public static function make() {
         $blocks = RawBlock::where('chain_id', 0)
-            ->orderBy('block_height', 'desc')
+            ->orderBy('id', 'desc')
             ->take(50)
             ->get(['id', 'block_hash', 'block_height', 'chain_id', 'created_at'])
+            ->reverse()
             ->map(function (RawBlock $block) {
 
                 $detail = Bitcoin::make()->bm_get_block_detail($block->block_hash);
-
-                $block = new Block($block->block_hash, $detail['previousblockhash'], $block->block_height, 1);
+                if (!array_key_exists('previousblockhash', $detail)) {
+                    $detail['previousblockhash'] = '';
+                }
+                $block = new Block($block->block_hash, $detail['previousblockhash'], $block->block_height, $detail['time']);
 
                 $block->setTxs(array_map(function($tx) use ($block) {
                     $t = new Tx($block, $tx['hash']);

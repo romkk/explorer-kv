@@ -23,35 +23,29 @@
 #include "bitcoin/base58.h"
 #include "bitcoin/util.h"
 
-//static bool getBlockRawHexByHeight(const int height,    MySQLConnection &db, string *rawHex);
-static bool getBlockRawHexByHash(const uint256 &hash, MySQLConnection &db,
-                                 string *rawHex, int32_t *chainId, int64_t *blockId);
+static bool getBlockRawHex(const uint256 *hash, const int32_t *height,
+                           MySQLConnection &db,
+                           string *rawHex, int32_t *chainId, int64_t *blockId);
 
+bool getBlockRawHex(const uint256 *hash, const int32_t *height,
+                    MySQLConnection &db,
+                    string *rawHex, int32_t *chainId, int64_t *blockId) {
+  if (hash == nullptr && height == nullptr) {
+    return false;
+  }
 
-//bool getBlockRawHexByHeight(const int height, MySQLConnection &db, string *rawHex) {
-//  MySQLResult res;
-//  string sql = Strings::Format("SELECT `hex` FROM `0_raw_blocks` WHERE "
-//                               " `block_height` = %d AND `chain_id` = 0",
-//                               height);
-//  char **row = nullptr;
-//
-//  db.query(sql, res);
-//  if (res.numRows() == 1) {
-//    row = res.nextRow();
-//    rawHex->assign(row[0]);
-//    assert(rawHex->length() % 2 == 0);
-//    return true;
-//  }
-//
-//  return false;
-//}
-
-bool getBlockRawHexByHash(const uint256 &hash, MySQLConnection &db,
-                          string *rawHex, int32_t *chainId, int64_t *blockId) {
   MySQLResult res;
-  string sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
-                               " WHERE `block_hash` = %s ",
-                               hash.ToString().c_str());
+  string sql;
+  if (hash != nullptr) {
+    sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
+                          " WHERE `block_hash` = '%s' ",
+                          hash->ToString().c_str());
+  } else if (height != nullptr) {
+    sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
+                          " WHERE `block_height` = '%s' AND `chain_id`=0 ",
+                          hash->ToString().c_str());
+  }
+
   char **row = nullptr;
 
   db.query(sql, res);
@@ -123,7 +117,13 @@ TxLog::~TxLog() {}
 Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
 running_(true) {
 }
+Parser::~Parser() {
+  // TODO
+}
 
+void Parser::stop() {
+  // TODO
+}
 
 bool Parser::init() {
   if (!dbExplorer_.ping()) {
@@ -133,26 +133,77 @@ bool Parser::init() {
   return true;
 }
 
+
 void Parser::run() {
+  TxLog txlog;
+  int64_t lastTxLogOffset;
 
-  while (running_) {
-    TxLog txlog;
-//    if (tryFetchLog(&txlog) == false) {
-//      sleepMs(1000);
-//      continue;
-//    }
+//  while (running_) {
+  while (1) {
+    lastTxLogOffset = getLastTxLogOffset();
 
+    if (tryFetchLog(&txlog, lastTxLogOffset) == false) {
+      sleepMs(1000);
+      continue;
+    }
+    exit(1);
 
+    if (!checkTableAddressTxs(txlog.blockTimestamp_)) {
+      // TODO: handle error
+    }
+
+    if (!dbExplorer_.execute("START TRANSACTION")) {
+      goto error;
+    }
+
+    if (txlog.tx_.IsCoinBase() && !acceptBlock(txlog.blkHeight_)) {
+      // TODO: handle error
+    }
+
+    if (!acceptTx(&txlog)) {
+      // TODO: handle error
+    }
+
+    if (dbExplorer_.execute("COMMIT")) {
+      goto error;
+    }
+
+    break;
   } /* /while */
+
+error:
+  dbExplorer_.execute("ROLLBACK");
+  return;
 }
 
+// 检测表是否存在，`create table` 这样的语句会导致DB事务隐形提交，必须摘离出事务之外
+bool Parser::checkTableAddressTxs(const uint32_t timestamp) {
+  MySQLResult res;
+  string sql;
 
-void get_inputs_txs(const CTransaction &tx, std::set<uint256> &hashVec) {
-  hashVec.clear();
-  for (auto &it : tx.vin) {
-    hashVec.insert(it.prevout.hash);
+  // show table like to check if exist
+  const string tName = Strings::Format("address_txs_%s",
+                                       date("%Y%m%d", timestamp).c_str());
+  sql = Strings::Format("SHOW TABLES LIKE `address_txs_%s`", tName.c_str());
+  dbExplorer_.query(sql, res);
+  if (res.numRows() > 0) {
+    return true;
   }
+
+  // create if not exist
+  sql = Strings::Format("CREATE TABLE `%s` LIKE `0_tpl_address_txs`", tName.c_str());
+  if (dbExplorer_.update(sql) == 1) {
+    return true;
+  }
+  return false;
 }
+
+//void get_inputs_txs(const CTransaction &tx, std::set<uint256> &hashVec) {
+//  hashVec.clear();
+//  for (auto &it : tx.vin) {
+//    hashVec.insert(it.prevout.hash);
+//  }
+//}
 
 //// hash(uint256) -> (id)int64
 //bool Parser::txs_hash2id(const std::set<uint256> &hashVec,
@@ -189,30 +240,6 @@ void get_inputs_txs(const CTransaction &tx, std::set<uint256> &hashVec) {
 //
 //}
 
-void Parser::addressChanges(const CTransaction &tx,
-                            vector<std::pair<CTxDestination, int64_t> > &items) {
-
-
-  // 处理输出
-  vector<std::pair<uint256, uint32_t> > outputs;
-  for (auto &it : tx.vout) {
-    if (it.IsNull() || it.scriptPubKey.IsUnspendable()) {
-      continue;
-    }
-
-    txnouttype type;
-    std::vector<CTxDestination> vDest;
-    int nRequired;
-    if (ExtractDestinations(it.scriptPubKey, type, vDest, nRequired)) {
-      // TODO: support TX_MULTISIG
-      if (nRequired == 1) {
-        CBitcoinAddress address(vDest[0]);
-      }
-    } else {
-      LOG_WARN("ExtractDestinations fail, txhash: %s", tx.GetHash().ToString().c_str());
-    }
-  }
-}
 
 // 获取当前txlogs的最大表索引
 int32_t Parser::getTxLogMaxIdx() {
@@ -232,6 +259,7 @@ bool Parser::txsHash2ids(const std::set<uint256> &hashVec,
                          std::map<uint256, int64_t> &hash2id) {
   // TODO
   // tx <-> raw_tx， hash/ID均一一对应，表数量一致
+  return false;
 }
 
 void Parser::updateLastTxlogId(const int64_t newId) {
@@ -369,13 +397,13 @@ bool _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t block
 }
 
 // 接收一个新块
-bool Parser::acceptBlock(const uint256 &blkhash, const int height) {
+bool Parser::acceptBlock(const int32_t height) {
   // 获取块Raw Hex
   string blkRawHex;
   int32_t chainId;
   int64_t blockId;
-  if (!getBlockRawHexByHash(blkhash, dbExplorer_, &blkRawHex, &chainId, &blockId)) {
-    LOG_ERROR("can't find block by hash: %s", blkhash.ToString().c_str());
+  if (!getBlockRawHex(nullptr, &height, dbExplorer_, &blkRawHex, &chainId, &blockId)) {
+    LOG_ERROR("can't find block by height: %d", height);
     return false;
   }
   assert(chainId == 0);
@@ -388,11 +416,13 @@ bool Parser::acceptBlock(const uint256 &blkhash, const int height) {
     ssBlock >> blk;
   }
   catch (std::exception &e) {
-    LOG_ERROR("Block decode failed, hash: %s", blkhash.ToString().c_str());
+    LOG_ERROR("Block decode failed, height: %d, blockId: %lld",
+              height, blockId);
     return false;
   }
 
   // 拿到 tx_hash -> tx_id 的对应关系
+  // 要求"导入"模块：存入所有的区块交易(table.raw_txs_xxxx)
   std::set<uint256> hashVec;
   std::map<uint256, int64_t> hash2id;
   for (auto & it : blk.vtx) {
@@ -455,6 +485,15 @@ bool _removeUnspentOutputs(MySQLConnection &db,
   return true;
 }
 
+int64_t _txHash2Id(MySQLConnection &db, const uint256 &txHash) {
+  // TODO
+  return 0;
+}
+
+DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t position) {
+  // TODO
+  return DBTxOutput();
+}
 
 bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
                      const int64_t txId, map<int64_t, int64_t> &addressBalance) {
@@ -490,7 +529,7 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
     } else
     {
       prevHash = in.prevout.hash;
-      prevTxId = txHash2Id(db, prevHash);
+      prevTxId = _txHash2Id(db, prevHash);
       prevPos  = (int32_t)in.prevout.n;
 
       // 将前向交易标记为已花费
@@ -723,6 +762,7 @@ bool _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
 
 // 接收一个新的交易
 bool Parser::acceptTx(class TxLog *txLog) {
+
   // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
   map<int64_t, int64_t> addressBalance;
 

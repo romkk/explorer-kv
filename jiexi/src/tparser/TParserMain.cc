@@ -16,11 +16,95 @@
  * limitations under the License.
  */
 
+#include <pthread.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <signal.h>
+#include <err.h>
+#include <errno.h>
+#include <unistd.h>
+
+#include <boost/filesystem.hpp>
+
 #include "Common.h"
 #include "Parser.h"
 
+Parser *gParser = nullptr;
+
+void handler(int sig) {
+  if (gParser) {
+    gParser->stop();
+  }
+}
+
+void usage() {
+  fprintf(stderr, "Usage:\n\ttparser -c \"tparser.conf\" -l \"tparser.log\"\n");
+}
+
 int main(int argc, char **argv) {
-  MySQLConnection mysql("asdf");
-  LOG_INFO("time: %u", time(nullptr));
+  char *optLog  = NULL;
+  char *optConf = NULL;
+  FILE *fdLog   = NULL;
+  int c;
+
+  if (argc <= 1) {
+    usage();
+    return 1;
+  }
+  while ((c = getopt(argc, argv, "c:l:h")) != -1) {
+    switch (c) {
+      case 'c':
+        optConf = optarg;
+        break;
+      case 'l':
+        optLog = optarg;
+        break;
+      case 'h': default:
+        usage();
+        exit(0);
+    }
+  }
+
+  // write pid to file
+  writePid2FileOrExit("tparser.pid");
+
+  fdLog = fopen(optLog, "a");
+  if (!fdLog) {
+    fprintf(stderr, "can't open file: %s\n", optLog);
+    exit(1);
+  }
+  Log::SetDevice(fdLog);
+
+  LOG_INFO("---------------------- tparser start ----------------------");
+  if (!boost::filesystem::is_regular_file(optConf)) {
+    LOG_FATAL("can't find config file: %s", optConf);
+    exit(1);
+  }
+  Config::GConfig.parseConfig(optConf);
+
+  // set log level
+  if (IsDebug()) {
+    Log::SetLevel(LOG_LEVEL_DEBUG);
+  } else {
+    Log::SetLevel((LogLevel)Config::GConfig.getInt("log.level", LOG_LEVEL_WARN));
+  }
+
+  signal(SIGTERM, handler);
+  signal(SIGINT,  handler);
+
+  gParser = new Parser();
+  if (!gParser->init()) {
+    LOG_FATAL("Parser init failed");
+    exit(1);
+  }
+
+  try {
+    gParser->run();
+    delete gParser;
+    gParser = nullptr;
+  } catch (std::exception & e) {
+    LOG_FATAL("tparser exception: %s", e.what());
+    return 1;
+  }
   return 0;
 }

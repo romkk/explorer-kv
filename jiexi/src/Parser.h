@@ -73,20 +73,12 @@ private:
 
   int32_t getTxLogMaxIdx();
   void updateLastTxlogId(const int64_t newId);
+  bool checkTableAddressTxs(const uint32_t timestamp);
 
-  bool acceptBlock  (const uint256 &blkhash, const int height);
+  bool acceptBlock  (const int32_t height);
   bool rollbackBlock(const uint256 &blkhash, const int height);
 
   bool acceptTx(class TxLog *txLog);
-
-  void addressChanges(const CTransaction &tx,
-                      vector<std::pair<CTxDestination, int64_t> > &items);
-
-  bool accept_tx_inputs(const CTransaction &tx);
-  void accept_tx_outputs(const CTransaction &tx);
-
-  void rollback_tx_inputs(const CTransaction &tx);
-  void rollback_tx_outputs(const CTransaction &tx);
 
 public:
   Parser();
@@ -101,8 +93,6 @@ public:
 
 };
 
-int64_t txHash2Id(MySQLConnection &db, const uint256 &txHash);
-DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t position);
 bool multiInsert(MySQLConnection &db, const string &table,
                  const string &fields, const vector<string> &values);
 

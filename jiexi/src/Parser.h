@@ -45,11 +45,12 @@ public:
 
 class TxLog {
 public:
-  int64_t logId_;     // id in table
-  int32_t tableIdx_;  // txlogs table name index
-  int32_t status_;    // handle status
-  int32_t type_;      // 1: accept, 2: rollback
-  int32_t blkHeight_;
+  int64_t  logId_;     // id in table
+  int32_t  tableIdx_;  // txlogs table name index
+  int32_t  status_;    // handle status
+  int32_t  type_;      // 1: accept, 2: rollback
+  int32_t  blkHeight_;
+  uint32_t blockTimestamp_;
   string  createdAt_;
 
   string txHex_;

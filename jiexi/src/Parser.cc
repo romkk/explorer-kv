@@ -644,6 +644,83 @@ bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
   return true;
 }
 
+
+// 变更地址&地址对应交易记录
+bool _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
+                       const map<int64_t, int64_t> &addressBalance) {
+  MySQLResult res;
+  char **row;
+  string sql;
+
+  // 前面步骤会确保该表已经存在
+  const int32_t ymd = atoi(date("%Y%m%d", txLog->blockTimestamp_).c_str());
+
+  for (auto &it : addressBalance) {
+    const int64_t addrID      = it.first;
+    const int64_t balanceDiff = it.second;
+
+    // 获取地址信息
+    string addrTableName = Strings::Format("addresses_%04d", addrID / BILLION);
+    sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id`,`total_received`,"
+                          " `total_sent` FROM `%s` WHERE `id`=%lld ",
+                          addrTableName.c_str(), addrID);
+    db.query(sql, res);
+    assert(res.numRows() == 1);
+    row = res.nextRow();
+
+    int32_t prevTxYmd = atoi(row[0]);
+    int64_t prevTxId  = atoi64(row[1]);
+    const int64_t addrBalance = atoi64(row[2]) - atoi64(row[3]);
+    int64_t totalRecv = 0, finalBalance = 0;
+
+    // 处理前向记录
+    if (prevTxYmd > 0 && prevTxId > 0) {
+      // 获取前向记录
+      sql = Strings::Format("SELECT `total_received`,`balance_final` FROM `address_txs_%d`"
+                            " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                            prevTxYmd, addrID, prevTxId);
+      db.query(sql, res);
+      assert(res.numRows() == 1);
+      row = res.nextRow();
+      totalRecv    = atoi64(row[0]);
+      finalBalance = atoi64(row[1]);
+
+      // 更新前向记录
+      sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d, `next_tx_id`=%lld "
+                            " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                            prevTxYmd, ymd, txLog->txId_, addrID, prevTxId);
+      assert(db.update(sql) == 1);
+    }
+    assert(addrBalance == finalBalance);
+    assert(finalBalance + balanceDiff >= 0);
+
+    // 插入当前记录
+    sql = Strings::Format("INSERT INTO `address_txs%d` (`address_id`, `tx_id`, `tx_height`,"
+                          " `total_received`, `balance_diff`, `balance_final`, `prev_ymd`, "
+                          " `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`)"
+                          " VALUES (%lld, %lld, %d, %lld, %lld) ",
+                          ymd, addrID, txLog->txId_, txLog->blkHeight_,
+                          totalRecv + (balanceDiff > 0 ? balanceDiff : 0),
+                          balanceDiff, finalBalance + balanceDiff,
+                          prevTxYmd, prevTxId, 0, 0, date("%F %T").c_str());
+    assert(db.update(sql) == 1);
+
+    // 更新地址信息
+    sql = Strings::Format("UPDATE `%s` SET `tx_count`=`tx_count`+1, "
+                          " `total_received` = `total_received` + %lld,"
+                          " `total_sent`     = `total_sent`     + %lld,"
+                          " `end_tx_ymd`=%d, `end_tx_id`=%d, `updated_at`='%s' "
+                          " WHERE `id`=%lld ",
+                          addrTableName.c_str(),
+                          (balanceDiff > 0 ? balanceDiff : 0),
+                          (balanceDiff < 0 ? balanceDiff * -1 : 0),
+                          ymd, txLog->txId_, date("%F %T").c_str(), addrID);
+    assert(db.update(sql) == 1);
+  } /* /for */
+
+  return false;
+}
+
 // 接收一个新的交易
 bool Parser::acceptTx(class TxLog *txLog) {
   // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
@@ -660,7 +737,9 @@ bool Parser::acceptTx(class TxLog *txLog) {
   }
 
   // 变更地址相关信息
-
+  if (!_insertAddressTxs(dbExplorer_, txLog, addressBalance)) {
+    // TODO: error
+  }
 
   return false;
 }
@@ -698,7 +777,7 @@ bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
 
   // fetch tx log, 每次处理一条日志记录
   sql = Strings::Format(" SELECT `id`,`handle_status`,`handle_type`, "
-                        "   `block_height`,`tx_hash`,`created_at` "
+                        "   `block_height`,`tx_hash`,`created_at`,`block_timestamp` "
                         " FROM `txlogs_%04d` "
                         " WHERE `id` > %d ORDER BY `id` ASC LIMIT 1 ",
                         tableNameIdx, logId);
@@ -731,6 +810,7 @@ bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
   txLog->blkHeight_ = atoi(row[3]);
   txLog->txHash_    = uint256(row[4]);
   txLog->createdAt_ = string(row[5]);
+  txLog->blockTimestamp_ = (uint32_t)atoi64(row[6]);
 
   if (txLog->status_ != TXLOG_STATUS_INIT) {
     LOG_FATAL("invalid status: %d", txLog->status_);

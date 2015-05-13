@@ -19,10 +19,10 @@ class BlockTest extends ExplorerDatabaseTestCase {
             ['id' => 1, 'block_hash' => 'block_hash', 'block_height' => 0, 'chain_id' => 0, 'hex' => 'hex', 'created_at' => Carbon::now()->toDateTimeString()],
         ]);
 
-        $block = new Block('block_hash', 'prev_hash', 0);
+        $block = new Block('block_hash', 'prev_hash', 0, 1);
         $this->assertEquals('hex', $block->getHex());
 
-        $block = new Block('block_hash', 'prev_hash', 0);
+        $block = new Block('block_hash', 'prev_hash', 0, 1);
         $block->setHex('hex2');
         $this->assertEquals('hex2', $block->getHex());
 
@@ -34,14 +34,15 @@ class BlockTest extends ExplorerDatabaseTestCase {
             ['id' => 1, 'block_hash' => 'block_hash', 'block_height' => 0, 'chain_id' => 0, 'hex' => 'hex', 'created_at' => Carbon::now()->toDateTimeString()],
         ]);
 
-        $block = new Block('block_hash', 'prev_hash', 0);
+        $block = new Block('block_hash', 'prev_hash', 0, 1);
         $block->setTxs([]);
         $this->assertEquals([], $block->getTxs());
 
         $block = new Block(
             '00000000b4061b7d09fa7e2f1c9ada6f674c22ba7a0eac6d158b808925c0c766',
             '0000000051b02474c2c68fbbeda6ffd64e00ba518465104605b132e10ee8a266',
-            394772
+            394772,
+            1
         );
         $txs = $block->getTxs();
         $this->assertEquals(1, count($txs));

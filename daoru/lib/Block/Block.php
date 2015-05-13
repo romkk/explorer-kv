@@ -9,11 +9,21 @@ class Block {
     protected $height = null;
     protected $txs = null;
     protected $hex = null;
+    protected $time = null;
 
-    public function __construct($hash, $prevHash, $height) {
+    public function __construct($hash, $prevHash, $height, $blockTimestamp) {
         $this->hash = $hash;
         $this->prevHash = $prevHash;
         $this->height = $height;
+        $this->blockTimestamp = $blockTimestamp;
+    }
+
+    public function getBlockTimestamp() {
+        return $this->blockTimestamp;
+    }
+
+    public function setBlockTimestamp($blockTimestamp) {
+        $this->blockTimestamp = $blockTimestamp;
     }
 
     public function getHash() {
@@ -106,6 +116,7 @@ class Block {
                 'handle_status' => 100,
                 'handle_type' => Txlogs::ROW_TYPE_FORWARD,
                 'block_height' => $this->getHeight(),
+                'block_timestamp' => $this->getBlockTimestamp(),
                 'tx_hash' => $tx->getHash(),
                 'created_at' => $now->toDateTimeString(),
                 'updated_at' => $now->toDateTimeString(),

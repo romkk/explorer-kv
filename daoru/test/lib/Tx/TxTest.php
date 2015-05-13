@@ -20,17 +20,17 @@ class TxTest extends ExplorerDatabaseTestCase {
     }
 
     public function testGetHex() {
-        $block = new Block('hash', 'prevhash', 0);
+        $block = new Block('hash', 'prevhash', 0, 1);
         $tx = new Tx($block, '0d4e9a679dea16607e02e299660571114efc730846c5c94a07bfd2b335e39201');
         $this->assertNull($tx->getHex());
 
-        $block = new Block('hash', 'prevhash', 0);
+        $block = new Block('hash', 'prevhash', 0, 1);
         $tx = new Tx($block, '0d4e9a679dea16607e02e299660571114efc730846c5c94a07bfd2b335e39200');
         $this->assertEquals('hex', $tx->getHex());
     }
 
     public function testInsert() {
-        $block = new Block('hash', 'prevhash', 0);
+        $block = new Block('hash', 'prevhash', 0, 1);
         $tx = new Tx($block, '0d4e9a679dea16607e02e299660571114efc730846c5c94a07bfd2b335e39100');
         $tx->setHex('hex');
         $tx->insert();
@@ -39,7 +39,7 @@ class TxTest extends ExplorerDatabaseTestCase {
     }
 
     public function testInsertAlreadyExist() {
-        $block = new Block('hash', 'prevhash', 0);
+        $block = new Block('hash', 'prevhash', 0, 1);
         $tx = new Tx($block, '0d4e9a679dea16607e02e299660571114efc730846c5c94a07bfd2b335e39200');
         $tx->setHex('hex');
         $tx->insert();

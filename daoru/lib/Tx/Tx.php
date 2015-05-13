@@ -35,10 +35,15 @@ class Tx {
     }
 
     public function insert() {
-        $rawTx = new RawTx();
-        $rawTx->tx_hash = $this->getHash();
-        $rawTx->hex = $this->getHex();
-        $rawTx->created_at = Carbon::now()->toDateTimeString();
-        $rawTx->save();
+        $existingTx = new RawTx();
+        $existingTx->tx_hash = $this->getHash();
+        $existingTx = $existingTx->newQuery()->where('tx_hash', $this->getHash())->first();
+        if (is_null($existingTx)) {
+            $rawTx = new RawTx();
+            $rawTx->tx_hash = $this->getHash();
+            $rawTx->hex = $this->getHex();
+            $rawTx->created_at = Carbon::now()->toDateTimeString();
+            $rawTx->save();
+        }
     }
 }

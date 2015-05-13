@@ -37,4 +37,13 @@ class TxTest extends ExplorerDatabaseTestCase {
 
         $this->assertTableRowCount('raw_txs_0000', 2);
     }
+
+    public function testInsertAlreadyExist() {
+        $block = new Block('hash', 'prevhash', 0);
+        $tx = new Tx($block, '0d4e9a679dea16607e02e299660571114efc730846c5c94a07bfd2b335e39200');
+        $tx->setHex('hex');
+        $tx->insert();
+
+        $this->assertTableRowCount('raw_txs_0000', 1);
+    }
 }

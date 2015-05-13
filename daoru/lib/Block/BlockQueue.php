@@ -45,7 +45,6 @@ class BlockQueue {
             $block->getHeight() === $remote->getHeight() && $block->getHash() !== $remote->getHash();
     }
 
-    //TODO 处理高度相等，但哈希不同的情况
     public function digest(Block $remote) {
         $bitcoinClient = Bitcoin::make();
         $rollbackOffset = 0;

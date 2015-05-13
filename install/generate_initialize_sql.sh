@@ -40,6 +40,10 @@ CREATE TABLE `addresses_%04d` (
   `tx_count` int(11) NOT NULL DEFAULT '0',
   `total_received` bigint(20) NOT NULL DEFAULT '0',
   `total_sent` bigint(20) NOT NULL DEFAULT '0',
+  `begin_tx_id` bigint(20) NOT NULL DEFAULT '0',
+  `begin_tx_ymd` int(11) NOT NULL DEFAULT '0',
+  `end_tx_id` bigint(20) NOT NULL DEFAULT '0',
+  `end_tx_ymd` int(11) NOT NULL DEFAULT '0',
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
   PRIMARY KEY (`id`),
@@ -178,10 +182,12 @@ CREATE TABLE `0_tpl_address_txs` (
   `balance_diff` bigint(20) NOT NULL,
   `balance_final` bigint(20) NOT NULL,
   `prev_ymd` int(11) NOT NULL,
+  `prev_tx_id` bigint(20) NOT NULL,
   `next_ymd` int(11) NOT NULL,
+  `next_tx_id` bigint(20) NOT NULL,
   `created_at` datetime NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `address_id_counter_chain_id` (`address_id`)
+  UNIQUE KEY `address_id_tx_id` (`address_id`,`tx_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 echo "$tpl_address_txs"

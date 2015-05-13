@@ -632,8 +632,6 @@ bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
     return false;
   }
 
-  // TODO: 生成 address_unspent_outputs
-
   return true;
 }
 
@@ -645,7 +643,7 @@ bool Parser::acceptTx(class TxLog *txLog) {
   }
 
   // 处理outputs
-  if (!_insertTxOutputs(dbExplorer_, txLog->tx_, txLog->txId_, txlog->blkHeight_)) {
+  if (!_insertTxOutputs(dbExplorer_, txLog->tx_, txLog->txId_, txLog->blkHeight_)) {
     // TODO: error
   }
 

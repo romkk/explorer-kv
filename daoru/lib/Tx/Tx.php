@@ -34,16 +34,26 @@ class Tx {
         return $this;
     }
 
+    public function toArray() {
+        return [
+            'hash' => $this->getHash(),
+            'table' => RawTx::getTableByHash($this->getHash()),
+        ];
+    }
+
     public function insert() {
+        Log::info('开始插入 Tx', $this->toArray());
         $existingTx = new RawTx();
         $existingTx->tx_hash = $this->getHash();
-        $existingTx = $existingTx->newQuery()->where('tx_hash', $this->getHash())->first();
+        $existingTx = $existingTx->newQuery()->where('tx_hash', $this->getHash())->first(['id']);
         if (is_null($existingTx)) {
             $rawTx = new RawTx();
             $rawTx->tx_hash = $this->getHash();
             $rawTx->hex = $this->getHex();
             $rawTx->created_at = Carbon::now()->toDateTimeString();
             $rawTx->save();
+        } else {
+            Log::info('该交易数据已经存在于 rawtxs 表中，跳过');
         }
     }
 }

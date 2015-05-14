@@ -41,6 +41,8 @@ class Txlogs extends Model {
         $conn = App::$container->make('capsule')->getConnection();
         $conn->statement($sql);
 
+        Log::info(sprintf('新建了表 %s', $nextTable));
+
         return $nextTable;
     }
 
@@ -127,6 +129,7 @@ class Txlogs extends Model {
         }
 
         Log::debug(sprintf('获取要需要清理的临时记录，共计 %s 条', count($ret)));
+
         return $ret;
     }
 }

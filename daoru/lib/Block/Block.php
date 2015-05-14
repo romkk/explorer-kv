@@ -29,6 +29,15 @@ class Block {
         $this->blockTimestamp = $blockTimestamp;
     }
 
+    public function toArray() {
+        return [
+            'height' => $this->getHeight(),
+            'hash' => $this->getHash(),
+            'prev_hash' => $this->getPrevHash(),
+            'time' => $this->getBlockTimestamp(),
+        ];
+    }
+
     public function getBlockTimestamp() {
         return $this->blockTimestamp;
     }
@@ -85,7 +94,7 @@ class Block {
     }
 
     public function insert() {
-        Log::info(sprintf('插入新块记录，height = %d，hash = %s', $this->getHeight(), $this->getHash()));
+        Log::info('插入新块记录', $this->toArray());
         $now = Carbon::now();
         $conn = App::$container->make('capsule')->getConnection();
 
@@ -94,6 +103,7 @@ class Block {
 
         // clear temp logs
         Txlogs::clearTempLogs(Txlogs::getTempLogs());   // clearTempLogs 启用了自己的事务（即便失败也能接受）
+        Log::info('回滚临时记录完成');
 
         // 创建所需的 txlogs 表
         Txlogs::ensureTable();
@@ -109,15 +119,20 @@ class Block {
                 $blk->chain_id++;
                 $blk->save();
             });
+        Log::info('更新已有块的 chain_id 完成');
 
         // insert raw block
-        RawBlock::insert([
+        $rawBlockId = RawBlock::insertGetId([
             'block_hash' => $this->getHash(),
             'block_height' => $this->getHeight(),
             'chain_id' => 0,
             'hex' => $this->getHex(),
             'created_at' => $now->toDateTimeString(),
         ]);
+
+        Log::info(sprintf('rawblock 表插入完成, table id = %d', $rawBlockId));
+
+        Log::info('开始插入 txs');
         forEach($this->getTxs() as $tx) {
             // insert raw txs
             $tx->insert();
@@ -133,6 +148,7 @@ class Block {
                 'updated_at' => $now->toDateTimeString(),
             ]);
         }
+        Log::info('txs 插入完毕');
         // done
         $conn->commit();
     }

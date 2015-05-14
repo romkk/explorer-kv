@@ -87,8 +87,7 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
       sql = Strings::Format("INSERT INTO `%s` (`address`, `tx_count`,"
                             " `total_received`, `total_sent`, `created_at`, `updated_at`)"
                             " VALUES('%s', 0, 0, 0, '%s', '%s')",
-                            tableName.c_str(), tableName.c_str(),
-                            a.c_str(), now.c_str(), now.c_str());
+                            tableName.c_str(), a.c_str(), now.c_str(), now.c_str());
       db.updateOrThrowEx(sql, 1);
       db.query(sqlSelect, res);
     }

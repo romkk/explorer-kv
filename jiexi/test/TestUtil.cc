@@ -27,6 +27,16 @@ TEST(Util, HexToDecLast2Bytes) {
   ASSERT_EQ(HexToDecLast2Bytes("8b60195db4692837d7f61b7be8aa11ecdfaecdcf"), 207);
 }
 
+TEST(Util, split) {
+  string s = "a,b,,Bb,";
+  auto res = split(s, ',');
+  ASSERT_EQ(res.size(), 4);
+  ASSERT_EQ(res[0], "a");
+  ASSERT_EQ(res[1], "b");
+  ASSERT_EQ(res[2], "");
+  ASSERT_EQ(res[3], "Bb");
+}
+
 TEST(Util, GetAddressIds) {
   const string uri = Config::GConfig.get("testdb.uri", "");
   if (uri.empty()) {
@@ -48,30 +58,38 @@ TEST(Util, GetAddressIds) {
     // create table
     // 1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq -> addresses_0015
     sql = "CREATE TABLE `addresses_0015` ("
-    "`id` bigint(20) NOT NULL,"
+    "`id` bigint(20) NOT NULL AUTO_INCREMENT,"
     "`address` varchar(35) NOT NULL,"
     "`tx_count` int(11) NOT NULL DEFAULT '0',"
     "`total_received` bigint(20) NOT NULL DEFAULT '0',"
     "`total_sent` bigint(20) NOT NULL DEFAULT '0',"
+    "`begin_tx_id` bigint(20) NOT NULL DEFAULT '0',"
+    "`begin_tx_ymd` int(11) NOT NULL DEFAULT '0',"
+    "`end_tx_id` bigint(20) NOT NULL DEFAULT '0',"
+    "`end_tx_ymd` int(11) NOT NULL DEFAULT '0',"
     "`created_at` datetime NOT NULL,"
     "`updated_at` datetime NOT NULL,"
     "PRIMARY KEY (`id`),"
     "UNIQUE KEY `address` (`address`)"
-    ") ENGINE=InnoDB DEFAULT CHARSET=utf8;";
+    ") AUTO_INCREMENT=15000000001 ENGINE=InnoDB DEFAULT CHARSET=utf8;";
     db.update(sql);
 
     // 1LrM4bojLAKfuoFMXkDtVPMGydX1rkaMqH -> addresses_0022
     sql = "CREATE TABLE `addresses_0022` ("
-    "`id` bigint(20) NOT NULL,"
+    "`id` bigint(20) NOT NULL AUTO_INCREMENT,"
     "`address` varchar(35) NOT NULL,"
     "`tx_count` int(11) NOT NULL DEFAULT '0',"
     "`total_received` bigint(20) NOT NULL DEFAULT '0',"
     "`total_sent` bigint(20) NOT NULL DEFAULT '0',"
+    "`begin_tx_id` bigint(20) NOT NULL DEFAULT '0',"
+    "`begin_tx_ymd` int(11) NOT NULL DEFAULT '0',"
+    "`end_tx_id` bigint(20) NOT NULL DEFAULT '0',"
+    "`end_tx_ymd` int(11) NOT NULL DEFAULT '0',"
     "`created_at` datetime NOT NULL,"
     "`updated_at` datetime NOT NULL,"
     "PRIMARY KEY (`id`),"
     "UNIQUE KEY `address` (`address`)"
-    ") ENGINE=InnoDB DEFAULT CHARSET=utf8;";
+    ") AUTO_INCREMENT=22000000001 ENGINE=InnoDB DEFAULT CHARSET=utf8;";
     db.update(sql);
   }
 

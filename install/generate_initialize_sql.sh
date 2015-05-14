@@ -248,7 +248,7 @@ CREATE TABLE `0_blocks` (
   `reward_block` bigint(20) NOT NULL,
   `reward_fees` bigint(20) NOT NULL,
   `created_at` datetime NOT NULL,
-  PRIMARY KEY (`block_id`)
+  PRIMARY KEY (`block_id`),
   UNIQUE KEY `block_hash` (`hash`),
   UNIQUE KEY `height_chain_id` (`height`,`chain_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'

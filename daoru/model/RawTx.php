@@ -24,16 +24,6 @@ class RawTx extends Model {
         parent::save();
     }
 
-    public function getId() {
-        if (!is_null($this->id)) {
-            return $this->id;
-        }
-
-        $maxId = static::max('id') ?: 0;
-
-        return ++$maxId;
-    }
-
     public static function getTableByHash($hash) {
         $suffix = hexdec(substr($hash, -2)) % static::TABLE_COUNT;
         return sprintf('raw_txs_%04d', $suffix);

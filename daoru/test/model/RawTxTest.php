@@ -26,24 +26,6 @@ class RawTxTest extends ExplorerDatabaseTestCase {
         $this->assertTableRowCount('raw_txs_0023', 1);
     }
 
-    public function testGetId() {
-        $tx = new RawTx([
-            'tx_hash' => 'd7cd58480b6e0363eafb32e4ac778ffeaafd144cb690a2756bf527d78ff49c97',
-        ]);
-
-        $this->assertNull($tx->id);
-        $this->assertEquals(1, $tx->getId());
-
-        $this->tableInsert('raw_txs_0023', [
-           [ 'id' => 1, 'tx_hash' => 'hash1', 'hex' => 'hex1', 'created_at' => Carbon::now()->toDateTimeString()],
-           [ 'id' => 2, 'tx_hash' => 'hash2', 'hex' => 'hex2', 'created_at' => Carbon::now()->toDateTimeString()],
-        ]);
-
-        $this->assertEquals(3, $tx->getId());
-
-        $this->tableTruncate('raw_txs_0023');
-    }
-
     public function testGetNextId() {
         $id = RawTx::getNextId('raw_txs_0023');
         $this->assertEquals(230e8, $id);

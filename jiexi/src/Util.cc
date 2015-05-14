@@ -62,7 +62,7 @@ int32_t AddressTableIndex(const string &address) {
 }
 
 // 获取地址的ID映射关系
-bool GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
+void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
                    map<string, int64_t> &addrMap) {
   const string now = date("%F %T");
 
@@ -92,16 +92,12 @@ bool GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
                             tableName.c_str(),
                             tableIdx * BILLION, tableName.c_str(),
                             a.c_str(), now.c_str(), now.c_str());
-      if (db.update(sql) == 0) {
-        return false;
-      }
+      db.updateOrThrowEx(sql, 1);
       db.query(sqlSelect, res);
     }
 
     assert(res.numRows() == 1);
     row = res.nextRow();
     addrMap.insert(std::make_pair(a, atoi64(row[0])));
-  }
-  return true;
+  } /* /for */
 }
-

@@ -456,6 +456,10 @@ public:
 #define THROW_EXCEPTION_EX(type, fmt, args...) \
 throw Exception(type, (AT), Strings::Format(fmt, ##args))
 
+#define THROW_EXCEPTION_DB(what) throw Exception(EIO, (AT), (what))
+#define THROW_EXCEPTION_DBEX(fmt, args...) \
+throw Exception(EIO, (AT), Strings::Format(fmt, ##args))
+
 /**
  * Config
  * after load(calling parseConfig and parseArgs), it is read only

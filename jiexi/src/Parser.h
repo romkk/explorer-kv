@@ -73,12 +73,12 @@ private:
 
   int32_t getTxLogMaxIdx();
   void updateLastTxlogId(const int64_t newId);
-  bool checkTableAddressTxs(const uint32_t timestamp);
+  void checkTableAddressTxs(const uint32_t timestamp);
 
-  bool acceptBlock  (const int32_t height);
+  void acceptBlock  (const int32_t height);
   bool rollbackBlock(const uint256 &blkhash, const int height);
 
-  bool acceptTx(class TxLog *txLog);
+  void acceptTx(class TxLog *txLog);
 
 public:
   Parser();

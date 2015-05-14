@@ -36,7 +36,7 @@ std::vector<std::string> split(const std::string &s, char delim);
 int32_t HexToDecLast2Bytes(const string &hex);
 int32_t AddressTableIndex(const string &address);
 
-bool GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
+void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
                    map<string, int64_t> &addrMap);
 
 #endif

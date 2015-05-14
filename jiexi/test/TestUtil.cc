@@ -79,13 +79,13 @@ TEST(Util, GetAddressIds) {
     std::set<std::string> allAddresss;
     map<string, int64_t> addrMap;
     allAddresss.insert("1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq");
-    ASSERT_EQ(GetAddressIds(db, allAddresss, addrMap), true);
+    GetAddressIds(db, allAddresss, addrMap);
     ASSERT_EQ(addrMap.size(), 1);
     ASSERT_EQ(addrMap["1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq"], 15000000001);
 
     allAddresss.insert("1LrM4bojLAKfuoFMXkDtVPMGydX1rkaMqH");
     addrMap.clear();
-    ASSERT_EQ(GetAddressIds(db, allAddresss, addrMap), true);
+    GetAddressIds(db, allAddresss, addrMap);
     ASSERT_EQ(addrMap.size(), 2);
     ASSERT_EQ(addrMap["1LrM4bojLAKfuoFMXkDtVPMGydX1rkaMqH"], 22000000001);
   }

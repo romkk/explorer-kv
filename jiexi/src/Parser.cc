@@ -139,8 +139,7 @@ void Parser::run() {
   TxLog txlog;
   int64_t lastTxLogOffset;
 
-//  while (running_) {
-  while (1) {
+  while (running_) {
     lastTxLogOffset = getLastTxLogOffset();
 
     if (tryFetchLog(&txlog, lastTxLogOffset) == false) {
@@ -148,25 +147,16 @@ void Parser::run() {
       continue;
     }
 
-    if (!checkTableAddressTxs(txlog.blockTimestamp_)) {
-      // TODO: handle error
-      goto error;
-    }
+    checkTableAddressTxs(txlog.blockTimestamp_);
 
     if (!dbExplorer_.execute("START TRANSACTION")) {
       goto error;
     }
 
-    if (txlog.tx_.IsCoinBase() && !acceptBlock(txlog.blkHeight_)) {
-      // TODO: handle error
-      goto error;
+    if (txlog.tx_.IsCoinBase()) {
+      acceptBlock(txlog.blkHeight_);
     }
-
-    if (!acceptTx(&txlog)) {
-      // TODO: handle error
-      goto error;
-    }
-
+    acceptTx(&txlog);
     updateLastTxlogId(lastTxLogOffset+1);
 
     if (!dbExplorer_.execute("COMMIT")) {
@@ -183,7 +173,7 @@ error:
 }
 
 // 检测表是否存在，`create table` 这样的语句会导致DB事务隐形提交，必须摘离出事务之外
-bool Parser::checkTableAddressTxs(const uint32_t timestamp) {
+void Parser::checkTableAddressTxs(const uint32_t timestamp) {
   MySQLResult res;
   string sql;
 
@@ -193,16 +183,12 @@ bool Parser::checkTableAddressTxs(const uint32_t timestamp) {
   sql = Strings::Format("SHOW TABLES LIKE '%s'", tName.c_str());
   dbExplorer_.query(sql, res);
   if (res.numRows() > 0) {
-    return true;
+    return;
   }
 
   // create if not exist
   sql = Strings::Format("CREATE TABLE `%s` LIKE `0_tpl_address_txs`", tName.c_str());
-  if (dbExplorer_.update(sql) != 1) {
-    LOG_ERROR("create table '%s' fail", tName.c_str());
-    return false;
-  }
-  return true;
+  dbExplorer_.updateOrThrowEx(sql, 1);
 }
 
 // 获取当前txlogs的最大表索引
@@ -240,7 +226,6 @@ bool Parser::txsHash2ids(const std::set<uint256> &hashVec,
       return false;
     }
     row = res.nextRow();
-    LOG_DEBUG("txhash: %s, id: %lld", hashStr.c_str(), atoi64(row[0]));
     hash2id.insert(std::make_pair(hash, atoi64(row[0])));
   }
 
@@ -253,11 +238,12 @@ void Parser::updateLastTxlogId(const int64_t newId) {
                                " WHERE `key`='jiexi.last_txlog_offset'",
                                newId);
   if (!dbExplorer_.execute(sql.c_str())) {
-    LOG_ERROR("failed to update 'jiexi.last_txlog_offset' to %lld", newId);
+    THROW_EXCEPTION_DBEX("failed to update 'jiexi.last_txlog_offset' to %lld",
+                         newId);
   }
 }
 
-bool _insertBlock(MySQLConnection &db, const CBlock &blk,
+void _insertBlock(MySQLConnection &db, const CBlock &blk,
                   const int64_t blockId, const int32_t height,
                   const int32_t blockBytes) {
   CBlockHeader header = blk.GetBlockHeader();  // alias
@@ -272,8 +258,7 @@ bool _insertBlock(MySQLConnection &db, const CBlock &blk,
                                  prevBlockHash.c_str());
     db.query(sql, res);
     if (res.numRows() != 1) {
-      LOG_FATAL("prev block not exist in DB, hash: ", prevBlockHash.c_str());
-      return false;
+      THROW_EXCEPTION_DBEX("prev block not exist in DB, hash: ", prevBlockHash.c_str());
     }
     row = res.nextRow();
     prevBlockId = atoi64(row[0]);
@@ -320,10 +305,7 @@ bool _insertBlock(MySQLConnection &db, const CBlock &blk,
                                 0/* chainId */, blockBytes,
                                 // 4.
                                 difficulty, blk.vtx.size(), rewardBlock, rewardFees, date("%F %T").c_str());
-  if (db.update(sql1) != 1) {
-    LOG_ERROR("insert block fail, sql: %s", sql1.c_str());
-    return false;
-  }
+  db.updateOrThrowEx(sql1, 1);
 
   // 更新前向块信息, 高度一以后的块需要，创始块不需要
   if (height > 0) {
@@ -331,16 +313,11 @@ bool _insertBlock(MySQLConnection &db, const CBlock &blk,
                                   " WHERE `hash` = '%s' ",
                                   blockId, header.GetHash().ToString().c_str(),
                                   prevBlockHash.c_str());
-    if (db.update(sql2) != 1) {
-      LOG_ERROR("update block fail, sql: %s", sql2.c_str());
-      return false;
-    }
+    db.updateOrThrowEx(sql2, 1);
   }
-
-  return true;
 }
 
-bool _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t blockId,
+void _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t blockId,
                      std::map<uint256, int64_t> &hash2id) {
   const string tableName = Strings::Format("block_txs_%04d", blockId % 100);
   MySQLResult res;
@@ -357,9 +334,8 @@ bool _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t block
     LOG_WARN("block_txs already exist");
     // 数量不符合，异常
     if (existMaxPosition != (int32_t)blk.vtx.size() - 1) {
-      LOG_ERROR("exist txs is not equal block.vtx, now position is %d, should be %d",
-                existMaxPosition, (int32_t)blk.vtx.size() - 1);
-      return false;
+      THROW_EXCEPTION_DBEX("exist txs is not equal block.vtx, now position is %d, should be %d",
+                           existMaxPosition, (int32_t)blk.vtx.size() - 1);
     }
   }
 
@@ -375,22 +351,19 @@ bool _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t block
                                      blockId, i++, hash2id[it.GetHash()],
                                      now.c_str()));
   }
-  if (multiInsert(db, tableName, fields, values)) {
-    return true;
+  if (!multiInsert(db, tableName, fields, values)) {
+    THROW_EXCEPTION_DBEX("multi insert failure, table: '%s'", tableName.c_str());
   }
-
-  return false;
 }
 
 // 接收一个新块
-bool Parser::acceptBlock(const int32_t height) {
+void Parser::acceptBlock(const int32_t height) {
   // 获取块Raw Hex
   string blkRawHex;
   int32_t chainId;
   int64_t blockId;
   if (!getBlockRawHex(nullptr, &height, dbExplorer_, &blkRawHex, &chainId, &blockId)) {
-    LOG_ERROR("can't find block by height: %d", height);
-    return false;
+    THROW_EXCEPTION_DBEX("can't find block by height: %d", height);
   }
   assert(chainId == 0);
 
@@ -402,9 +375,8 @@ bool Parser::acceptBlock(const int32_t height) {
     ssBlock >> blk;
   }
   catch (std::exception &e) {
-    LOG_ERROR("Block decode failed, height: %d, blockId: %lld",
-              height, blockId);
-    return false;
+    THROW_EXCEPTION_DBEX("Block decode failed, height: %d, blockId: %lld",
+                         height, blockId);
   }
 
   // 拿到 tx_hash -> tx_id 的对应关系
@@ -417,20 +389,14 @@ bool Parser::acceptBlock(const int32_t height) {
   txsHash2ids(hashVec, hash2id);
 
   // 插入数据至 table.0_blocks
-  if (!_insertBlock(dbExplorer_, blk, blockId, height, (int32_t)blkRawHex.length()/2)) {
-    return false;
-  }
+  _insertBlock(dbExplorer_, blk, blockId, height, (int32_t)blkRawHex.length()/2);
 
   // 插入数据至 table.block_txs_xxxx
-  if (!_insertBlockTxs(dbExplorer_, blk, blockId, hash2id)) {
-    return false;
-  }
-
-  return true;
+  _insertBlockTxs(dbExplorer_, blk, blockId, hash2id);
 }
 
 
-bool _removeUnspentOutputs(MySQLConnection &db,
+void _removeUnspentOutputs(MySQLConnection &db,
                            const int64_t txId, const int32_t position,
                            map<int64_t, int64_t> &addressBalance) {
   MySQLResult res;
@@ -464,11 +430,8 @@ bool _removeUnspentOutputs(MySQLConnection &db,
     sql = Strings::Format("DELETE FROM `%s` WHERE `address_id`=%lld AND `tx_id`=%lld "
                           " AND `position`=%d AND `position2`=%d ",
                           tableName.c_str(), addrId, txId, position, n);
-    if (db.update(sql) != 1) {
-      return false;
-    }
+    db.updateOrThrowEx(sql, 1);
   }
-  return true;
 }
 
 int64_t _txHash2Id(MySQLConnection &db, const uint256 &txHash) {
@@ -481,7 +444,7 @@ DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t po
   return DBTxOutput();
 }
 
-bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
+void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
                      const int64_t txId, map<int64_t, int64_t> &addressBalance) {
   int n;
   const string tableName = Strings::Format("tx_inputs_%04d", txId % 100);
@@ -525,25 +488,16 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
                                    " AND `spent_tx_id`=0 AND `spent_position`=-1 ",
                                    prevTxId % 100, txId, n,
                                    prevTxId, prevPos);
-      if (db.update(sql.c_str()) != 1) {
-        LOG_ERROR("mark tx(hash: %s, id: %lld) as spent failure, spend txId: %lld",
-                  in.prevout.hash.ToString().c_str(), prevTxId, txId);
-        return false;
-      }
+      db.updateOrThrowEx(sql, 1);
 
       // 将 address_unspent_outputs_xxxx 相关记录删除
-      if (!_removeUnspentOutputs(db, prevTxId, prevPos, addressBalance)) {
-        LOG_WARN("remove unspent outputs failure, tx(hash: %s, id: %lld)",
-                 in.prevout.hash.ToString().c_str(), prevTxId);
-        return false;
-      }
+      _removeUnspentOutputs(db, prevTxId, prevPos, addressBalance);
 
       // 插入当前交易的inputs
       DBTxOutput dbTxOutput = getTxOutput(db, prevTxId, prevPos);
       if (dbTxOutput.txId == 0) {
-        LOG_ERROR("can't find tx output, txId: %lld, hash: %s, position: %d",
-                  prevTxId, prevHash.ToString().c_str(), prevPos);
-        return false;
+        THROW_EXCEPTION_DBEX("can't find tx output, txId: %lld, hash: %s, position: %d",
+                             prevTxId, prevHash.ToString().c_str(), prevPos);
       }
       values.push_back(Strings::Format("%lld,%d,'%s',%u,%lld,%d,"
                                        "%lld,%lld,'%s'",
@@ -556,16 +510,13 @@ bool _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
 
   // 执行插入 inputs
   if (!multiInsert(db, tableName, fields, values)) {
-    LOG_ERROR("insert inputs fail, txId: %lld, hash: %s",
-              txId, tx.GetHash().ToString().c_str());
-    return false;
+    THROW_EXCEPTION_DBEX("insert inputs fail, txId: %lld, hash: %s",
+                         txId, tx.GetHash().ToString().c_str());
   }
-
-  return true;
 }
 
 
-bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
+void _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
                       const int64_t txId, const int64_t blockHeight,
                       map<int64_t, int64_t> &addressBalance) {
   int n;
@@ -588,9 +539,7 @@ bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
   }
   // 拿到所有地址的id
   map<string, int64_t> addrMap;
-  if (!GetAddressIds(db, allAddresss, addrMap)) {
-    return false;
-  }
+  GetAddressIds(db, allAddresss, addrMap);
 
   // 处理输出
   // (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)
@@ -627,11 +576,7 @@ bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
                                    " VALUES (%lld, %lld, %d, %d, %lld, %lld, '%s') ",
                                    addrId % 10, addrId, txId, n, i, blockHeight,
                                    out.nValue, now.c_str());
-      if (!db.update(sql)) {
-        LOG_ERROR("insert address_unspent_outputs fail, txId: %lld, position: %d, position2: %d",
-                  txId, n, i);
-        return false;
-      }
+      db.updateOrThrowEx(sql, 1);
     }
 
     // 去掉拼接的最后一个逗号
@@ -661,17 +606,14 @@ bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
   "`spent_tx_id`,`spent_position`,`created_at`,`updated_at`";
   // multi insert outputs
   if (!multiInsert(db, tableNameTxOutputs, fieldsTxOutputs, itemValues)) {
-    LOG_ERROR("insert outputs fail, txId: %lld, hash: %s",
-              txId, tx.GetHash().ToString().c_str());
-    return false;
+    THROW_EXCEPTION_DBEX("insert outputs fail, txId: %lld, hash: %s",
+                         txId, tx.GetHash().ToString().c_str());
   }
-
-  return true;
 }
 
 
 // 变更地址&地址对应交易记录
-bool _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
+void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
                        const map<int64_t, int64_t> &addressBalance) {
   MySQLResult res;
   char **row;
@@ -714,7 +656,7 @@ bool _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
       sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d, `next_tx_id`=%lld "
                             " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                             prevTxYmd, ymd, txLog->txId_, addrID, prevTxId);
-      assert(db.update(sql) == 1);
+      db.updateOrThrowEx(sql, 1);
     }
     assert(addrBalance == finalBalance);
     assert(finalBalance + balanceDiff >= 0);
@@ -728,7 +670,7 @@ bool _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
                           totalRecv + (balanceDiff > 0 ? balanceDiff : 0),
                           balanceDiff, finalBalance + balanceDiff,
                           prevTxYmd, prevTxId, 0, 0, date("%F %T").c_str());
-    assert(db.update(sql) == 1);
+    db.updateOrThrowEx(sql, 1);
 
     // 更新地址信息
     sql = Strings::Format("UPDATE `%s` SET `tx_count`=`tx_count`+1, "
@@ -740,37 +682,24 @@ bool _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
                           (balanceDiff > 0 ? balanceDiff : 0),
                           (balanceDiff < 0 ? balanceDiff * -1 : 0),
                           ymd, txLog->txId_, date("%F %T").c_str(), addrID);
-    assert(db.update(sql) == 1);
+    db.updateOrThrowEx(sql, 1);
   } /* /for */
-
-  return true;
 }
 
 // 接收一个新的交易
-bool Parser::acceptTx(class TxLog *txLog) {
+void Parser::acceptTx(class TxLog *txLog) {
 
   // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
   map<int64_t, int64_t> addressBalance;
 
   // 处理inputs
-  if (!_insertTxInputs(dbExplorer_, txLog->tx_, txLog->txId_, addressBalance)) {
-    // TODO: error
-    return false;
-  }
+  _insertTxInputs(dbExplorer_, txLog->tx_, txLog->txId_, addressBalance);
 
   // 处理outputs
-  if (!_insertTxOutputs(dbExplorer_, txLog->tx_, txLog->txId_, txLog->blkHeight_, addressBalance)) {
-    // TODO: error
-    return false;
-  }
+  _insertTxOutputs(dbExplorer_, txLog->tx_, txLog->txId_, txLog->blkHeight_, addressBalance);
 
   // 变更地址相关信息
-  if (!_insertAddressTxs(dbExplorer_, txLog, addressBalance)) {
-    // TODO: error
-    return false;
-  }
-
-  return true;
+  _insertAddressTxs(dbExplorer_, txLog, addressBalance);
 }
 
 // 获取上次txlog的进度偏移量

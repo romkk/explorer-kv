@@ -33,6 +33,8 @@ class Bitcoin {
     }
 
     function __call($method, $params) {
+        $start = microtime(true);
+
         $httpStatus = $rawResponse = $response = $curlError = null;
 
         // The ID should be unique for each call
@@ -84,6 +86,8 @@ class Bitcoin {
         if (isset($response['error'])) {
             throw new BitcoindException($response['error']['message'], $statusCode, $curlError, $rawResponse, $url);
         }
+
+        Log::debug(sprintf('Bitcoin client request: %s(%s), total time: %f', $method, join(', ', $params), microtime(true) - $start));
 
         return $response['result'];
     }

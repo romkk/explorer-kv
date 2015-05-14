@@ -21,7 +21,7 @@ while (true) {
     Log::info('获取当前最新块信息');
     $latestRemoteBlockInfo = $bitcoinClient->bm_get_best_block();
     Log::info('当前最新块信息', $latestRemoteBlockInfo);
-    $remote = Block::createFromBlockDetail($bitcoinClient->getBlockByHeight($latestRemoteBlockInfo['height']));
+    $remote = Block::createFromBlockDetail($bitcoinClient->bm_get_block_detail($latestRemoteBlockInfo['hash']));
 
     if ($queue->diff($remote)) {
 
@@ -43,9 +43,10 @@ while (true) {
                 'localHash' => $latestBlock->getHash(),
                 'remoteHash' => $remote->getHash(),
             ]);
-            $detail = $bitcoinClient->getBlockByHeight($latestBlock->getHeight());      // 获取同高度 block
+            $detail = $bitcoinClient->bm_get_block_detail($latestBlock->getHash());      // 获取同高度 block
             Log::info(sprintf('当前高度 %d，获取下一个块高度 %d',$latestBlock->getHeight(), $detail['height']));
         } else {
+            //TODO 修改为 bm_get_block_detail
             $detail = $bitcoinClient->getBlockByHeight($latestBlock->getHeight() + 1);
             Log::info(sprintf('当前高度 %d，获取下一个块高度 %d',$latestBlock->getHeight(), $detail['height']));
         }

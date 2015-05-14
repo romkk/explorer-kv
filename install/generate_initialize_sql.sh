@@ -25,7 +25,7 @@ CREATE TABLE `raw_txs_%04d` (
   `tx_hash` char(64) NOT NULL,
   `hex` longtext NOT NULL,
   `created_at` datetime NOT NULL,
-  UNIQUE KEY `id` (`id`),
+  PRIMARY KEY (`id`),
   UNIQUE KEY `tx_hash` (`tx_hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
@@ -84,8 +84,8 @@ CREATE TABLE `txs_%04d` (
   `inputs_count` int(11) NOT NULL,
   `outputs_count` int(11) NOT NULL,
   `created_at` datetime NOT NULL,
-  UNIQUE KEY `hash` (`hash`),
-  UNIQUE KEY `tx_id` (`tx_id`)
+  PRIMARY KEY (`tx_id`),
+  UNIQUE KEY `hash` (`hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 loop 0 63 "$tpl_txs"
@@ -94,7 +94,7 @@ loop 0 63 "$tpl_txs"
 tpl_tx_inputs='
 DROP TABLE IF EXISTS `tx_inputs_%04d`;
 CREATE TABLE `tx_inputs_%04d` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `tx_id` bigint(20) NOT NULL,
   `position` int(11) NOT NULL,
   `input_script_asm` text NOT NULL,
@@ -104,6 +104,8 @@ CREATE TABLE `tx_inputs_%04d` (
   `prev_position` int(11) NOT NULL,
   `prev_address_id` bigint(20) NOT NULL,
   `prev_value` bigint(20) NOT NULL,
+  `prev_address` varchar(1024) NOT NULL,
+  `prev_address_ids` varchar(512) NOT NULL,
   `created_at` datetime NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `tx_id_position` (`tx_id`,`position`)
@@ -115,7 +117,7 @@ loop 0 99 "$tpl_tx_inputs"
 tpl_tx_outputs='
 DROP TABLE IF EXISTS `tx_outputs_%04d`;
 CREATE TABLE `tx_outputs_%04d` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `tx_id` bigint(20) NOT NULL,
   `position` int(11) NOT NULL,
   `address` varchar(1024) NOT NULL,               
@@ -246,9 +248,9 @@ CREATE TABLE `0_blocks` (
   `reward_block` bigint(20) NOT NULL,
   `reward_fees` bigint(20) NOT NULL,
   `created_at` datetime NOT NULL,
+  PRIMARY KEY (`block_id`)
   UNIQUE KEY `block_hash` (`hash`),
-  UNIQUE KEY `height_chain_id` (`height`,`chain_id`),
-  UNIQUE KEY `block_id` (`block_id`)
+  UNIQUE KEY `height_chain_id` (`height`,`chain_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 echo "$blocks"

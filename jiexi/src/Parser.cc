@@ -42,7 +42,7 @@ bool getBlockRawHex(const uint256 *hash, const int32_t *height,
                           hash->ToString().c_str());
   } else if (height != nullptr) {
     sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
-                          " WHERE `block_height` = '%d' AND `chain_id`=0 ",
+                          " WHERE `block_height` = %d AND `chain_id`=0 ",
                           *height);
   }
 
@@ -130,6 +130,7 @@ bool Parser::init() {
     LOG_FATAL("connect to explorer DB failure");
     return false;
   }
+
   return true;
 }
 
@@ -149,6 +150,7 @@ void Parser::run() {
 
     if (!checkTableAddressTxs(txlog.blockTimestamp_)) {
       // TODO: handle error
+      goto error;
     }
 
     if (!dbExplorer_.execute("START TRANSACTION")) {
@@ -157,16 +159,21 @@ void Parser::run() {
 
     if (txlog.tx_.IsCoinBase() && !acceptBlock(txlog.blkHeight_)) {
       // TODO: handle error
-    }
-exit(1);
-    if (!acceptTx(&txlog)) {
-      // TODO: handle error
-    }
-
-    if (dbExplorer_.execute("COMMIT")) {
       goto error;
     }
 
+    if (!acceptTx(&txlog)) {
+      // TODO: handle error
+      goto error;
+    }
+
+    updateLastTxlogId(lastTxLogOffset+1);
+
+    if (!dbExplorer_.execute("COMMIT")) {
+      goto error;
+    }
+
+exit(1);
     break;
   } /* /while */
 
@@ -198,49 +205,6 @@ bool Parser::checkTableAddressTxs(const uint32_t timestamp) {
   return true;
 }
 
-//void get_inputs_txs(const CTransaction &tx, std::set<uint256> &hashVec) {
-//  hashVec.clear();
-//  for (auto &it : tx.vin) {
-//    hashVec.insert(it.prevout.hash);
-//  }
-//}
-
-//// hash(uint256) -> (id)int64
-//bool Parser::txs_hash2id(const std::set<uint256> &hashVec,
-//                         std::map<uint256, int64_t> &hash2id) {
-//  string sql = "SELECT `id`,`hash` FROM `txs` WHERE `hash` IN (";
-//  for (auto &it : hashVec) {
-//    sql += "'" + it.ToString() + "',";
-//  }
-//  sql.resize(sql.length() - 1);  // remove last ','
-//  sql += ")";
-//
-//  MySQLResult res;
-//  char **row;
-//  dbExplorer_.query(sql, res);
-//  if (hashVec.size() != res.numRows()) {
-//    LOG_FATAL("inputs in db is not match, db: %llu, tx: %llu ",
-//              res.numRows(), hashVec.size());
-//    return false;
-//  }
-//
-//  while ((row = res.nextRow()) != nullptr) {
-//    hash2id.insert(std::make_pair(uint256(row[1]), atoi64(row[0])));
-//  }
-//  assert(hash2id.size() == hashVec.size());
-//
-//  return true;
-//}
-
-//bool Parser::accept_tx_inputs(const CTransaction &tx) {
-//
-//}
-//
-//void Parser::accept_tx_outputs(const CTransaction &tx) {
-//
-//}
-
-
 // 获取当前txlogs的最大表索引
 int32_t Parser::getTxLogMaxIdx() {
   MySQLResult res;
@@ -255,11 +219,33 @@ int32_t Parser::getTxLogMaxIdx() {
   return 0;  // default value is zero
 }
 
+// 根据Hash，查询ID
 bool Parser::txsHash2ids(const std::set<uint256> &hashVec,
                          std::map<uint256, int64_t> &hash2id) {
-  // TODO
+  MySQLResult res;
+  string sql;
+  char **row;
+
   // tx <-> raw_tx， hash/ID均一一对应，表数量一致
-  return false;
+  for (auto &hash : hashVec) {
+    if (hash2id.find(hash) != hash2id.end()) {
+      continue;
+    }
+    const string hashStr = hash.ToString();
+    sql = Strings::Format("SELECT `id` FROM `raw_txs_%04d` WHERE `tx_hash`='%s'",
+                          HexToDecLast2Bytes(hashStr) % 64, hashStr.c_str());
+    dbExplorer_.query(sql, res);
+    if (res.numRows() != 1) {
+      LOG_FATAL("can't find tx's ID, hash: %s", hashStr.c_str());
+      return false;
+    }
+    row = res.nextRow();
+    LOG_DEBUG("txhash: %s, id: %lld", hashStr.c_str(), atoi64(row[0]));
+    hash2id.insert(std::make_pair(hash, atoi64(row[0])));
+  }
+
+  assert(hash2id.size() >= hashVec.size());
+  return true;
 }
 
 void Parser::updateLastTxlogId(const int64_t newId) {
@@ -279,20 +265,20 @@ bool _insertBlock(MySQLConnection &db, const CBlock &blk,
   MySQLResult res;
   char **row = nullptr;
 
-  // 查询前向块信息，前向块信息必然存在
+  // 查询前向块信息，前向块信息必然存在(创始块没有前向块)
   int64_t prevBlockId = 0;
-  {
+  if (height > 0) {
     string sql = Strings::Format("SELECT `block_id` FROM `0_blocks` WHERE `hash` = '%s'",
                                  prevBlockHash.c_str());
     db.query(sql, res);
     if (res.numRows() != 1) {
-      LOG_ERROR("prev block not exist in DB, hash: ", prevBlockHash.c_str());
+      LOG_FATAL("prev block not exist in DB, hash: ", prevBlockHash.c_str());
       return false;
     }
     row = res.nextRow();
     prevBlockId = atoi64(row[0]);
+    assert(prevBlockId > 0);
   }
-  assert(prevBlockId > 0);
 
   // 将当前高度的块的chainID增一，若存在分叉的话. UNIQUE	(height, chain_id)
   // 当前即将插入的块的chainID必然为0
@@ -315,7 +301,7 @@ bool _insertBlock(MySQLConnection &db, const CBlock &blk,
                                 " `difficulty`, `tx_count`, `reward_block`, `reward_fees`, "
                                 " `created_at`) VALUES ("
                                 // 1. `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`
-                                " %lld, %d, '%s', %d, '%s', %lld, "
+                                " %lld, %d, '%s', %d, '%s', %u, "
                                 // 2. `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
                                 " %lld, %lld, %lld, '%s', "
                                 // 3. `next_block_id`, `next_block_hash`, `chain_id`, `size`,
@@ -327,7 +313,7 @@ bool _insertBlock(MySQLConnection &db, const CBlock &blk,
                                 header.GetHash().ToString().c_str(),
                                 header.nVersion,
                                 header.hashMerkleRoot.ToString().c_str(),
-                                header.nTime,
+                                (uint32_t)header.nTime,
                                 // 2.
                                 header.nBits, header.nNonce, prevBlockId, prevBlockHash.c_str(),
                                 // 3.
@@ -341,7 +327,7 @@ bool _insertBlock(MySQLConnection &db, const CBlock &blk,
 
   // 更新前向块信息, 高度一以后的块需要，创始块不需要
   if (height > 0) {
-    string sql2 = Strings::Format("UPDATE `0_blocks` SET `next_block_id` = %lld, `next_block_hash` = '%s'"
+    string sql2 = Strings::Format("UPDATE `0_blocks` SET `next_block_id`=%lld, `next_block_hash`='%s'"
                                   " WHERE `hash` = '%s' ",
                                   blockId, header.GetHash().ToString().c_str(),
                                   prevBlockHash.c_str());
@@ -440,7 +426,7 @@ bool Parser::acceptBlock(const int32_t height) {
     return false;
   }
 
-  return false;
+  return true;
 }
 
 
@@ -629,8 +615,8 @@ bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
       i++;
       const string addrStr = CBitcoinAddress(addr).ToString();
       const int64_t addrId = addrMap[addrStr];
-      addressStr    += "," + addrStr;
-      addressIdsStr += "," + Strings::Format("%lld", addrId);
+      addressStr    += addrStr + ",";
+      addressIdsStr += Strings::Format("%lld", addrId) + ",";
 
       // 增加每个地址的余额
       addressBalance[addrId] += out.nValue;
@@ -656,7 +642,7 @@ bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
 
     itemValues.push_back(Strings::Format("%lld,%d,'%s','%s',"
                                          "%lld,'%s','%s','%s',"
-                                         "%d,%lld,%d,'%s','%s'",
+                                         "%d,0,-1,'%s','%s'",
                                          // `tx_id`,`position`,`address`,`address_ids`
                                          txId, n, addressStr.c_str(), addressIdsStr.c_str(),
                                          // `value`,`output_script_asm`,`output_script_hex`,`output_script_type`
@@ -665,7 +651,7 @@ bool _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
                                          GetTxnOutputType(type) ? GetTxnOutputType(type) : "",
                                          // `is_spendable`,`spent_tx_id`,`spent_position`,`created_at`,`updated_at`
                                          (type != TX_NONSTANDARD && type != TX_NULL_DATA) ? 1 : 0,
-                                         0, -1, now.c_str(), now.c_str()));
+                                         now.c_str(), now.c_str()));
   }
 
   // table.tx_outputs_xxxx
@@ -757,7 +743,7 @@ bool _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
     assert(db.update(sql) == 1);
   } /* /for */
 
-  return false;
+  return true;
 }
 
 // 接收一个新的交易
@@ -769,19 +755,22 @@ bool Parser::acceptTx(class TxLog *txLog) {
   // 处理inputs
   if (!_insertTxInputs(dbExplorer_, txLog->tx_, txLog->txId_, addressBalance)) {
     // TODO: error
+    return false;
   }
 
   // 处理outputs
   if (!_insertTxOutputs(dbExplorer_, txLog->tx_, txLog->txId_, txLog->blkHeight_, addressBalance)) {
     // TODO: error
+    return false;
   }
 
   // 变更地址相关信息
   if (!_insertAddressTxs(dbExplorer_, txLog, addressBalance)) {
     // TODO: error
+    return false;
   }
 
-  return false;
+  return true;
 }
 
 // 获取上次txlog的进度偏移量
@@ -799,6 +788,11 @@ int64_t Parser::getLastTxLogOffset() {
     lastTxLogOffset = strtoll(row[0], nullptr, 10);
     assert(lastTxLogOffset > 0);
   } else {
+    const string now = date("%F %T");
+    sql = Strings::Format("INSERT INTO `0_explorer_meta`(`key`,`value`,`created_at`,`updated_at`) "
+                          " VALUES('jiexi.last_txlog_offset', '0', '%s', '%s')",
+                          now.c_str(), now.c_str());
+    dbExplorer_.update(sql);
     lastTxLogOffset = 0;  // default value is zero
   }
   return lastTxLogOffset;

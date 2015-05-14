@@ -76,17 +76,25 @@ class BlockQueueTest extends ExplorerDatabaseTestCase {
         $this->assertNull($queue->getBlock());
     }
 
+    public function testDigestEmptyQueue() {
+        $queue = new BlockQueue(new Collection());
+        $remote = new Block('00000000ce07e1de4bec68ee5055259d5d64cdf4b23b0317135c1955296cab3d', '000000000000e6ae2516b4249f14f368dd57adc23d0f7c8a6c615f5cc0d50db8', 300003, 1412902068);
+        $queue->digest($remote, $newBlock, $orphanBlocks);
+        $this->assertEquals(0, count($orphanBlocks));
+        $this->assertEquals($remote, $newBlock);
+    }
+
     public function testDigestNoOrphan() {
         $queue = new BlockQueue(new Collection([
-            new Block('hash1', 'prevhash1', 0, 1),
-            new Block('hash2', 'prevhash2', 1, 1),
-            new Block('hash3', 'prevhash3', 2, 1),
+            new Block('000000000000226f7618566e70a2b5e020e29579b46743f05348427239bf41a1', '00000000dfe970844d1bf983d0745f709368b5c66224837a17ed633f0dabd300', 300000, 1412899877),
+            new Block('0000000000004829474748f3d1bc8fcf893c88be255e6d7f571c548aff57abf4', '000000000000226f7618566e70a2b5e020e29579b46743f05348427239bf41a1', 300001, 1412900707),
+            new Block('000000000000e6ae2516b4249f14f368dd57adc23d0f7c8a6c615f5cc0d50db8', '0000000000004829474748f3d1bc8fcf893c88be255e6d7f571c548aff57abf4', 300002, 1412900867),
         ]));
 
-        $remote = new Block('hash4', 'hash3', 3, 1);
-        list($remotePointer, $orphanBlocks) = $queue->digest($remote);
+        $remote = new Block('00000000ce07e1de4bec68ee5055259d5d64cdf4b23b0317135c1955296cab3d', '000000000000e6ae2516b4249f14f368dd57adc23d0f7c8a6c615f5cc0d50db8', 300003, 1412902068);
+        $queue->digest($remote, $newBlock, $orphanBlocks);
         $this->assertEquals(0, count($orphanBlocks));
-        $this->assertEquals($remotePointer, $remote);
+        $this->assertEquals($remote, $newBlock);
     }
 
     public function testDigestOrphanBlockFound() {
@@ -97,9 +105,9 @@ class BlockQueueTest extends ExplorerDatabaseTestCase {
         ]));
 
         $remote = new Block('00000000ce07e1de4bec68ee5055259d5d64cdf4b23b0317135c1955296cab3d', '000000000000e6ae2516b4249f14f368dd57adc23d0f7c8a6c615f5cc0d50db8', 300003, 1412900867);
-        list($remotePointer, $orphanBlocks) = $queue->digest($remote);
+        $queue->digest($remote, $newBlock, $orphanBlocks);
         $this->assertEquals(2, count($orphanBlocks));
-        $this->assertEquals('0000000000004829474748f3d1bc8fcf893c88be255e6d7f571c548aff57abf4', $remotePointer->getHash());
+        $this->assertEquals('0000000000004829474748f3d1bc8fcf893c88be255e6d7f571c548aff57abf4', $newBlock->getHash());
     }
 
     public function testDigestOrphanBlockNotFound() {
@@ -110,7 +118,7 @@ class BlockQueueTest extends ExplorerDatabaseTestCase {
         ]));
 
         $remote = new Block('00000000ce07e1de4bec68ee5055259d5d64cdf4b23b0317135c1955296cab3d', '000000000000e6ae2516b4249f14f368dd57adc23d0f7c8a6c615f5cc0d50db8', 300003, 1412900867);
-        $this->assertFalse($queue->digest($remote));
+        $this->assertFalse($queue->digest($remote, $newBlock, $orphanBlocks));
     }
 
     public function testDiff() {

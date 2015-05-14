@@ -32,7 +32,7 @@ class BlockQueue {
         if ($offset < 0) {
             $offset = $this->length() + $offset;
         }
-        return $offset < 0 ? null : $this->queue->offsetGet($offset);
+        return $offset < 0 ? null : $this->queue[$offset];
     }
 
     public function rollback() {
@@ -45,29 +45,30 @@ class BlockQueue {
             $block->getHeight() === $remote->getHeight() && $block->getHash() !== $remote->getHash();
     }
 
-    public function digest(Block $remote) {
+    public function digest(Block $remote, &$newBlock, &$orphanBlocks) {
         $bitcoinClient = Bitcoin::make();
         $rollbackOffset = 0;
 
         if ($this->length() === 0) {        //第一次初始化，无块
-            return [$remote, new Collection()];
+            $newBlock = $remote;
+            $orphanBlocks = new Collection();
+            return;
         }
 
         while ($rollbackOffset < $this->length()) {
             $localPointer = $this->getBlock(-$rollbackOffset - 1);
             $currentHeight = $remote->getHeight() -  $rollbackOffset;
             if ($rollbackOffset === 0) {
-                $remotePointer = $remote;
+                $newBlock = $remote;
             }  else {
-                $hash = $bitcoinClient->getblockhash($currentHeight);
-                $detail = $bitcoinClient->bm_get_block_detail($hash);
-                $remotePointer = Block::createFromBlockDetail($detail);
+                $detail = $bitcoinClient->getBlockByHeight($currentHeight);
+                $newBlock = Block::createFromBlockDetail($detail);
             }
 
-            if ($localPointer->getHash() === $remotePointer->getPrevHash()) {      //命中 block，计算出 orphan block
+            if ($localPointer->getHash() === $newBlock->getPrevHash()) {      //命中 block，计算出 orphan block
                 $orphanBlocks = $this->queue->splice($this->length() - $rollbackOffset, $rollbackOffset);
-                $this->push($remotePointer);
-                return [$remotePointer, $orphanBlocks];
+                $this->push($newBlock);
+                break;
             } else {        // miss
                 $rollbackOffset++;
             }

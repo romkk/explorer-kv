@@ -1,13 +1,18 @@
 <?php
 
+use Monolog\Formatter\LineFormatter;
 use Monolog\Handler\AbstractHandler;
 use Monolog\Logger;
 
 class Log {
     private static $logger;
 
-    public static function init(AbstractHandler $handler) {
+    public static function init() {
         self::$logger = new Logger('daoru');
+
+        $filename = getenv('ENV') === 'test' ? 'daoru.test.log' : 'daoru.log';
+        $handler = new Monolog\Handler\RotatingFileHandler(Config::get('app.log_path') . '/' . $filename, 3);
+        $handler->setFormatter(new LineFormatter(null, 'Y-m-d H:i:s.u'));
         self::$logger->pushHandler($handler);
     }
 

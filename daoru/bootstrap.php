@@ -13,7 +13,7 @@ App::init();
 Config::init(require __DIR__ . '/bootstrap/paths.php');
 
 # monolog
-Log::init(new Monolog\Handler\RotatingFileHandler(Config::get('app.log_path') . '/daoru.log', 3));
+Log::init();
 
 # database
 require __DIR__ . '/bootstrap/database.php';

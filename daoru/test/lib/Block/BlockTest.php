@@ -50,4 +50,20 @@ class BlockTest extends ExplorerDatabaseTestCase {
 
         $this->tableTruncate('0_raw_blocks');
     }
+
+    public function testCreateFromBlockDetail() {
+        $detail = [
+            'hash' => 'hash',
+            'previousblockhash' => 'previousblockhash',
+            'height' => 0,
+            'time' => 1,
+            'rawhex' => 'raw',
+            'tx' => []
+        ];
+        $block = Block::createFromBlockDetail($detail);
+        $this->assertInstanceOf('Block', $block);
+        $this->assertEquals(0, $block->getHeight());
+        $this->assertEquals('hash', $block->getHash());
+        $this->assertEquals('previousblockhash', $block->getPrevHash());
+    }
 }

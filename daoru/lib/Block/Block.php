@@ -11,6 +11,17 @@ class Block {
     protected $hex = null;
     protected $time = null;
 
+    public static function createFromBlockDetail(array $detail) {
+        $block = new Block($detail['hash'], $detail['previousblockhash'], $detail['height'], $detail['time']);
+        $block->setHex($detail['rawhex']);
+        $block->setTxs(array_map(function($tx) use ($block) {
+            $t = new Tx($block, $tx['hash']);
+            $t->setHex($tx['rawhex']);
+            return $t;
+        }, $detail['tx']));
+        return $block;
+    }
+
     public function __construct($hash, $prevHash, $height, $blockTimestamp) {
         $this->hash = $hash;
         $this->prevHash = $prevHash;

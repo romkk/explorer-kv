@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# twiki: http://123.56.157.178/bin/view/Main/ExplorerDB
+# twiki: http://twiki.bitmain.com/bin/view/Main/ExplorerDB
 
 loop() {
 	start=$1

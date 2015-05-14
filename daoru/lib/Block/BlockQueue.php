@@ -45,9 +45,9 @@ class BlockQueue {
             $block->getHeight() === $remote->getHeight() && $block->getHash() !== $remote->getHash();
     }
 
-    public function digest(Block $remote, &$newBlock, &$orphanBlocks) {
+    public function digest(Block $remote, &$newBlock, &$orphanBlocks, $backoff = 0) {
         $bitcoinClient = Bitcoin::make();
-        $rollbackOffset = 0;
+        $rollbackOffset = $backoff;
 
         if ($this->length() === 0) {        //第一次初始化，无块
             $newBlock = $remote;

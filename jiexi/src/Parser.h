@@ -33,12 +33,13 @@ class DBTxOutput {
 public:
   int64_t txId;
   int32_t position;
-  int64_t addressId;
   int64_t value;
   int64_t spentTxId;
   int32_t spentPosition;
+  string  address;
+  string  addressIds;
 
-  DBTxOutput(): txId(0), position(-1), addressId(0), value(-1), spentTxId(0), spentPosition(-1) {
+  DBTxOutput(): txId(0), position(-1), value(-1), spentTxId(0), spentPosition(-1) {
   }
 };
 

@@ -38,5 +38,6 @@ int32_t AddressTableIndex(const string &address);
 
 void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
                    map<string, int64_t> &addrMap);
+int64_t txHash2Id(MySQLConnection &db, const uint256 &txHash);
 
 #endif

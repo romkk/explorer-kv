@@ -73,12 +73,12 @@ public:
   }
 
   uint64 update(const char * sql);
-  uint64 updateOrThrowEx(const char * sql, const int32_t affectedRows);
+  uint64 updateOrThrowEx(const char * sql, const int32_t affectedRows=0);
 
   uint64 update(const string & sql) {
     return update(sql.c_str());
   }
-  uint64 updateOrThrowEx(const string &sql, const int32_t affectedRows) {
+  uint64 updateOrThrowEx(const string &sql, const int32_t affectedRows=0) {
     return updateOrThrowEx(sql.c_str(), affectedRows);
   }
   uint64 affectedRows();

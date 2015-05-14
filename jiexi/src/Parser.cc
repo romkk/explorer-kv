@@ -188,7 +188,7 @@ void Parser::checkTableAddressTxs(const uint32_t timestamp) {
 
   // create if not exist
   sql = Strings::Format("CREATE TABLE `%s` LIKE `0_tpl_address_txs`", tName.c_str());
-  dbExplorer_.updateOrThrowEx(sql, 1);
+  dbExplorer_.updateOrThrowEx(sql);
 }
 
 // 获取当前txlogs的最大表索引
@@ -434,14 +434,32 @@ void _removeUnspentOutputs(MySQLConnection &db,
   }
 }
 
-int64_t _txHash2Id(MySQLConnection &db, const uint256 &txHash) {
-  // TODO
-  return 0;
-}
 
 DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t position) {
-  // TODO
-  return DBTxOutput();
+  MySQLResult res;
+  char **row;
+  string sql;
+  DBTxOutput o;
+
+  sql = Strings::Format("SELECT `value`,`spent_tx_id`,`spent_position`,`address`,`address_ids` "
+                        " FROM `tx_outputs_%04d` WHERE `tx_id`=%lld AND `position`=%d ",
+                        txId % 100, txId, position);
+  db.query(sql, res);
+  if (res.numRows() != 1) {
+    THROW_EXCEPTION_DBEX("can't find tx_outputs, txId: %lld, position: %d",
+                         txId, position);
+  }
+  row = res.nextRow();
+  
+  o.txId     = txId;
+  o.position = position;
+  o.value    = atoi64(row[0]);
+  o.spentTxId     = atoi64(row[1]);
+  o.spentPosition = atoi(row[2]);
+  o.address    = string(row[3]);
+  o.addressIds = string(row[4]);
+
+  return o;
 }
 
 void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
@@ -451,7 +469,8 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
   const string now = date("%F %T");
   // table.tx_inputs_xxxx
   const string fields = "`tx_id`, `position`, `input_script_asm`, `input_script_hex`,"
-  " `sequence`, `prev_tx_id`, `prev_position`, `prev_address_id`, `prev_value`, `created_at`";
+  " `sequence`, `prev_tx_id`, `prev_position`, `prev_value`,"
+  " `prev_address`, `prev_address_ids`, `created_at`";
   vector<string> values;
 
   n = -1;
@@ -478,7 +497,7 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
     } else
     {
       prevHash = in.prevout.hash;
-      prevTxId = _txHash2Id(db, prevHash);
+      prevTxId = txHash2Id(db, prevHash);
       prevPos  = (int32_t)in.prevout.n;
 
       // 将前向交易标记为已花费
@@ -500,11 +519,13 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
                              prevTxId, prevHash.ToString().c_str(), prevPos);
       }
       values.push_back(Strings::Format("%lld,%d,'%s',%u,%lld,%d,"
-                                       "%lld,%lld,'%s'",
+                                       "%lld,%lld,'%s','%s','%s'",
                                        txId, n, in.scriptSig.ToString().c_str(),
                                        in.nSequence, prevTxId, prevPos,
-                                       dbTxOutput.addressId,
-                                       dbTxOutput.value, now.c_str()));
+                                       dbTxOutput.value,
+                                       dbTxOutput.address.c_str(),
+                                       dbTxOutput.addressIds.c_str(),
+                                       now.c_str()));
     }
   } /* /for */
 
@@ -662,14 +683,15 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
     assert(finalBalance + balanceDiff >= 0);
 
     // 插入当前记录
-    sql = Strings::Format("INSERT INTO `address_txs%d` (`address_id`, `tx_id`, `tx_height`,"
+    sql = Strings::Format("INSERT INTO `address_txs_%d` (`address_id`, `tx_id`, `tx_height`,"
                           " `total_received`, `balance_diff`, `balance_final`, `prev_ymd`, "
                           " `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`)"
-                          " VALUES (%lld, %lld, %d, %lld, %lld) ",
+                          " VALUES (%lld, %lld, %d, %lld, %lld, %lld,"
+                          "         %d, %lld, 0, 0, '%s') ",
                           ymd, addrID, txLog->txId_, txLog->blkHeight_,
                           totalRecv + (balanceDiff > 0 ? balanceDiff : 0),
                           balanceDiff, finalBalance + balanceDiff,
-                          prevTxYmd, prevTxId, 0, 0, date("%F %T").c_str());
+                          prevTxYmd, prevTxId, date("%F %T").c_str());
     db.updateOrThrowEx(sql, 1);
 
     // 更新地址信息

@@ -84,10 +84,13 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
       // address ID: 单个表由区间，区间步进值为10亿，内部通过Mysql完成自增
       // SQL：里面需要弄一个临时表，否则报错：
       // You can't specify target table 'addresses_xxxx' for update in FROM clause
-      sql = Strings::Format("INSERT INTO `%s` (`address`, `tx_count`,"
+      sql = Strings::Format("INSERT INTO `%s` (`id`, `address`, `tx_count`,"
                             " `total_received`, `total_sent`, `created_at`, `updated_at`)"
-                            " VALUES('%s', 0, 0, 0, '%s', '%s')",
-                            tableName.c_str(), a.c_str(), now.c_str(), now.c_str());
+                            " VALUES("
+                            "  (SELECT * FROM (SELECT IFNULL(MAX(`id`), %lld) + 1 FROM `%s`) AS t1), "
+                            " '%s', 0, 0, 0, '%s', '%s')",
+                            tableName.c_str(), tableIdx * BILLION, tableName.c_str(),
+                            a.c_str(), now.c_str(), now.c_str());
       db.updateOrThrowEx(sql, 1);
       db.query(sqlSelect, res);
     }
@@ -96,4 +99,21 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
     row = res.nextRow();
     addrMap.insert(std::make_pair(a, atoi64(row[0])));
   } /* /for */
+}
+
+int64_t txHash2Id(MySQLConnection &db, const uint256 &txHash) {
+  MySQLResult res;
+  char **row;
+  string sql;
+
+  const string hashStr = txHash.ToString();
+  sql = Strings::Format("SELECT `id` FROM `raw_txs_%04d` WHERE `hex`='%s'",
+                        HexToDecLast2Bytes(hashStr), hashStr.c_str());
+  db.query(sql, res);
+  if (res.numRows() != 1) {
+    THROW_EXCEPTION_DBEX("can't find rawtx: %s", hashStr.c_str());
+  }
+  row = res.nextRow();
+
+  return atoi64(row[0]);
 }

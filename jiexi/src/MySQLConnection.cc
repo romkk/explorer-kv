@@ -182,9 +182,9 @@ uint64 MySQLConnection::update(const char * sql) {
 }
 
 uint64 MySQLConnection::updateOrThrowEx(const char * sql, const int32_t affectedRows) {
-  execute(sql);
+  bool res = execute(sql);
   const int32_t r = (int32_t)mysql_affected_rows(conn);
-  if (r != affectedRows) {
+  if (res == false || (affectedRows != 0 && r != affectedRows)) {
     THROW_EXCEPTION_EX(EIO, "update DB failure, affected rows(%d) is not expected(%d)",
                        r, affectedRows);
   }

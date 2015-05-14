@@ -84,13 +84,10 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
       // address ID: 单个表由区间，区间步进值为10亿，内部通过Mysql完成自增
       // SQL：里面需要弄一个临时表，否则报错：
       // You can't specify target table 'addresses_xxxx' for update in FROM clause
-      sql = Strings::Format("INSERT INTO `%s` (`id`,`address`, `tx_count`,"
+      sql = Strings::Format("INSERT INTO `%s` (`address`, `tx_count`,"
                             " `total_received`, `total_sent`, `created_at`, `updated_at`)"
-                            " VALUES("
-                            "  (SELECT * FROM (SELECT IFNULL(MAX(`id`), %lld) + 1 FROM `%s`) AS t1)"
-                            "  , '%s', 0, 0, 0, '%s', '%s')",
-                            tableName.c_str(),
-                            tableIdx * BILLION, tableName.c_str(),
+                            " VALUES('%s', 0, 0, 0, '%s', '%s')",
+                            tableName.c_str(), tableName.c_str(),
                             a.c_str(), now.c_str(), now.c_str());
       db.updateOrThrowEx(sql, 1);
       db.query(sqlSelect, res);

@@ -41,7 +41,7 @@ class RawTx extends Model {
 
         if (is_null($maxId)) {
             sscanf($tableName, 'raw_txs_%04d', $index);
-            $maxId = $index * 10e8 - 1;
+            $maxId = $index * 10e8;
         }
 
         return intval($maxId + 1);

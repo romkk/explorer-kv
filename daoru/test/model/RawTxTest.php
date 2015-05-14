@@ -22,13 +22,13 @@ class RawTxTest extends ExplorerDatabaseTestCase {
             'created_at' => Carbon::now()->toDateTimeString(),
         ]);
         $tx->save();
-        $this->assertEquals(230e8, $tx->id);
+        $this->assertEquals(23000000001, $tx->id);
         $this->assertTableRowCount('raw_txs_0023', 1);
     }
 
     public function testGetNextId() {
         $id = RawTx::getNextId('raw_txs_0023');
-        $this->assertEquals(230e8, $id);
+        $this->assertEquals(23000000001, $id);
 
         $this->tableInsert('raw_txs_0023', [
             ['id' => 23000000220, 'tx_hash' => 'hash', 'hex' => 'hex', 'created_at' => Carbon::now()->toDateTimeString()]

@@ -14,7 +14,7 @@ Log::info('初始化：临时记录清理完毕');
 // 2. compare block height and block hash of local and remote
 Log::info('初始化：开始生成块队列');
 $queue = BlockQueue::make();
-Log::info('初始化：生成块队列完成');
+Log::info(sprintf('初始化：生成块队列完成，长度为 %d', $queue->length()));
 
 // 3. loop
 while (true) {

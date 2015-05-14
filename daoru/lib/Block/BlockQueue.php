@@ -50,7 +50,7 @@ class BlockQueue {
         $rollbackOffset = $backoff;
 
         if ($this->length() === 0) {        //第一次初始化，无块
-            $newBlock = $remote;
+            $this->push($newBlock = $remote);
             $orphanBlocks = new Collection();
             return true;
         }

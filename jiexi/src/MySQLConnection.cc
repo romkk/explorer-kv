@@ -139,9 +139,16 @@ query:
 
   // get mysql error
   error_no = mysql_errno(conn);
-  LOG_WARN("exec sql failure, error_no: %u, error_info: %s",
-           error_no, mysql_error(conn));
-  
+  if (error_no == 2006 || error_no == 2013) {
+    LOG_ERROR("exec sql failure, error_no: %u, error_info: %s",
+              error_no, mysql_error(conn));
+  } else {
+    // 非网络连接错误，均抛出异常
+    THROW_EXCEPTION_EX(ENETDOWN,
+                       "exec sql failure, error_no: %u, error_info: %s",
+                       error_no, mysql_error(conn));
+  }
+
   //
   // 需要超时类重连类型的Mysql错误, 这些错误在Mysql Server重启、网络抖动均可能出现，可通过
   // mysql_ping()修复
@@ -172,6 +179,16 @@ bool MySQLConnection::query(const char * sql, MySQLResult & result) {
 uint64 MySQLConnection::update(const char * sql) {
   execute(sql);
   return mysql_affected_rows(conn);
+}
+
+uint64 MySQLConnection::updateOrThrowEx(const char * sql, const int32_t affectedRows) {
+  execute(sql);
+  const int32_t r = (int32_t)mysql_affected_rows(conn);
+  if (r != affectedRows) {
+    THROW_EXCEPTION_EX(EIO, "update DB failure, affected rows(%d) is not expected(%d)",
+                       r, affectedRows);
+  }
+  return r;
 }
 
 uint64 MySQLConnection::affectedRows() {

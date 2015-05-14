@@ -15,9 +15,9 @@ class Log {
         if (in_array($name, ['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'])) {
             $method = 'add' . ucfirst($name);
 
-            if (is_string($args[0])) {
+            if (is_string($args[0]) && ($stacktrace = debug_backtrace()) && isset($stacktrace[2])) {
+                $stack = $stacktrace[2];
                 $prefix = [];
-                $stack = debug_backtrace()[2];
                 if (array_key_exists('class', $stack)) {
                     $prefix[] = $stack['class'];
                 }

@@ -20,7 +20,7 @@ class RawTx extends Model {
     }
 
     public function save(array $options = array()) {
-        $this->id = $this->getId();
+        $this->id = static::getNextId($this->getTable());
         parent::save();
     }
 
@@ -42,5 +42,25 @@ class RawTx extends Model {
     public static function getTableById($id) {
         $suffix = intval($id / static::TABLE_VOLUME);
         return sprintf('raw_txs_%04d', $suffix);
+    }
+
+    public static function getNextId($tableName) {
+        $conn = App::$container->make('capsule')->getConnection();
+
+        $maxId = $conn->table($tableName)->max('id');
+
+        if (is_null($maxId)) {
+            sscanf($tableName, 'raw_txs_%04d', $index);
+            $maxId = $index * 10e8 - 1;
+        }
+
+        return intval($maxId + 1);
+    }
+
+    public static function txExists($txHash){
+        $queryInst = new static();
+        $queryInst->tx_hash = $txHash;
+        return !is_null($queryInst->newQuery()
+            ->where('tx_hash', $txHash)->first(['id']));
     }
 }

@@ -22,7 +22,7 @@ class RawTxTest extends ExplorerDatabaseTestCase {
             'created_at' => Carbon::now()->toDateTimeString(),
         ]);
         $tx->save();
-        $this->assertEquals(1, $tx->id);
+        $this->assertEquals(230e8, $tx->id);
         $this->assertTableRowCount('raw_txs_0023', 1);
     }
 
@@ -42,6 +42,35 @@ class RawTxTest extends ExplorerDatabaseTestCase {
         $this->assertEquals(3, $tx->getId());
 
         $this->tableTruncate('raw_txs_0023');
+    }
+
+    public function testGetNextId() {
+        $id = RawTx::getNextId('raw_txs_0023');
+        $this->assertEquals(230e8, $id);
+
+        $this->tableInsert('raw_txs_0023', [
+            ['id' => 23000000220, 'tx_hash' => 'hash', 'hex' => 'hex', 'created_at' => Carbon::now()->toDateTimeString()]
+        ]);
+
+        $id = RawTx::getNextId('raw_txs_0023');
+        $this->assertEquals(23000000221, $id);
+
+        $this->tableInsert('raw_txs_0023', [
+            ['id' => 23000000221, 'tx_hash' => 'hash2', 'hex' => 'hex', 'created_at' => Carbon::now()->toDateTimeString()]
+        ]);
+
+        $id = RawTx::getNextId('raw_txs_0023');
+        $this->assertEquals(23000000222, $id);
+    }
+
+    public function testTxExists() {
+        $this->assertFalse(Rawtx::txExists('non-exists'));
+
+        $this->tableInsert('raw_txs_0023', [
+            ['id' => 23000000221, 'tx_hash' => 'hash17', 'hex' => 'hex', 'created_at' => Carbon::now()->toDateTimeString()]
+        ]);
+
+        $this->assertTrue(RawTx::txExists('hash17'));
     }
 
     /**

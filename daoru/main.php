@@ -25,7 +25,7 @@ Log::info('初始化：生成块队列完成');
     if ($queue->diff($remote)) {
         $latestBlock = $queue->getBlock();
         Log::info('检测到当前块与最新块不一致，开始更新本地块信息', [
-            'local' => $latestBlock->toArray(),
+            'local' => is_null($latestBlock) ? null : $latestBlock->toArray(),
             'remote' => $remote->toArray(),
         ]);
 

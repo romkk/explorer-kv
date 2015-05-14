@@ -92,7 +92,7 @@ class BlockQueueTest extends ExplorerDatabaseTestCase {
         ]));
 
         $remote = new Block('00000000ce07e1de4bec68ee5055259d5d64cdf4b23b0317135c1955296cab3d', '000000000000e6ae2516b4249f14f368dd57adc23d0f7c8a6c615f5cc0d50db8', 300003, 1412902068);
-        $queue->digest($remote, $newBlock, $orphanBlocks);
+        $this->assertTrue($queue->digest($remote, $newBlock, $orphanBlocks));
         $this->assertEquals(0, count($orphanBlocks));
         $this->assertEquals($remote, $newBlock);
     }

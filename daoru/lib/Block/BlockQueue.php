@@ -52,7 +52,7 @@ class BlockQueue {
         if ($this->length() === 0) {        //第一次初始化，无块
             $newBlock = $remote;
             $orphanBlocks = new Collection();
-            return;
+            return true;
         }
 
         while ($rollbackOffset < $this->length()) {
@@ -68,7 +68,7 @@ class BlockQueue {
             if ($localPointer->getHash() === $newBlock->getPrevHash()) {      //命中 block，计算出 orphan block
                 $orphanBlocks = $this->queue->splice($this->length() - $rollbackOffset, $rollbackOffset);
                 $this->push($newBlock);
-                break;
+                return true;
             } else {        // miss
                 $rollbackOffset++;
             }
@@ -80,7 +80,6 @@ class BlockQueue {
             Log::error(sprintf('diff offset 超过预设的 %d，进程退出。', $this->queueLength));
             exit(1);
         }
-
     }
 
     public static function make() {

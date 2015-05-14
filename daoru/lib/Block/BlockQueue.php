@@ -61,12 +61,7 @@ class BlockQueue {
             }  else {
                 $hash = $bitcoinClient->getblockhash($currentHeight);
                 $detail = $bitcoinClient->bm_get_block_detail($hash);
-                $remotePointer = new Block($detail['hash'], $detail['previousblockhash'], $currentHeight, 1);
-                $remotePointer->setTxs(array_map(function($tx) use ($remotePointer) {
-                    $t = new Tx($remotePointer, $tx['hash']);
-                    $t->setHex($tx['rawhex']);
-                    return $t;
-                }, $detail['tx']));
+                $remotePointer = Block::createFromBlockDetail($detail);
             }
 
             if ($localPointer->getHash() === $remotePointer->getPrevHash()) {      //命中 block，计算出 orphan block
@@ -94,20 +89,11 @@ class BlockQueue {
             ->get(['id', 'block_hash', 'block_height', 'chain_id', 'created_at'])
             ->reverse()
             ->map(function (RawBlock $block) {
-
                 $detail = Bitcoin::make()->bm_get_block_detail($block->block_hash);
                 if (!array_key_exists('previousblockhash', $detail)) {
                     $detail['previousblockhash'] = '';
                 }
-                $block = new Block($block->block_hash, $detail['previousblockhash'], $block->block_height, $detail['time']);
-
-                $block->setTxs(array_map(function($tx) use ($block) {
-                    $t = new Tx($block, $tx['hash']);
-                    $t->setHex($tx['rawhex']);
-                    return $t;
-                }, $detail['tx']));
-
-                return $block;
+                return Block::createFromBlockDetail($detail);
             });
 
         return new static($blocks);

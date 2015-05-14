@@ -31,7 +31,7 @@ while (true) {
             'remote' => $remote->toArray(),
         ]);
 
-        $needBackof = $latestBlock->getHeight() === $remote->getHeight();
+        $needBackof = !is_null($latestBlock) && $latestBlock->getHeight() === $remote->getHeight();
 
         if (is_null($latestBlock)) {        //创世纪块
             $detail = $bitcoinClient->getBlockByHeight(0);

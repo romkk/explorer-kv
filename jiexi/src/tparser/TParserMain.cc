@@ -26,6 +26,8 @@
 
 #include <boost/filesystem.hpp>
 
+#include "../bitcoin/chainparams.h"
+
 #include "Common.h"
 #include "Parser.h"
 
@@ -81,6 +83,14 @@ int main(int argc, char **argv) {
     exit(1);
   }
   Config::GConfig.parseConfig(optConf);
+
+  // check testnet
+  if (Config::GConfig.getBool("testnet", false)) {
+    SelectParams(CChainParams::TESTNET);
+    LOG_WARN("using bitcoin testnet");
+  } else {
+    SelectParams(CChainParams::MAIN);
+  }
 
   // set log level
   if (IsDebug()) {

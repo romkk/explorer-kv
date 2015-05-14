@@ -42,8 +42,8 @@ bool getBlockRawHex(const uint256 *hash, const int32_t *height,
                           hash->ToString().c_str());
   } else if (height != nullptr) {
     sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
-                          " WHERE `block_height` = '%s' AND `chain_id`=0 ",
-                          hash->ToString().c_str());
+                          " WHERE `block_height` = '%d' AND `chain_id`=0 ",
+                          *height);
   }
 
   char **row = nullptr;
@@ -146,7 +146,6 @@ void Parser::run() {
       sleepMs(1000);
       continue;
     }
-    exit(1);
 
     if (!checkTableAddressTxs(txlog.blockTimestamp_)) {
       // TODO: handle error
@@ -159,7 +158,7 @@ void Parser::run() {
     if (txlog.tx_.IsCoinBase() && !acceptBlock(txlog.blkHeight_)) {
       // TODO: handle error
     }
-
+exit(1);
     if (!acceptTx(&txlog)) {
       // TODO: handle error
     }
@@ -184,7 +183,7 @@ bool Parser::checkTableAddressTxs(const uint32_t timestamp) {
   // show table like to check if exist
   const string tName = Strings::Format("address_txs_%s",
                                        date("%Y%m%d", timestamp).c_str());
-  sql = Strings::Format("SHOW TABLES LIKE `address_txs_%s`", tName.c_str());
+  sql = Strings::Format("SHOW TABLES LIKE '%s'", tName.c_str());
   dbExplorer_.query(sql, res);
   if (res.numRows() > 0) {
     return true;
@@ -192,10 +191,11 @@ bool Parser::checkTableAddressTxs(const uint32_t timestamp) {
 
   // create if not exist
   sql = Strings::Format("CREATE TABLE `%s` LIKE `0_tpl_address_txs`", tName.c_str());
-  if (dbExplorer_.update(sql) == 1) {
-    return true;
+  if (dbExplorer_.update(sql) != 1) {
+    LOG_ERROR("create table '%s' fail", tName.c_str());
+    return false;
   }
-  return false;
+  return true;
 }
 
 //void get_inputs_txs(const CTransaction &tx, std::set<uint256> &hashVec) {
@@ -863,13 +863,13 @@ bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
 
   LOG_INFO("process txlog, tableIdx: %d, logId: %d, type: %d, "
            "height: %d, tx hash: %s, created: %s",
-           tableNameIdx, logId, txLog->type_, txLog->blkHeight_,
+           tableNameIdx, txLog->logId_, txLog->type_, txLog->blkHeight_,
            txLog->txHash_.ToString().c_str(), txLog->createdAt_.c_str());
 
   // find raw tx hex
   string txHashStr = txLog->txHash_.ToString();
-  sql = Strings::Format("SELECT `hex`,`id` FROM `raw_txs` WHERE `tx_hash` = '%s' ",
-                        txHashStr.c_str());
+  sql = Strings::Format("SELECT `hex`,`id` FROM `raw_txs_%04d` WHERE `tx_hash` = '%s' ",
+                        HexToDecLast2Bytes(txHashStr) % 64, txHashStr.c_str());
   dbExplorer_.query(sql, res);
   if (res.numRows() == 0) {
     LOG_FATAL("can't find raw tx by hash: %s", txHashStr.c_str());

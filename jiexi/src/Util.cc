@@ -64,12 +64,21 @@ int32_t AddressTableIndex(const string &address) {
 // 获取地址的ID映射关系
 void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
                    map<string, int64_t> &addrMap) {
+  static std::unordered_map<string, int64_t> addrMapCache;
   const string now = date("%F %T");
 
   for (auto &a : allAddresss) {
     if (addrMap.find(a) != addrMap.end()) {
       continue;  // already in map
     }
+
+    // check if in cache
+    if (addrMapCache.find(a) != addrMapCache.end()) {
+      addrMap.insert(std::make_pair(a, addrMapCache[a]));
+      LOG_DEBUG("%s grep: %lld", a.c_str(), addrMapCache[a]);
+      continue;  // already in cache
+    }
+
     MySQLResult res;
     char **row = nullptr;
     const int64_t tableIdx = AddressTableIndex(a) % 64;
@@ -97,7 +106,9 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
 
     assert(res.numRows() == 1);
     row = res.nextRow();
+
     addrMap.insert(std::make_pair(a, atoi64(row[0])));
+    addrMapCache.insert(std::make_pair(a, atoi64(row[0])));
   } /* /for */
 }
 

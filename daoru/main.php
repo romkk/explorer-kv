@@ -59,8 +59,11 @@ while (true) {
                 return $block->toArray();
             }),
         ]);
-        // TODO: rollback orphan blocks
-        assert(count($orphanBlocks) === 0);
+
+        if (count($orphanBlocks)) {
+            $queue->rollback($orphanBlocks);
+        }
+
         $newBlock->insert();
 
     } else {

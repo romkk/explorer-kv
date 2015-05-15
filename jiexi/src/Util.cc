@@ -66,6 +66,7 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
                    map<string, int64_t> &addrMap) {
   static std::unordered_map<string, int64_t> addrMapCache;
   const string now = date("%F %T");
+  const bool isUseCache = Config::GConfig.getBool("cache.address2ids", false);
 
   for (auto &a : allAddresss) {
     if (addrMap.find(a) != addrMap.end()) {
@@ -73,9 +74,8 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
     }
 
     // check if in cache
-    if (addrMapCache.find(a) != addrMapCache.end()) {
+    if (isUseCache && addrMapCache.find(a) != addrMapCache.end()) {
       addrMap.insert(std::make_pair(a, addrMapCache[a]));
-      LOG_DEBUG("%s grep: %lld", a.c_str(), addrMapCache[a]);
       continue;  // already in cache
     }
 
@@ -108,7 +108,9 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
     row = res.nextRow();
 
     addrMap.insert(std::make_pair(a, atoi64(row[0])));
-    addrMapCache.insert(std::make_pair(a, atoi64(row[0])));
+    if (isUseCache) {
+      addrMapCache.insert(std::make_pair(a, atoi64(row[0])));
+    }
   } /* /for */
 }
 

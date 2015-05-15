@@ -488,11 +488,12 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
       prevTxId = 0;
       prevPos  = -1;
 
-      // 插入当前交易的inputs
-      values.push_back(Strings::Format("%lld,%d,'%s','%s',%u,"
+      // 插入当前交易的inputs, coinbase tx的 scriptSig 不做decode，可能含有非法字符
+      // 通常无法解析成功
+      // coinbase无法担心其长度，bitcoind对coinbase tx的coinbase字段长度做了限制
+      values.push_back(Strings::Format("%lld,%d,'','%s',%u,"
                                        "0,-1,0,'','','%s'",
                                        txId, n,
-                                       in.scriptSig.ToString().c_str(),
                                        HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
                                        in.nSequence, now.c_str()));
     } else

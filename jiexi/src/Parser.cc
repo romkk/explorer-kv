@@ -70,7 +70,6 @@ bool getBlockRawHex(const uint256 *hash, const int32_t *height,
 // 批量插入函数
 bool multiInsert(MySQLConnection &db, const string &table,
                  const string &fields, const vector<string> &values) {
-  int32 dbMaxAllowedPacket = (int32)atol(db.getVariable("max_allowed_packet").c_str());
   string sqlPrefix = Strings::Format("INSERT INTO `%s`(%s) VALUES ",
                                      table.c_str(), fields.c_str());
 
@@ -81,9 +80,8 @@ bool multiInsert(MySQLConnection &db, const string &table,
   string sql = sqlPrefix;
   for (auto &it : values) {
     sql += Strings::Format("(%s),", it.c_str());
-    // 超过DB限制，或者超过 4MB
-    size_t size = sql.length();
-    if (size > dbMaxAllowedPacket || size > 4*1024*1024) {
+    // 超过 8MB
+    if (sql.length() > 8*1024*1024) {
       sql.resize(sql.length() - 1);  // 去掉最后一个逗号
       if (!db.execute(sql.c_str())) {
         return false;
@@ -131,6 +129,15 @@ void Parser::stop() {
 bool Parser::init() {
   if (!dbExplorer_.ping()) {
     LOG_FATAL("connect to explorer DB failure");
+    return false;
+  }
+
+  // 检测DB参数： max_allowed_packet
+  const int32_t maxAllowed = atoi(dbExplorer_.getVariable("max_allowed_packet").c_str());
+  const int32_t kMinAllowed = 64*1024*1024;
+  if (maxAllowed < kMinAllowed) {
+    LOG_FATAL("mysql.db.max_allowed_packet(%d) is too small, should >= %d",
+              maxAllowed, kMinAllowed);
     return false;
   }
 
@@ -582,7 +589,7 @@ void _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
                txId, tx.GetHash().ToString().c_str(), n);
     }
 
-    // multiSig 可能由多个输出地址
+    // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
     int i = -1;
     for (auto &addr : addresses) {
       i++;
@@ -610,14 +617,25 @@ void _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
       addressIdsStr.resize(addressIdsStr.length() - 1);
 
     // tx_outputs
+    // Parser::init(): 当前MySQL max_allowed_packet 为 64MB
+    string outputScriptAsm = out.scriptPubKey.ToString();
+    const string outputScriptHex = HexStr(out.scriptPubKey.begin(), out.scriptPubKey.end());
+    if (outputScriptAsm.length() > 16*1024*1024 ||
+        (outputScriptAsm.length() > 1*1024*1024 &&
+         outputScriptAsm.length() > outputScriptHex.length() * 4)) {
+      outputScriptAsm = "";
+    }
+    // output Hex奇葩的交易：
+    // http://tbtc.blockr.io/tx/info/c333a53f0174166236e341af9cad795d21578fb87ad7a1b6d2cf8aa9c722083c
     itemValues.push_back(Strings::Format("%lld,%d,'%s','%s',"
                                          "%lld,'%s','%s','%s',"
                                          "%d,0,-1,'%s','%s'",
                                          // `tx_id`,`position`,`address`,`address_ids`
                                          txId, n, addressStr.c_str(), addressIdsStr.c_str(),
                                          // `value`,`output_script_asm`,`output_script_hex`,`output_script_type`
-                                         out.nValue, out.scriptPubKey.ToString().c_str(),
-                                         HexStr(out.scriptPubKey.begin(), out.scriptPubKey.end()).c_str(),
+                                         out.nValue,
+                                         outputScriptAsm.c_str(),
+                                         outputScriptHex.length() < 32*1024*1024 ? outputScriptHex.c_str() : "",
                                          GetTxnOutputType(type) ? GetTxnOutputType(type) : "",
                                          // `is_spendable`,`spent_tx_id`,`spent_position`,`created_at`,`updated_at`
                                          (type != TX_NONSTANDARD && type != TX_NULL_DATA) ? 1 : 0,

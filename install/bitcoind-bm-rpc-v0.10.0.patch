@@ -1,6 +1,6 @@
 diff -uNr bitcoin-0.10.0/src/rpcblockchain.cpp bitcoin-0.10.0-bm/src/rpcblockchain.cpp
 --- bitcoin-0.10.0/src/rpcblockchain.cpp	2015-02-13 16:55:11.000000000 +0800
-+++ bitcoin-0.10.0-bm/src/rpcblockchain.cpp	2015-05-08 15:35:21.000000000 +0800
++++ bitcoin-0.10.0-bm/src/rpcblockchain.cpp	2015-05-15 18:12:01.000000000 +0800
 @@ -4,6 +4,7 @@
  // file COPYING or http://www.opensource.org/licenses/mit-license.php.
  
@@ -9,7 +9,7 @@ diff -uNr bitcoin-0.10.0/src/rpcblockchain.cpp bitcoin-0.10.0-bm/src/rpcblockcha
  #include "main.h"
  #include "rpcserver.h"
  #include "sync.h"
-@@ -680,3 +681,74 @@
+@@ -680,3 +681,107 @@
  
      return Value::null;
  }
@@ -58,6 +58,20 @@ diff -uNr bitcoin-0.10.0/src/rpcblockchain.cpp bitcoin-0.10.0-bm/src/rpcblockcha
 +
 +Value bm_get_best_block(const json_spirit::Array& params, bool fHelp)
 +{
++    if (fHelp || params.size() != 0)
++        throw runtime_error(
++                            "bm_get_best_block\n"
++                            "\nReturns best block\n"
++                            "\nResult:\n"
++                            "{\n"
++                            "  \"height\": xxxxx                (numeric) Height of current best block\n"
++                            "  \"hash\": xxxxx                  (string)  Hash of current best block\n"
++                            "  \"prev_hash\": xxxxx             (string)  Hash of previous block\n"
++                            "}\n"
++                            + HelpExampleCli("bm_get_best_block", "")
++                            + HelpExampleRpc("bm_get_best_block", "")
++                            );
++
 +    CBlockIndex *blockindex = chainActive.Tip();
 +    Object ret;
 +    ret.push_back(Pair("height", (int)chainActive.Height()));
@@ -70,15 +84,34 @@ diff -uNr bitcoin-0.10.0/src/rpcblockchain.cpp bitcoin-0.10.0-bm/src/rpcblockcha
 +
 +Value bm_get_block_detail(const json_spirit::Array& params, bool fHelp)
 +{
-+    std::string strHash = params[0].get_str();
-+    uint256 hash(strHash);
++    if (fHelp || params.size() != 1)
++        throw runtime_error(
++                            "bm_get_block_detail height_or_hash\n"
++                            "\nReturns block detail infomation at height/hash provided.\n"
++                            "\nArguments:\n"
++                            "1. height_or_hash  (numeric/string, required) The block height or hash\n"
++                            "\nResult:\n"
++                            "\"Json Object of the Block\n"
++                            + HelpExampleCli("bm_get_block_detail", "100000")
++                            + HelpExampleRpc("bm_get_block_detail", "100000")
++                            );
 +
-+    if (mapBlockIndex.count(hash) == 0)
-+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
-+ 
++    std::string strHash = params[0].get_str();
++    CBlockIndex* pblockindex;
 +    CBlock block;
-+    CBlockIndex* pblockindex = mapBlockIndex[hash];
-+ 
++
++    if (strHash.length() == 64) {
++        uint256 hash(strHash);
++        if (mapBlockIndex.count(hash) == 0)
++            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
++        pblockindex = mapBlockIndex[hash];
++    } else {
++        const int nHeight = atoi(strHash.c_str());
++        if (nHeight < 0 || nHeight > chainActive.Height())
++            throw JSONRPCError(RPC_INVALID_PARAMETER, "Block height out of range");
++        pblockindex = chainActive[nHeight];
++    }
++
 +    if(!ReadBlockFromDisk(block, pblockindex))
 +        throw JSONRPCError(RPC_INTERNAL_ERROR, "Can't read block from disk");
 +
@@ -86,7 +119,7 @@ diff -uNr bitcoin-0.10.0/src/rpcblockchain.cpp bitcoin-0.10.0-bm/src/rpcblockcha
 +}
 diff -uNr bitcoin-0.10.0/src/rpcserver.cpp bitcoin-0.10.0-bm/src/rpcserver.cpp
 --- bitcoin-0.10.0/src/rpcserver.cpp	2015-02-13 16:55:11.000000000 +0800
-+++ bitcoin-0.10.0-bm/src/rpcserver.cpp	2015-05-08 15:27:20.000000000 +0800
++++ bitcoin-0.10.0-bm/src/rpcserver.cpp	2015-05-15 17:37:17.000000000 +0800
 @@ -271,6 +271,8 @@
      { "blockchain",         "verifychain",            &verifychain,            true,      false,      false },
      { "blockchain",         "invalidateblock",        &invalidateblock,        true,      true,       false },
@@ -98,7 +131,7 @@ diff -uNr bitcoin-0.10.0/src/rpcserver.cpp bitcoin-0.10.0-bm/src/rpcserver.cpp
      { "mining",             "getblocktemplate",       &getblocktemplate,       true,      false,      false },
 diff -uNr bitcoin-0.10.0/src/rpcserver.h bitcoin-0.10.0-bm/src/rpcserver.h
 --- bitcoin-0.10.0/src/rpcserver.h	2015-02-13 16:55:11.000000000 +0800
-+++ bitcoin-0.10.0-bm/src/rpcserver.h	2015-05-08 15:27:20.000000000 +0800
++++ bitcoin-0.10.0-bm/src/rpcserver.h	2015-05-15 17:37:17.000000000 +0800
 @@ -224,6 +224,8 @@
  extern json_spirit::Value getchaintips(const json_spirit::Array& params, bool fHelp);
  extern json_spirit::Value invalidateblock(const json_spirit::Array& params, bool fHelp);

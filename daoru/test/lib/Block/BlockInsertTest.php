@@ -13,6 +13,8 @@ class BlockInsertTest extends ExplorerDatabaseTestCase {
 
     public function tearDown(){
         $this->tableDeleteLike('txlogs_%');
+        $this->tableTruncate('0_raw_blocks');
+        $this->tableTruncate('raw_txs_0000');
         parent::tearDown();
     }
 
@@ -46,8 +48,7 @@ class BlockInsertTest extends ExplorerDatabaseTestCase {
         $block->setTxs([$t1, $t2]);
         $block->insert();
 
-        $this->assertTableRowCount('txlogs_0001', 1);   //回滚 +2
-        $this->assertTableRowCount('txlogs_0002', 2);   //新建表
+        $this->assertTableRowCount('txlogs_0001', 3);   //新建表
         $rows = RawBlock::orderBy('id', 'desc')->get();
         $this->assertEquals(3, count($rows));
         $this->assertEquals($rows[0]->block_hash, 'newhash');

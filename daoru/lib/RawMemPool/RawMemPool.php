@@ -40,6 +40,7 @@ class RawMemPool {
 
     public function rollback() {
         Txlogs::clearTempLogs(Txlogs::getTempLogs());
+        Txlogs::ensureTable();
 
         while ($this->queue->count()) {
             $this->queue->pop();

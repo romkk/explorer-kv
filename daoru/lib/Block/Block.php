@@ -101,13 +101,6 @@ class Block {
         // begin
         //
 
-        // clear temp logs
-        Txlogs::clearTempLogs(Txlogs::getTempLogs());   // clearTempLogs 启用了自己的事务（即便失败也能接受）
-        Log::info('回滚临时记录完成');
-
-        // 创建所需的 txlogs 表
-        Txlogs::ensureTable();
-
         // begin transaction
         $conn->beginTransaction();
 

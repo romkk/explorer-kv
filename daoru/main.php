@@ -5,10 +5,11 @@ Log::info('程序启动');
 
 //demo
 $bitcoinClient = Bitcoin::make();
+$pool = new RawMemPool();
 
 // 1. clear temp log
 Log::info('初始化：开始清理临时记录');
-Txlogs::clearTempLogs(Txlogs::getTempLogs());
+$pool->rollback();
 Log::info('初始化：临时记录清理完毕');
 
 // 2. compare block height and block hash of local and remote
@@ -64,9 +65,17 @@ while (true) {
             $queue->rollback($orphanBlocks);
         }
 
+        $pool->rollback();
+
         $newBlock->insert();
 
     } else {
-        sleep(10);  //如果一致，则睡眠 10s 再继续轮询
+        $tempTxList = $bitcoinClient->getrawmempool();
+        $newTxs = $pool->update($tempTxList);
+        if (count($newTxs)) {
+            $pool->insert($newTxs);
+        } else {
+            sleep(10);
+        }
     }
 }

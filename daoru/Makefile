@@ -1,8 +1,13 @@
 SHELL := /bin/bash
 
-.PHONY: all
-all:
-	@echo what do you want ?
+.PHONY: test
+test:
+	./vendor/bin/phpunit --bootstrap test/bootstrap.php test
+
+.PHONY: deploy
+deploy:
+	@rm -rf log/*
+	@ansible-playbook -u root -i deploy/inventory --private-key=~/.ssh/common.pem deploy/deploy.yml
 
 .PHONY: import-db
 import-db: ENV_FILE = ".env"

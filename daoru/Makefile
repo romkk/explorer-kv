@@ -4,8 +4,8 @@ SHELL := /bin/bash
 test:
 	./vendor/bin/phpunit --bootstrap test/bootstrap.php test
 
-.PHONY: deploy-aliyun
-deploy-aliyun:
+.PHONY: deploy
+deploy:
 	@rm -rf log/*
 	@ansible-playbook -u root -i deploy/inventory --private-key=~/.ssh/common.pem deploy/deploy.yml
 

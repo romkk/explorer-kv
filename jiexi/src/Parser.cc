@@ -118,11 +118,14 @@ Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
 running_(true) {
 }
 Parser::~Parser() {
-  // TODO
+  stop();
 }
 
 void Parser::stop() {
-  // TODO
+  if (running_) {
+    running_ = false;
+    LOG_INFO("stop tparser");
+  }
 }
 
 bool Parser::init() {
@@ -165,6 +168,7 @@ void Parser::run() {
       goto error;
     }
   } /* /while */
+  return;
 
 error:
   dbExplorer_.execute("ROLLBACK");
@@ -233,9 +237,9 @@ bool Parser::txsHash2ids(const std::set<uint256> &hashVec,
 }
 
 void Parser::updateLastTxlogId(const int64_t newId) {
-  string sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %lld "
+  string sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %lld,`updated_at`='%s' "
                                " WHERE `key`='jiexi.last_txlog_offset'",
-                               newId);
+                               newId, date("%F %T").c_str());
   if (!dbExplorer_.execute(sql.c_str())) {
     THROW_EXCEPTION_DBEX("failed to update 'jiexi.last_txlog_offset' to %lld",
                          newId);
@@ -604,6 +608,7 @@ void _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
     if (addressIdsStr.length())
       addressIdsStr.resize(addressIdsStr.length() - 1);
 
+    // tx_outputs
     itemValues.push_back(Strings::Format("%lld,%d,'%s','%s',"
                                          "%lld,'%s','%s','%s',"
                                          "%d,0,-1,'%s','%s'",

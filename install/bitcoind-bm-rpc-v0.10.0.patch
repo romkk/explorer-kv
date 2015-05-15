@@ -1,0 +1,110 @@
+diff -uNr bitcoin-0.10.0/src/rpcblockchain.cpp bitcoin-0.10.0-bm/src/rpcblockchain.cpp
+--- bitcoin-0.10.0/src/rpcblockchain.cpp	2015-02-13 16:55:11.000000000 +0800
++++ bitcoin-0.10.0-bm/src/rpcblockchain.cpp	2015-05-08 15:35:21.000000000 +0800
+@@ -4,6 +4,7 @@
+ // file COPYING or http://www.opensource.org/licenses/mit-license.php.
+ 
+ #include "checkpoints.h"
++#include "core_io.h"
+ #include "main.h"
+ #include "rpcserver.h"
+ #include "sync.h"
+@@ -680,3 +681,74 @@
+ 
+     return Value::null;
+ }
++
++Object blockToJSON2(const CBlock& block, const CBlockIndex* blockindex)
++{
++    Object result;
++    result.push_back(Pair("hash", block.GetHash().GetHex()));
++    int confirmations = -1;
++    // Only report confirmations if the block is on the main chain
++    if (chainActive.Contains(blockindex))
++        confirmations = chainActive.Height() - blockindex->nHeight + 1;
++    result.push_back(Pair("confirmations", confirmations));
++    result.push_back(Pair("size", (int)::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION)));
++    result.push_back(Pair("height", blockindex->nHeight));
++    result.push_back(Pair("version", block.nVersion));
++    result.push_back(Pair("merkleroot", block.hashMerkleRoot.GetHex()));
++    Array txs;
++    BOOST_FOREACH(const CTransaction&tx, block.vtx)
++    {
++        Object txObj;
++        txObj.push_back(Pair("hash", tx.GetHash().GetHex()));
++        txObj.push_back(Pair("rawhex", EncodeHexTx(tx)));
++        txs.push_back(txObj);
++    }
++    result.push_back(Pair("tx", txs));
++    result.push_back(Pair("time", block.GetBlockTime()));
++    result.push_back(Pair("nonce", (uint64_t)block.nNonce));
++    result.push_back(Pair("bits", strprintf("%08x", block.nBits)));
++    result.push_back(Pair("difficulty", GetDifficulty(blockindex)));
++    result.push_back(Pair("chainwork", blockindex->nChainWork.GetHex()));
++
++    if (blockindex->pprev)
++        result.push_back(Pair("previousblockhash", blockindex->pprev->GetBlockHash().GetHex()));
++    CBlockIndex *pnext = chainActive.Next(blockindex);
++    if (pnext)
++        result.push_back(Pair("nextblockhash", pnext->GetBlockHash().GetHex()));
++
++    CDataStream ssBlock(SER_NETWORK, PROTOCOL_VERSION);
++    ssBlock << block;
++    std::string strHex = HexStr(ssBlock.begin(), ssBlock.end());
++    result.push_back(Pair("rawhex", strHex));
++
++    return result;
++}
++
++Value bm_get_best_block(const json_spirit::Array& params, bool fHelp)
++{
++    CBlockIndex *blockindex = chainActive.Tip();
++    Object ret;
++    ret.push_back(Pair("height", (int)chainActive.Height()));
++    ret.push_back(Pair("hash",   blockindex->GetBlockHash().GetHex()));
++    if (blockindex->pprev) {
++        ret.push_back(Pair("prev_hash", blockindex->pprev->GetBlockHash().GetHex()));
++    }
++    return ret;
++}
++
++Value bm_get_block_detail(const json_spirit::Array& params, bool fHelp)
++{
++    std::string strHash = params[0].get_str();
++    uint256 hash(strHash);
++
++    if (mapBlockIndex.count(hash) == 0)
++        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
++ 
++    CBlock block;
++    CBlockIndex* pblockindex = mapBlockIndex[hash];
++ 
++    if(!ReadBlockFromDisk(block, pblockindex))
++        throw JSONRPCError(RPC_INTERNAL_ERROR, "Can't read block from disk");
++
++    return blockToJSON2(block, pblockindex);
++}
+diff -uNr bitcoin-0.10.0/src/rpcserver.cpp bitcoin-0.10.0-bm/src/rpcserver.cpp
+--- bitcoin-0.10.0/src/rpcserver.cpp	2015-02-13 16:55:11.000000000 +0800
++++ bitcoin-0.10.0-bm/src/rpcserver.cpp	2015-05-08 15:27:20.000000000 +0800
+@@ -271,6 +271,8 @@
+     { "blockchain",         "verifychain",            &verifychain,            true,      false,      false },
+     { "blockchain",         "invalidateblock",        &invalidateblock,        true,      true,       false },
+     { "blockchain",         "reconsiderblock",        &reconsiderblock,        true,      true,       false },
++    { "blockchain",         "bm_get_best_block",      &bm_get_best_block,      true,      true,       false },
++    { "blockchain",         "bm_get_block_detail",    &bm_get_block_detail,    true,      true,       false },
+ 
+     /* Mining */
+     { "mining",             "getblocktemplate",       &getblocktemplate,       true,      false,      false },
+diff -uNr bitcoin-0.10.0/src/rpcserver.h bitcoin-0.10.0-bm/src/rpcserver.h
+--- bitcoin-0.10.0/src/rpcserver.h	2015-02-13 16:55:11.000000000 +0800
++++ bitcoin-0.10.0-bm/src/rpcserver.h	2015-05-08 15:27:20.000000000 +0800
+@@ -224,6 +224,8 @@
+ extern json_spirit::Value getchaintips(const json_spirit::Array& params, bool fHelp);
+ extern json_spirit::Value invalidateblock(const json_spirit::Array& params, bool fHelp);
+ extern json_spirit::Value reconsiderblock(const json_spirit::Array& params, bool fHelp);
++extern json_spirit::Value bm_get_best_block(const json_spirit::Array& params, bool fHelp);
++extern json_spirit::Value bm_get_block_detail(const json_spirit::Array& params, bool fHelp);
+ 
+ // in rest.cpp
+ extern bool HTTPReq_REST(AcceptedConnection *conn,

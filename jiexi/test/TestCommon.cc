@@ -19,6 +19,29 @@
 #include "gtest/gtest.h"
 #include "Common.h"
 
+TEST(Common, Strings_Format) {
+  for (int i = 1; i < 1024; i++) {
+    string s;
+    for (int j = 0; j < i; j++) {
+      s += "A";
+    }
+    string s1 = Strings::Format("%s", s.c_str());
+    ASSERT_EQ(s1, s);
+  }
+}
+
+TEST(Common, Strings_Append) {
+  for (int i = 1; i < 1024; i++) {
+    string s;
+    for (int j = 0; j < i; j++) {
+      s += "A";
+    }
+    string s1;
+    Strings::Append(s1, "%s", s.c_str());
+    ASSERT_EQ(s1, s);
+  }
+}
+
 TEST(Common, score2Str) {
   // 10e-25
   ASSERT_EQ(score2Str(0.0000000000000000000000001), "0.0000000000000000000000001");

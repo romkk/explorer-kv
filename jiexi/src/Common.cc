@@ -565,13 +565,13 @@ double Strings::toDouble(const string & str) {
 
 
 string Strings::Format(const char * fmt, ...) {
-  char tmp[256];
+  char tmp[512];
   string dest;
   va_list al;
   va_start(al, fmt);
-  int len = vsnprintf(tmp, 255, fmt, al);
+  int len = vsnprintf(tmp, 512, fmt, al);
   va_end(al);
-  if (len>255) {
+  if (len>511) {
     char * destbuff = new char[len+1];
     va_start(al, fmt);
     len = vsnprintf(destbuff, len+1, fmt, al);
@@ -585,18 +585,20 @@ string Strings::Format(const char * fmt, ...) {
 }
 
 void Strings::Append(string & dest, const char * fmt, ...) {
-  char tmp[256];
+  char tmp[512];
   va_list al;
   va_start(al, fmt);
-  int len = vsnprintf(tmp, 255, fmt, al);
-  if (len>255) {
+  int len = vsnprintf(tmp, 512, fmt, al);
+  va_end(al);
+  if (len>511) {
     char * destbuff = new char[len+1];
+    va_start(al, fmt);
     len = vsnprintf(destbuff, len+1, fmt, al);
+    va_end(al);
     dest.append(destbuff, len);
   } else {
     dest.append(tmp, len);
   }
-  va_end(al);
 }
 
 string Strings::ToUpper(const string & name) {

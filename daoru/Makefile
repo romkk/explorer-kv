@@ -4,6 +4,11 @@ SHELL := /bin/bash
 test:
 	./vendor/bin/phpunit --bootstrap test/bootstrap.php test
 
+.PHONY: deploy-aliyun
+deploy-aliyun:
+	@rm -rf log/*
+	@ansible-playbook -u root -i deploy/inventory --private-key=~/.ssh/common.pem deploy/deploy.yml
+
 .PHONY: import-db
 import-db: ENV_FILE = ".env"
 import-db: installdb

@@ -1,0 +1,22 @@
+---
+
+- hosts: daoru
+  tasks:
+  - name: update sources.list
+    copy:
+      content: |
+        deb http://mirrors.sohu.com/ubuntu/ trusty main restricted universe multiverse
+        deb http://mirrors.sohu.com/ubuntu/ trusty-security main restricted universe multiverse
+        deb http://mirrors.sohu.com/ubuntu/ trusty-updates main restricted universe multiverse
+      dest: /etc/apt/sources.list
+  - name: ensure php cli environment
+    apt: update_cache=yes name={{ item }}
+    with_items:
+      - php5-cli
+      - php5-curl
+      - php5-mysqlnd
+  - name: copy files
+    synchronize:
+      delete: yes
+      src: ../
+      dest: /work

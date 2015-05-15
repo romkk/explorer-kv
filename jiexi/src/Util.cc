@@ -107,8 +107,8 @@ int64_t txHash2Id(MySQLConnection &db, const uint256 &txHash) {
   string sql;
 
   const string hashStr = txHash.ToString();
-  sql = Strings::Format("SELECT `id` FROM `raw_txs_%04d` WHERE `hex`='%s'",
-                        HexToDecLast2Bytes(hashStr), hashStr.c_str());
+  sql = Strings::Format("SELECT `id` FROM `raw_txs_%04d` WHERE `tx_hash`='%s'",
+                        HexToDecLast2Bytes(hashStr) % 64, hashStr.c_str());
   db.query(sql, res);
   if (res.numRows() != 1) {
     THROW_EXCEPTION_DBEX("can't find rawtx: %s", hashStr.c_str());

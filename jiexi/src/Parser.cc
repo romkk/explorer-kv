@@ -157,14 +157,13 @@ void Parser::run() {
       acceptBlock(txlog.blkHeight_);
     }
     acceptTx(&txlog);
-    updateLastTxlogId(lastTxLogOffset+1);
+
+    // 设置为当前的ID，该ID不一定连续
+    updateLastTxlogId(lastTxLogOffset / 100000000 + txlog.logId_);
 
     if (!dbExplorer_.execute("COMMIT")) {
       goto error;
     }
-
-exit(1);
-    break;
   } /* /while */
 
 error:
@@ -486,14 +485,12 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
       prevPos  = -1;
 
       // 插入当前交易的inputs
-      values.push_back(Strings::Format("%lld,%d,'%s','%s',%u,%lld,%d,"
-                                       "%lld,%lld,'%s'",
+      values.push_back(Strings::Format("%lld,%d,'%s','%s',%u,"
+                                       "0,-1,0,'','','%s'",
                                        txId, n,
                                        in.scriptSig.ToString().c_str(),
                                        HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
-                                       in.nSequence, prevTxId, prevPos,
-                                       0/* prev_address_id */,
-                                       0/* prev_value */, now.c_str()));
+                                       in.nSequence, now.c_str()));
     } else
     {
       prevHash = in.prevout.hash;
@@ -518,9 +515,11 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
         THROW_EXCEPTION_DBEX("can't find tx output, txId: %lld, hash: %s, position: %d",
                              prevTxId, prevHash.ToString().c_str(), prevPos);
       }
-      values.push_back(Strings::Format("%lld,%d,'%s',%u,%lld,%d,"
-                                       "%lld,%lld,'%s','%s','%s'",
-                                       txId, n, in.scriptSig.ToString().c_str(),
+      values.push_back(Strings::Format("%lld,%d,'%s','%s',%u,%lld,%d,"
+                                       "%lld,'%s','%s','%s'",
+                                       txId, n,
+                                       in.scriptSig.ToString().c_str(),
+                                       HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
                                        in.nSequence, prevTxId, prevPos,
                                        dbTxOutput.value,
                                        dbTxOutput.address.c_str(),
@@ -574,9 +573,8 @@ void _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
     vector<CTxDestination> addresses;
     int nRequired;
     if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-      LOG_WARN("extract destinations failure, txId: %lld, hash: %s",
-               txId, tx.GetHash().ToString().c_str());
-      continue;
+      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
+               txId, tx.GetHash().ToString().c_str(), n);
     }
 
     // multiSig 可能由多个输出地址
@@ -668,7 +666,9 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
                             " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                             prevTxYmd, addrID, prevTxId);
       db.query(sql, res);
-      assert(res.numRows() == 1);
+      if (res.numRows() != 1) {
+      	THROW_EXCEPTION_DBEX("prev address_tx not exist in DB");
+      }
       row = res.nextRow();
       totalRecv    = atoi64(row[0]);
       finalBalance = atoi64(row[1]);
@@ -698,7 +698,7 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
     sql = Strings::Format("UPDATE `%s` SET `tx_count`=`tx_count`+1, "
                           " `total_received` = `total_received` + %lld,"
                           " `total_sent`     = `total_sent`     + %lld,"
-                          " `end_tx_ymd`=%d, `end_tx_id`=%d, `updated_at`='%s' "
+                          " `end_tx_ymd`=%d, `end_tx_id`=%lld, `updated_at`='%s' "
                           " WHERE `id`=%lld ",
                           addrTableName.c_str(),
                           (balanceDiff > 0 ? balanceDiff : 0),

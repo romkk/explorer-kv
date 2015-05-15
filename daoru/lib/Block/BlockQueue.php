@@ -35,8 +35,14 @@ class BlockQueue {
         return $offset < 0 ? null : $this->queue[$offset];
     }
 
-    public function rollback() {
-        //TODO
+    public function rollback(Collection $orphanBlocks) {
+        Txlogs::ensureTable();
+
+        App::$container->make('capsule')->getConnection()->transaction(function() use ($orphanBlocks) {
+            $orphanBlocks->reverse()->each(function (Block $block) {
+                $block->rollback();
+            });
+        });
     }
 
     public function diff(Block $remote) {

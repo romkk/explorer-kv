@@ -66,4 +66,23 @@ class BlockTest extends ExplorerDatabaseTestCase {
         $this->assertEquals('hash', $block->getHash());
         $this->assertEquals('previousblockhash', $block->getPrevHash());
     }
+
+    public function testRollback() {
+        $this->tableCreateLike('txlogs_0000', '0_tpl_txlogs');
+
+        $block = Block::createFromBlockDetail(Bitcoin::make()->bm_get_block_detail('000000000000226f7618566e70a2b5e020e29579b46743f05348427239bf41a1'));        // height = 300000
+        $this->assertEquals('00000000dfe970844d1bf983d0745f709368b5c66224837a17ed633f0dabd300', $block->getPrevHash());
+        $this->assertEquals(2, count($block->getTxs()));
+
+        $block->rollback();
+
+        $rows = Txlogs::orderBy('id')->get();
+        $this->assertEquals(2, count($rows));
+        $this->assertEquals('caa307764f31e52def1368847b7418c6683feaad00a9752405c2a9f99ab2154b', $rows[0]->tx_hash);
+        $this->assertEquals(2, $rows[0]->handle_type);
+        $this->assertEquals('9e109b6b9ca374d573f9e923490076980d612d7ea75c62b6209b2001ff36f38c', $rows[1]->tx_hash);
+        $this->assertEquals(2, $rows[1]->handle_type);
+
+        $this->tableDeleteLike('txlogs_%');
+    }
 }

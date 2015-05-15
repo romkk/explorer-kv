@@ -153,5 +153,9 @@ class Block {
         $conn->commit();
     }
 
-    public function rollback() {}
+    public function rollback() {
+        (new Collection($this->getTxs()))->reverse()->each(function (Tx $tx) {
+            $tx->rollback();
+        });
+    }
 }

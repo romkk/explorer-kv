@@ -46,4 +46,20 @@ class TxTest extends ExplorerDatabaseTestCase {
 
         $this->assertTableRowCount('raw_txs_0000', 1);
     }
+
+    public function testRollback() {
+        $this->tableCreateLike('txlogs_0000', '0_tpl_txlogs');
+
+        $block = new Block('hash', 'prevhash', 1, 12345);
+        $tx = new Tx($block, 'txhash');
+
+        $this->assertTableRowCount('txlogs_0000', 0);
+        $tx->rollback();
+        $this->assertTableRowCount('txlogs_0000', 1);
+        $row = Txlogs::first();
+        $this->assertEquals('txhash', $row['tx_hash']);
+        $this->assertEquals(Txlogs::ROW_TYPE_ROLLBACK, $row['handle_type']);
+
+        $this->tableDeleteLike('txlogs_%');
+    }
 }

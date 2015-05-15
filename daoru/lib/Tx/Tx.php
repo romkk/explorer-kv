@@ -55,4 +55,18 @@ class Tx {
             $rawTx->save();
         }
     }
+
+    public function rollback() {
+        $now = Carbon::now()->toDateTimeString();
+        $row = [
+            'handle_status' => 100,
+            'handle_type' => Txlogs::ROW_TYPE_ROLLBACK,
+            'block_height' => $this->getBlock()->getHeight(),
+            'block_timestamp' => $this->getBlock()->getBlockTimestamp(),
+            'tx_hash' => $this->getHash(),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ];
+        Txlogs::insert($row);
+    }
 }

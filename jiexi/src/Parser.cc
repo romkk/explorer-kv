@@ -163,10 +163,20 @@ void Parser::run() {
       goto error;
     }
 
-    if (txlog.tx_.IsCoinBase()) {
-      acceptBlock(txlog.blkHeight_);
+    if (txlog.type_ == TXLOG_TYPE_ACCEPT) {
+      if (txlog.tx_.IsCoinBase()) {
+        acceptBlock(txlog.blkHeight_);
+      }
+      acceptTx(&txlog);
+    } else if (txlog.type_ == TXLOG_TYPE_ROLLBACK) {
+      // TODO: rollback
+      if (txlog.tx_.IsCoinBase()) {
+      	rollbackBlock(txlog.blkHeight_);
+      }
+      rollbackTx(&txlog);
+    } else {
+      LOG_FATAL("invalid txlog type: %d", txlog.type_);
     }
-    acceptTx(&txlog);
 
     // 设置为当前的ID，该ID不一定连续
     updateLastTxlogId(lastTxLogOffset / 100000000 + txlog.logId_);
@@ -260,12 +270,13 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
   string prevBlockHash = header.hashPrevBlock.ToString();
   MySQLResult res;
   char **row = nullptr;
+  string sql;
 
   // 查询前向块信息，前向块信息必然存在(创始块没有前向块)
   int64_t prevBlockId = 0;
   if (height > 0) {
-    string sql = Strings::Format("SELECT `block_id` FROM `0_blocks` WHERE `hash` = '%s'",
-                                 prevBlockHash.c_str());
+    sql = Strings::Format("SELECT `block_id` FROM `0_blocks` WHERE `hash` = '%s'",
+                          prevBlockHash.c_str());
     db.query(sql, res);
     if (res.numRows() != 1) {
       THROW_EXCEPTION_DBEX("prev block not exist in DB, hash: ", prevBlockHash.c_str());
@@ -277,45 +288,48 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
 
   // 将当前高度的块的chainID增一，若存在分叉的话. UNIQUE	(height, chain_id)
   // 当前即将插入的块的chainID必然为0
-  {
-    string sql = Strings::Format("UPDATE `0_blocks` SET `chain_id`=`chain_id`+1 "
-                                 " WHERE `height` = %d ", height);
-    db.update(sql.c_str());
-  }
+  sql = Strings::Format("UPDATE `0_blocks` SET `chain_id`=`chain_id`+1 "
+                        " WHERE `height` = %d ", height);
+  db.update(sql.c_str());
 
   // 构造插入SQL
-  uint64_t difficulty = 0;
-  BitsToDifficulty(header.nBits, difficulty);
-  const int64_t rewardBlock = GetBlockValue(height, 0);
-  const int64_t rewardFees  = blk.vtx[0].GetValueOut() - rewardBlock;
-  assert(rewardFees >= 0);
-  string sql1 = Strings::Format("INSERT INTO `0_blocks` (`block_id`, `height`, `hash`,"
-                                " `version`, `mrkl_root`, `timestamp`, `bits`, `nonce`,"
-                                " `prev_block_id`, `prev_block_hash`, `next_block_id`, "
-                                " `next_block_hash`, `chain_id`, `size`,"
-                                " `difficulty`, `tx_count`, `reward_block`, `reward_fees`, "
-                                " `created_at`) VALUES ("
-                                // 1. `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`
-                                " %lld, %d, '%s', %d, '%s', %u, "
-                                // 2. `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
-                                " %lld, %lld, %lld, '%s', "
-                                // 3. `next_block_id`, `next_block_hash`, `chain_id`, `size`,
-                                " 0, '', %d, %d, "
-                                // 4. `difficulty`, `tx_count`, `reward_block`, `reward_fees`, `created_at`
-                                "%llu, %d, %lld, %lld, '%s');",
-                                // 1.
-                                blockId, height,
-                                header.GetHash().ToString().c_str(),
-                                header.nVersion,
-                                header.hashMerkleRoot.ToString().c_str(),
-                                (uint32_t)header.nTime,
-                                // 2.
-                                header.nBits, header.nNonce, prevBlockId, prevBlockHash.c_str(),
-                                // 3.
-                                0/* chainId */, blockBytes,
-                                // 4.
-                                difficulty, blk.vtx.size(), rewardBlock, rewardFees, date("%F %T").c_str());
-  db.updateOrThrowEx(sql1, 1);
+  sql = Strings::Format("SELECT `block_id` FROM `0_blocks` WHERE `block_id`=%lld",
+                        blockId);
+  db.query(sql, res);
+  if (res.numRows() == 0) {  // 不存在则插入，由于有rollback等行为，块由可能已经存在了
+    uint64_t difficulty = 0;
+    BitsToDifficulty(header.nBits, difficulty);
+    const int64_t rewardBlock = GetBlockValue(height, 0);
+    const int64_t rewardFees  = blk.vtx[0].GetValueOut() - rewardBlock;
+    assert(rewardFees >= 0);
+    string sql1 = Strings::Format("INSERT INTO `0_blocks` (`block_id`, `height`, `hash`,"
+                                  " `version`, `mrkl_root`, `timestamp`, `bits`, `nonce`,"
+                                  " `prev_block_id`, `prev_block_hash`, `next_block_id`, "
+                                  " `next_block_hash`, `chain_id`, `size`,"
+                                  " `difficulty`, `tx_count`, `reward_block`, `reward_fees`, "
+                                  " `created_at`) VALUES ("
+                                  // 1. `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`
+                                  " %lld, %d, '%s', %d, '%s', %u, "
+                                  // 2. `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
+                                  " %lld, %lld, %lld, '%s', "
+                                  // 3. `next_block_id`, `next_block_hash`, `chain_id`, `size`,
+                                  " 0, '', %d, %d, "
+                                  // 4. `difficulty`, `tx_count`, `reward_block`, `reward_fees`, `created_at`
+                                  "%llu, %d, %lld, %lld, '%s');",
+                                  // 1.
+                                  blockId, height,
+                                  header.GetHash().ToString().c_str(),
+                                  header.nVersion,
+                                  header.hashMerkleRoot.ToString().c_str(),
+                                  (uint32_t)header.nTime,
+                                  // 2.
+                                  header.nBits, header.nNonce, prevBlockId, prevBlockHash.c_str(),
+                                  // 3.
+                                  0/* chainId */, blockBytes,
+                                  // 4.
+                                  difficulty, blk.vtx.size(), rewardBlock, rewardFees, date("%F %T").c_str());
+    db.updateOrThrowEx(sql1, 1);
+  }
 
   // 更新前向块信息, 高度一以后的块需要，创始块不需要
   if (height > 0) {
@@ -327,6 +341,7 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
   }
 }
 
+// 已经存在则会忽略
 void _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t blockId,
                      std::map<uint256, int64_t> &hash2id) {
   const string tableName = Strings::Format("block_txs_%04d", blockId % 100);
@@ -340,6 +355,8 @@ void _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t block
   assert(res.numRows() == 1);
   row = res.nextRow();
   int32_t existMaxPosition = atoi(row[0]);
+
+  // 仅允许两种情况，要么记录全部都存在，要么记录都不存在
   if (existMaxPosition != -1) {
     LOG_WARN("block_txs already exist");
     // 数量不符合，异常
@@ -347,6 +364,7 @@ void _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t block
       THROW_EXCEPTION_DBEX("exist txs is not equal block.vtx, now position is %d, should be %d",
                            existMaxPosition, (int32_t)blk.vtx.size() - 1);
     }
+    return;  // 记录全部都存在
   }
 
   // 不存在，则插入新的记录
@@ -746,6 +764,41 @@ void Parser::acceptTx(class TxLog *txLog) {
 
   // 变更地址相关信息
   _insertAddressTxs(dbExplorer_, txLog, addressBalance);
+}
+
+// 回滚一个块操作
+// 回滚操作，不删除 table.0_blocks 的记录, 保持 table.block_txs_xxxx 记录
+void Parser::rollbackBlock(const int32_t height) {
+  MySQLResult res;
+  string sql;
+
+  // 获取块Raw Hex
+  string blkRawHex;
+  int32_t chainId;
+  int64_t blockId;
+  if (!getBlockRawHex(nullptr, &height, dbExplorer_, &blkRawHex, &chainId, &blockId)) {
+    THROW_EXCEPTION_DBEX("can't find block by height: %d", height);
+  }
+  assert(chainId == 0);
+
+  // 解码Raw Hex
+  vector<unsigned char> blockData(ParseHex(blkRawHex));
+  CDataStream ssBlock(blockData, SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+  CBlock blk;
+  try {
+    ssBlock >> blk;
+  }
+  catch (std::exception &e) {
+    THROW_EXCEPTION_DBEX("Block decode failed, height: %d, blockId: %lld",
+                         height, blockId);
+  }
+  const CBlockHeader header = blk.GetBlockHeader();  // alias
+  const  string prevBlockHash = header.hashPrevBlock.ToString();
+
+  // 移除前向block的next指向
+  sql = Strings::Format("UPDATE `0_blocks` SET `next_block_id`=0, `next_block_hash`=''"
+                        " WHERE `hash` = '%s' ", prevBlockHash.c_str());
+  dbExplorer_.updateOrThrowEx(sql, 1);
 }
 
 // 获取上次txlog的进度偏移量

@@ -77,9 +77,10 @@ private:
   void checkTableAddressTxs(const uint32_t timestamp);
 
   void acceptBlock  (const int32_t height);
-  bool rollbackBlock(const uint256 &blkhash, const int height);
+  void rollbackBlock(const int32_t height);
 
-  void acceptTx(class TxLog *txLog);
+  void acceptTx  (class TxLog *txLog);
+  void rollbackTx(class TxLog *txLog);
 
 public:
   Parser();

@@ -168,13 +168,14 @@ void Parser::run() {
         acceptBlock(txlog.blkHeight_);
       }
       acceptTx(&txlog);
-    } else if (txlog.type_ == TXLOG_TYPE_ROLLBACK) {
-      // TODO: rollback
+    }
+    else if (txlog.type_ == TXLOG_TYPE_ROLLBACK) {
       if (txlog.tx_.IsCoinBase()) {
       	rollbackBlock(txlog.blkHeight_);
       }
       rollbackTx(&txlog);
-    } else {
+    }
+    else {
       LOG_FATAL("invalid txlog type: %d", txlog.type_);
     }
 
@@ -500,6 +501,7 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
   " `sequence`, `prev_tx_id`, `prev_position`, `prev_value`,"
   " `prev_address`, `prev_address_ids`, `created_at`";
   vector<string> values;
+  string sql;
 
   n = -1;
   for (auto &in : tx.vin) {
@@ -528,12 +530,12 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
       prevPos  = (int32_t)in.prevout.n;
 
       // 将前向交易标记为已花费
-      string sql = Strings::Format("UPDATE `tx_outputs_%04d` SET "
-                                   " `spent_tx_id`=%lld, `spent_position`=%d"
-                                   " WHERE `tx_id`=%lld AND `position`=%d "
-                                   " AND `spent_tx_id`=0 AND `spent_position`=-1 ",
-                                   prevTxId % 100, txId, n,
-                                   prevTxId, prevPos);
+      sql = Strings::Format("UPDATE `tx_outputs_%04d` SET "
+                            " `spent_tx_id`=%lld, `spent_position`=%d"
+                            " WHERE `tx_id`=%lld AND `position`=%d "
+                            " AND `spent_tx_id`=0 AND `spent_position`=-1 ",
+                            prevTxId % 100, txId, n,
+                            prevTxId, prevPos);
       db.updateOrThrowEx(sql, 1);
 
       // 将 address_unspent_outputs_xxxx 相关记录删除
@@ -799,6 +801,227 @@ void Parser::rollbackBlock(const int32_t height) {
   sql = Strings::Format("UPDATE `0_blocks` SET `next_block_id`=0, `next_block_hash`=''"
                         " WHERE `hash` = '%s' ", prevBlockHash.c_str());
   dbExplorer_.updateOrThrowEx(sql, 1);
+}
+
+// 回滚，重新插入未花费记录
+void _unremoveUnspentOutputs(MySQLConnection &db, const int64_t blockHeight,
+                             const int64_t txId, const int32_t position,
+                             map<int64_t, int64_t> &addressBalance) {
+  MySQLResult res;
+  string sql;
+  string tableName;
+  char **row;
+  int n;
+
+  // 获取相关output信息
+  tableName = Strings::Format("tx_outputs_%04d", txId % 100);
+  sql = Strings::Format("SELECT `address_ids`,`value` FROM `%s` WHERE `tx_id`=%lld AND `position`=%d",
+                        tableName.c_str(), txId, position);
+  db.query(sql, res);
+  row = res.nextRow();
+  assert(res.numRows() == 1);
+
+  // 获取地址
+  const string s = string(row[0]);
+  const int64_t value = atoi64(row[1]);
+  vector<string> addressIdsStrVec = split(s, ',');
+  n = -1;
+  for (auto &addrIdStr : addressIdsStrVec) {
+    n++;
+    const int64_t addrId = atoi64(addrIdStr.c_str());
+    addressBalance[addrId] += -1 * value;
+
+    // 恢复每一个输出地址的 address_unspent_outputs 记录
+    sql = Strings::Format("INSERT INTO `address_unspent_outputs_%04d`"
+                          " (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)"
+                          " VALUES (%lld, %lld, %d, %d, %lld, %lld, '%s') ",
+                          addrId % 10, addrId, txId, position, n, blockHeight,
+                          value, date("%F %T").c_str());
+    db.updateOrThrowEx(sql, 1);
+  }
+}
+
+// 回滚交易 inputs
+void _rollbackTxInputs(MySQLConnection &db, const CTransaction &tx,
+                       const int64_t blockHeight,
+                       const int64_t txId, map<int64_t, int64_t> &addressBalance) {
+  string sql;
+  int n = -1;
+  for (auto &in : tx.vin) {
+    n++;
+
+    // 非 coinbase 无需处理前向交易
+    if (tx.IsCoinBase()) { continue; }
+
+    uint256 prevHash = in.prevout.hash;
+    int64_t prevTxId = txHash2Id(db, prevHash);
+    int32_t prevPos  = (int32_t)in.prevout.n;
+
+    // 将前向交易标记为未花费
+    sql = Strings::Format("UPDATE `tx_outputs_%04d` SET "
+                          " `spent_tx_id`=0, `spent_position`=-1"
+                          " WHERE `tx_id`=%lld AND `position`=%d "
+                          " AND `spent_tx_id`<>0 AND `spent_position`<>-1 ",
+                          prevTxId % 100, prevTxId, prevPos);
+    db.updateOrThrowEx(sql, 1);
+
+    // 重新插入 address_unspent_outputs_xxxx 相关记录
+    _unremoveUnspentOutputs(db, blockHeight, prevTxId, prevPos, addressBalance);
+  } /* /for */
+
+  // 删除 table.tx_inputs_xxxx 记录
+  sql = Strings::Format("DELETE FROM `tx_inputs_%04d` WHERE `tx_id`=%lld ",
+                        txId % 100, txId);
+  db.updateOrThrowEx(sql, (int32_t)tx.vin.size());
+}
+
+// 回滚交易 outputs
+void _rollbackTxOutputs(MySQLConnection &db, const CTransaction &tx,
+                        const int64_t txId, const int64_t blockHeight,
+                        map<int64_t, int64_t> &addressBalance) {
+  int n;
+  const string now = date("%F %T");
+  set<string> allAddresss;
+  string sql;
+
+  // 提取涉及到的所有地址
+  for (auto &out : tx.vout) {
+    txnouttype type;
+    vector<CTxDestination> addresses;
+    int nRequired;
+    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
+      LOG_WARN("extract destinations failure, txId: %lld, hash: %s",
+               txId, tx.GetHash().ToString().c_str());
+      continue;
+    }
+    for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
+      allAddresss.insert(CBitcoinAddress(addr).ToString());
+    }
+  }
+  // 拿到所有地址的id
+  map<string, int64_t> addrMap;
+  GetAddressIds(db, allAddresss, addrMap);
+
+  // 处理输出
+  // (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)
+  n = -1;
+  for (auto &out : tx.vout) {
+    n++;
+    txnouttype type;
+    vector<CTxDestination> addresses;
+    int nRequired;
+    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
+      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
+               txId, tx.GetHash().ToString().c_str(), n);
+    }
+
+    // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
+    int i = -1;
+    for (auto &addr : addresses) {
+      i++;
+      const string addrStr = CBitcoinAddress(addr).ToString();
+      const int64_t addrId = addrMap[addrStr];
+      addressBalance[addrId] += out.nValue;
+
+      // 删除： address_unspent_outputs 记录
+      sql = Strings::Format("DELETE FROM `address_unspent_outputs_%04d` "
+                            " WHERE `address_id`=%lld AND `position`=%d AND `position2`=%d ",
+                            addrId % 10, addrId, txId, n, i);
+      db.updateOrThrowEx(sql, 1);
+    }
+  }
+
+  // delete table.tx_outputs_xxxx
+  sql = Strings::Format("DELETE FROM `tx_outputs_%04d` WHERE `tx_id`=%lld",
+                        txId % 100, txId);
+  db.updateOrThrowEx(sql, (int32_t)tx.vout.size());
+}
+
+
+// 回滚：变更地址&地址对应交易记录
+void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
+                         const map<int64_t, int64_t> &addressBalance) {
+  MySQLResult res;
+  char **row;
+  string sql;
+
+  // 前面步骤会确保该表已经存在
+  const int32_t ymd = atoi(date("%Y%m%d", txLog->blockTimestamp_).c_str());
+
+  for (auto &it : addressBalance) {
+    const int64_t addrID      = it.first;
+    const int64_t balanceDiff = it.second;
+
+    // 获取地址信息
+    string addrTableName = Strings::Format("addresses_%04d", addrID / BILLION);
+    sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id` FROM `%s` WHERE `id`=%lld ",
+                          addrTableName.c_str(), addrID);
+    db.query(sql, res);
+    assert(res.numRows() == 1);
+    row = res.nextRow();
+
+    int32_t endTxYmd = atoi(row[0]);
+    int64_t endTxId  = atoi64(row[1]);
+
+    // 当前要回滚的记录应该就是最后一条记录
+    if (endTxYmd != ymd || endTxId != txLog->txId_) {
+      THROW_EXCEPTION_DBEX("address's last tx NOT match, addrId: %lld, "
+                           "last ymd(%lld) should be %lld, "
+                           "last txId(%lld) should be %lld",
+                           addrID, endTxYmd, ymd, endTxId, txLog->txId_);
+    }
+
+    // 获取最后一条记录的前向记录，倒数第二条记录，如果存在的话
+    int64_t totalRecv = 0, finalBalance = 0, end2TxId = 0;
+    int32_t end2TxYmd = 0;
+    sql = Strings::Format("SELECT `total_received`,`balance_final`,`prev_ymd`, `prev_tx_id` "
+                          " FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                          endTxYmd, addrID, endTxId);
+    db.query(sql, res);
+    if (res.numRows() != 1) {
+      row = res.nextRow();
+      totalRecv    = atoi64(row[0]);
+      finalBalance = atoi64(row[1]);
+      end2TxYmd = atoi(row[2]);
+      end2TxId  = atoi64(row[3]);
+
+      // 设置倒数第二条记录 next 记录为空
+      sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=0, `next_tx_id`=0 "
+                            " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                            end2TxYmd, addrID, end2TxId);
+      db.updateOrThrowEx(sql, 1);
+    }
+
+    // 删除最后一条记录
+    sql = Strings::Format("DELETE FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                          ymd, addrID, txLog->txId_);
+    db.updateOrThrowEx(sql, 1);
+
+    // 更新地址信息
+    sql = Strings::Format("UPDATE `%s` SET `tx_count`=`tx_count`-1, "
+                          " `total_received` = `total_received` - %lld,"
+                          " `total_sent`     = `total_sent`     - %lld,"
+                          " `end_tx_ymd`=%d, `end_tx_id`=%lld, `updated_at`='%s' "
+                          " WHERE `id`=%lld ",
+                          addrTableName.c_str(),
+                          (balanceDiff > 0 ? balanceDiff : 0),
+                          (balanceDiff < 0 ? balanceDiff * -1 : 0),
+                          end2TxYmd, end2TxId, date("%F %T").c_str(), addrID);
+    db.updateOrThrowEx(sql, 1);
+  } /* /for */
+}
+
+
+// 回滚一个交易
+void Parser::rollbackTx(class TxLog *txLog) {
+  // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
+  map<int64_t, int64_t> addressBalance;
+
+  // _rollbackTxInputs
+
+  // _rollbackTxOutputs
+
+  // _rollbackAddressTxs
 }
 
 // 获取上次txlog的进度偏移量

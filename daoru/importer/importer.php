@@ -94,7 +94,7 @@ for ($i = 0; $i < 64; $i++) {
 
 for ($i = $startIndex; $i <= $endIndex; $i++) {
 
-    Log::info('processing block' . $i);
+    Log::info('processing block ' . $i);
 
     $detail = $bitcoinClient->bm_get_block_detail(strval($i));
     $lines = format($detail);

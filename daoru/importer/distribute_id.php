@@ -16,6 +16,8 @@ require __DIR__ . '/../bootstrap/database.php';
 
 // update placeholder in raw_txs_%04d
 
+Log::info('开始分配 id');
+
 $index = [];
 for ($i = 0; $i < 64; $i++) {
     $index[$i] = RawTx::getNextId(sprintf('raw_txs_%04d', $i));

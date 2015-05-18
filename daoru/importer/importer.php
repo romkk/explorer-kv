@@ -1,3 +1,4 @@
+#!/usr/bin/env php
 <?php
 require __DIR__ . '/../vendor/autoload.php';
 
@@ -47,7 +48,7 @@ function format(array $detail, array &$rawTxs) {
 
     // txlogs
     $ret['txlogs'] = array_map(function($t) use ($detail, $now) {
-        return [$t['hash'], join(',', [100, 1, $detail['height'], date('Y-m-d', $detail['time']), $t['hash'], $now, $now]) . "\n"];
+        return [$t['hash'], join(',', [100, 1, $detail['height'], $detail['time'], $t['hash'], $now, $now]) . "\n"];
     }, $tx);
 
     // rawtxs

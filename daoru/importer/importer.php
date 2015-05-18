@@ -1,5 +1,6 @@
 #!/usr/bin/env php
 <?php
+//bootstrap things..
 require __DIR__ . '/../vendor/autoload.php';
 
 date_default_timezone_set('UTC');
@@ -21,6 +22,7 @@ files will be dump to new directory in %s named by start_index and end_index.
     exit(0);
 }
 
+//helper
 function ensureDirectory($startIndex, $endIndex) {
     $dirname = $startIndex.'_'.$endIndex;
     $fullpath = __DIR__ . '/' . $dirname;
@@ -62,6 +64,9 @@ function format(array $detail, array &$rawTxs) {
 function getRawTxsIndex($hash) {
     return hexdec(substr($hash, -2)) % 64;
 }
+
+
+//begin------------------------------------------------------------------
 
 if ($argc != 3) {
     usage();

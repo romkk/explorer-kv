@@ -39,7 +39,7 @@ function ensureDirectory($startIndex, $endIndex) {
     return $fullpath;
 }
 
-function format(array $detail, array &$rawTxs) {
+function format(array $detail) {
     $ret = [];
 
     extract($detail);
@@ -54,8 +54,8 @@ function format(array $detail, array &$rawTxs) {
     }, $tx);
 
     // rawtxs
-    $ret['rawtxs'] = array_map(function($t) use ($detail, $now, &$rawTxs) {
-        return [$t['hash'], join(',', [$rawTxs[getRawTxsIndex($t['hash'])]['index']++, $t['hash'], $t['rawhex'], $now]) . "\n"];
+    $ret['rawtxs'] = array_map(function($t) use ($detail, $now) {
+        return [$t['hash'], join(',', ['{}', $t['hash'], $t['rawhex'], $now]) . "\n"];  // {}: placeholder
     }, $tx);
 
     return $ret;
@@ -88,17 +88,14 @@ $txlogsCounter = 0;
 $rawTxs = [];
 
 for ($i = 0; $i < 64; $i++) {
-    $table = sprintf('raw_txs_%04d', $i);
-    $rawTxs[$i] = [
-        'index' => RawTx::getNextId($table),
-        'file' => fopen($table, 'a'),
-    ];
+    $table = sprintf('raw_txs_%04d.raw', $i);
+    $rawTxs[$i] = fopen($table, 'a');
 }
 
 for ($i = $startIndex; $i <= $endIndex; $i++) {
 
     $detail = $bitcoinClient->bm_get_block_detail(strval($i));
-    $lines = format($detail, $rawTxs);
+    $lines = format($detail);
 
     fwrite($rawBlocksFile, $lines['rawBlocks']);
 
@@ -115,7 +112,7 @@ for ($i = $startIndex; $i <= $endIndex; $i++) {
     foreach ($lines['rawtxs'] as $tx) {
         $hash = $tx[0];
         $line = $tx[1];
-        fwrite($rawTxs[getRawTxsIndex($hash)]['file'], $line);
+        fwrite($rawTxs[getRawTxsIndex($hash)], $line);
     }
 
     // update txlogs table
@@ -127,11 +124,32 @@ for ($i = $startIndex; $i <= $endIndex; $i++) {
     }
 }
 
-
 // close all file descriptor
 fclose($rawBlocksFile);
 fclose($txlogsFile);
-
 for ($i = 0; $i < 64; $i++) {
-    fclose($rawTxs[$i]['file']);
+    fclose($rawTxs[$i]);
+}
+
+// update placeholder in raw_txs_%04d
+$index = [];
+for ($i = 0; $i < 64; $i++) {
+    $index[$i] = RawTx::getNextId(sprintf('raw_txs_%04d', $i));
+}
+
+foreach (glob('raw_txs_*.raw') as $f) {
+    $rfd = fopen($f, 'r');
+    $wfd = fopen(basename($f, '.raw'), 'a');
+
+    $tablePostfix = sscanf($f, 'raw_txs_%04d.raw', $id);
+
+    while (($line = fgets($rfd)) !== false) {
+        fwrite($wfd, str_replace('{}', $index[$id]++, $line));
+    }
+
+    fclose($rfd);
+    fclose($wfd);
+
+    // delete raw file
+    unlink($f);
 }

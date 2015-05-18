@@ -1,4 +1,6 @@
 <?php
+use Illuminate\Support\Collection;
+
 require __DIR__ . '/bootstrap.php';
 
 Log::info('程序启动');
@@ -71,10 +73,12 @@ while (true) {
 
     } else {
         $tempTxList = $bitcoinClient->getrawmempool();
-        $newTxs = $pool->update($tempTxList);
+        $newTxs = $pool->update(Collection::make($tempTxList));
         if (count($newTxs)) {
+            Log::info(sprintf('检测到临时块新交易 %d 个', count($newTxs)));
             $pool->insert($newTxs);
         } else {
+            Log::info('暂无新交易信息，等待 10 s');
             sleep(10);
         }
     }

@@ -32,6 +32,9 @@ usort($dirs, function($a, $b) {
 });
 
 foreach ($dirs as $d) {
+
+    Log::info('正在处理 ' . $d);
+
     foreach (glob($d.'/raw_txs_*.raw') as $f) {
         $rfd = fopen($f, 'r');
         $wfd = fopen($d.'/'.basename($f, '.raw'), 'a');

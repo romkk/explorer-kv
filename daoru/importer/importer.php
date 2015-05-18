@@ -94,6 +94,8 @@ for ($i = 0; $i < 64; $i++) {
 
 for ($i = $startIndex; $i <= $endIndex; $i++) {
 
+    Log::info('processing block' . $i);
+
     $detail = $bitcoinClient->bm_get_block_detail(strval($i));
     $lines = format($detail);
 
@@ -129,27 +131,4 @@ fclose($rawBlocksFile);
 fclose($txlogsFile);
 for ($i = 0; $i < 64; $i++) {
     fclose($rawTxs[$i]);
-}
-
-// update placeholder in raw_txs_%04d
-$index = [];
-for ($i = 0; $i < 64; $i++) {
-    $index[$i] = RawTx::getNextId(sprintf('raw_txs_%04d', $i));
-}
-
-foreach (glob('raw_txs_*.raw') as $f) {
-    $rfd = fopen($f, 'r');
-    $wfd = fopen(basename($f, '.raw'), 'a');
-
-    $tablePostfix = sscanf($f, 'raw_txs_%04d.raw', $id);
-
-    while (($line = fgets($rfd)) !== false) {
-        fwrite($wfd, str_replace('{}', $index[$id]++, $line));
-    }
-
-    fclose($rfd);
-    fclose($wfd);
-
-    // delete raw file
-    unlink($f);
 }

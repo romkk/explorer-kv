@@ -28,6 +28,8 @@ while (true) {
 
     if ($queue->diff($remote)) {
 
+        $pool->rollback();  // 立刻回滚临时块
+
         $latestBlock = $queue->getBlock();
         Log::info('检测到当前块与最新块不一致，开始更新本地块信息', [
             'local' => is_null($latestBlock) ? null : $latestBlock->toArray(),
@@ -66,8 +68,6 @@ while (true) {
             $queue->rollback($orphanBlocks);
         }
 
-        $pool->rollback();
-
         $newBlock->insert();
 
     } else {
@@ -77,7 +77,7 @@ while (true) {
             Log::info(sprintf('检测到临时块新交易 %d 个', count($newTxs)));
             $pool->insert($newTxs);
         } else {
-            Log::info('暂无新交易信息，等待 10 s');
+            Log::info('暂无新交易信息，等待 10s');
             sleep(10);
         }
     }

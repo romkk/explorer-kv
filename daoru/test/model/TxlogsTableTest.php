@@ -32,6 +32,20 @@ class TxlogsTableTest extends ExplorerDatabaseTestCase {
         $this->assertEquals('txlogs_0002', $table);
     }
 
+    public function testGetEmptyTableList(){
+        $this->assertEquals(0, count(Txlogs::getTableList()));
+    }
+
+    public function testGetTableList(){
+        $this->tableCreateLike('txlogs_0000', '0_tpl_txlogs');
+        $this->tableCreateLike('txlogs_0001', '0_tpl_txlogs');
+
+        $list = Txlogs::getTableList();
+        $this->assertEquals(2, count($list));
+        $this->assertEquals('txlogs_0001', $list[0]);
+        $this->assertEquals('txlogs_0000', $list[1]);
+    }
+
     /**
      * Returns the test dataset.
      *

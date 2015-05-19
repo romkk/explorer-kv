@@ -5,21 +5,27 @@ use Illuminate\Database\Eloquent\Model;
 
 class Txlogs extends Model {
 
-    public $fillable = ['handle_status', 'handle_type', 'block_height', 'tx_hash'];
-
     const ROW_TYPE_FORWARD = 1;
     const ROW_TYPE_ROLLBACK = 2;
 
+    public $fillable = ['handle_status', 'handle_type', 'block_height', 'tx_hash'];
+
+    public static $tableList = null;
+
     public static function getTableList(){
-        $conn = App::$container->make('capsule')->getConnection();
-        $sql = "SELECT table_name
+        if (getenv('ENV') == 'test' || is_null(static::$tableList)) {       //单测需要实时的表目录
+            $conn = App::$container->make('capsule')->getConnection();
+            $sql = sprintf("SELECT table_name
                 FROM information_schema.tables
-                WHERE table_type = 'BASE TABLE' AND table_schema='BitcoinExplorerDB' AND table_name like 'txlogs_%'
-                ORDER BY table_name DESC";
-        $rows = $conn->select($sql);
-        return array_map(function ($r) {
-            return $r['table_name'];
-        }, $rows);
+                WHERE table_type = 'BASE TABLE' AND table_schema='%s' AND table_name like 'txlogs_%%'
+                ORDER BY table_name DESC", Config::get('database.name'));
+            $rows = $conn->select($sql);
+            static::$tableList = array_map(function ($r) {
+                return $r['table_name'];
+            }, $rows);
+        }
+
+        return static::$tableList;
     }
 
     public static function getLatestTable() {
@@ -40,6 +46,8 @@ class Txlogs extends Model {
         $sql = sprintf('create table %s like 0_tpl_txlogs', $nextTable);
         $conn = App::$container->make('capsule')->getConnection();
         $conn->statement($sql);
+
+        array_unshift(static::$tableList, $nextTable);
 
         Log::info(sprintf('新建了表 %s', $nextTable));
 

@@ -46,13 +46,12 @@ while (true) {
                 'localHash' => $latestBlock->getHash(),
                 'remoteHash' => $remote->getHash(),
             ]);
-            $detail = $bitcoinClient->bm_get_block_detail($latestBlock->getHash());      // 获取同高度 block
-            Log::info(sprintf('当前高度 %d，获取下一个块高度 %d',$latestBlock->getHeight(), $detail['height']));
+            $detail = $bitcoinClient->bm_get_block_detail($remote->getHash());      // 获取同高度 block
         } else {
-            //TODO 修改为 bm_get_block_detail
-            $detail = $bitcoinClient->getBlockByHeight($latestBlock->getHeight() + 1);
-            Log::info(sprintf('当前高度 %d，获取下一个块高度 %d',$latestBlock->getHeight(), $detail['height']));
+            $detail = $bitcoinClient->bm_get_block_detail($latestBlock->getHeight() + 1);
         }
+
+        Log::info(sprintf('当前高度 %d，目标高度 %d', $latestBlock->getHeight(), $detail['height']));
 
         $block = Block::createFromBlockDetail($detail);
         $queue->digest($block, $newBlock, $orphanBlocks, intval($needBackof));

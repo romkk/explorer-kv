@@ -492,7 +492,8 @@ DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t po
 }
 
 void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
-                     const int64_t txId, map<int64_t, int64_t> &addressBalance) {
+                     const int64_t txId, map<int64_t, int64_t> &addressBalance,
+                     int64_t &valueIn) {
   int n;
   const string tableName = Strings::Format("tx_inputs_%04d", txId % 100);
   const string now = date("%F %T");
@@ -557,6 +558,7 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
                                        dbTxOutput.address.c_str(),
                                        dbTxOutput.addressIds.c_str(),
                                        now.c_str()));
+      valueIn += dbTxOutput.value;
     }
   } /* /for */
 
@@ -752,24 +754,62 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
   } /* /for */
 }
 
+// 插入交易
+void _insertTx(MySQLConnection &db, class TxLog *txLog, int64_t valueIn) {
+  // (`tx_id`, `hash`, `height`, `is_coinbase`, `version`, `lock_time`, `size`, `fee`, `total_in_value`, `total_out_value`, `inputs_count`, `outputs_count`, `created_at`)
+  const string tName = Strings::Format("tx_%04d", txLog->txId_ / BILLION);
+  const CTransaction &tx = txLog->tx_;  // alias
+  string sql;
+
+  int64_t fee = 0;
+  const int64_t valueOut = txLog->tx_.GetValueOut();
+  if (txLog->tx_.IsCoinBase()) {
+    // coinbase的fee为 block rewards
+    fee = valueOut - GetBlockValue(txLog->blkHeight_, 0);
+  } else {
+    fee = valueIn - valueOut;
+  }
+
+  sql = Strings::Format("INSERT INTO `%s`(`tx_id`, `hash`, `height`, `is_coinbase`,"
+                        " `version`, `lock_time`, `size`, `fee`, `total_in_value`, "
+                        " `total_out_value`, `inputs_count`, `outputs_count`, `created_at`)"
+                        " VALUES (%lld, '%s', %d, %d, %d, %u, %d, %lld, %lld, %lld, %d, %d, '%s') ",
+                        tName.c_str(),
+                        // `tx_id`, `hash`, `height`
+                        txLog->txId_, txLog->txHash_.ToString().c_str(), txLog->blkHeight_,
+                        // `is_coinbase`, `version`, `lock_time`
+                        txLog->tx_.IsCoinBase() ? 1 : 0, tx.nVersion, tx.nLockTime,
+                        // `size`, `fee`, `total_in_value`, `total_out_value`
+                        txLog->txHex_.length()/2, fee, valueIn, valueOut,
+                        // `inputs_count`, `outputs_count`, `created_at`
+                        tx.vin.size(), tx.vout.size(), date("%F %T").c_str());
+  db.updateOrThrowEx(sql, 1);
+}
+
+
 // 接收一个新的交易
 void Parser::acceptTx(class TxLog *txLog) {
+  // 交易的输入之和，遍历交易后才能得出
+  int64_t valueIn = 0;
 
   // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
   map<int64_t, int64_t> addressBalance;
 
   // 处理inputs
-  _insertTxInputs(dbExplorer_, txLog->tx_, txLog->txId_, addressBalance);
+  _insertTxInputs(dbExplorer_, txLog->tx_, txLog->txId_, addressBalance, valueIn);
 
   // 处理outputs
   _insertTxOutputs(dbExplorer_, txLog->tx_, txLog->txId_, txLog->blkHeight_, addressBalance);
 
   // 变更地址相关信息
   _insertAddressTxs(dbExplorer_, txLog, addressBalance);
+
+  // 插入交易tx
+  _insertTx(dbExplorer_, txLog, valueIn);
 }
 
+
 // 回滚一个块操作
-// 回滚操作，不删除 table.0_blocks 的记录, 保持 table.block_txs_xxxx 记录
 void Parser::rollbackBlock(const int32_t height) {
   MySQLResult res;
   string sql;
@@ -801,6 +841,16 @@ void Parser::rollbackBlock(const int32_t height) {
   sql = Strings::Format("UPDATE `0_blocks` SET `next_block_id`=0, `next_block_hash`=''"
                         " WHERE `hash` = '%s' ", prevBlockHash.c_str());
   dbExplorer_.updateOrThrowEx(sql, 1);
+
+  // table.0_blocks
+  sql = Strings::Format("DELETE FROM `0_blocks` WHERE `hash`='%s'",
+                        header.GetHash().ToString().c_str());
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  // table.block_txs_xxxx
+  sql = Strings::Format("DELETE FROM `block_txs_%04d` WHERE `block_id`=%lld",
+                        blockId % 100, blockId);
+  dbExplorer_.updateOrThrowEx(sql, (int32_t)blk.vtx.size());
 }
 
 // 回滚，重新插入未花费记录
@@ -842,9 +892,12 @@ void _unremoveUnspentOutputs(MySQLConnection &db, const int64_t blockHeight,
 }
 
 // 回滚交易 inputs
-void _rollbackTxInputs(MySQLConnection &db, const CTransaction &tx,
-                       const int64_t blockHeight,
-                       const int64_t txId, map<int64_t, int64_t> &addressBalance) {
+void _rollbackTxInputs(MySQLConnection &db, class TxLog *txLog,
+                       map<int64_t, int64_t> &addressBalance) {
+  const CTransaction &tx = txLog->tx_;
+  const int32_t blockHeight = txLog->blkHeight_;
+  const int64_t txId = txLog->txId_;
+
   string sql;
   int n = -1;
   for (auto &in : tx.vin) {
@@ -876,9 +929,11 @@ void _rollbackTxInputs(MySQLConnection &db, const CTransaction &tx,
 }
 
 // 回滚交易 outputs
-void _rollbackTxOutputs(MySQLConnection &db, const CTransaction &tx,
-                        const int64_t txId, const int64_t blockHeight,
+void _rollbackTxOutputs(MySQLConnection &db, class TxLog *txLog,
                         map<int64_t, int64_t> &addressBalance) {
+  const CTransaction &tx = txLog->tx_;
+  const int64_t txId = txLog->txId_;
+
   int n;
   const string now = date("%F %T");
   set<string> allAddresss;
@@ -960,8 +1015,8 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
     assert(res.numRows() == 1);
     row = res.nextRow();
 
-    int32_t endTxYmd = atoi(row[0]);
-    int64_t endTxId  = atoi64(row[1]);
+    const int32_t endTxYmd = atoi(row[0]);
+    const int64_t endTxId  = atoi64(row[1]);
 
     // 当前要回滚的记录应该就是最后一条记录
     if (endTxYmd != ymd || endTxId != txLog->txId_) {
@@ -1011,17 +1066,21 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
   } /* /for */
 }
 
+void _rollbackTx(MySQLConnection &db, class TxLog *txLog) {
+  string sql = Strings::Format("DELETE FROM `tx_%04d` WHERE `tx_id`=%lld ",
+                               txLog->txId_ / BILLION);
+  db.updateOrThrowEx(sql, 1);
+}
 
 // 回滚一个交易
 void Parser::rollbackTx(class TxLog *txLog) {
   // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
   map<int64_t, int64_t> addressBalance;
 
-  // _rollbackTxInputs
-
-  // _rollbackTxOutputs
-
-  // _rollbackAddressTxs
+  _rollbackTxInputs  (dbExplorer_, txLog, addressBalance);
+  _rollbackTxOutputs (dbExplorer_, txLog, addressBalance);
+  _rollbackAddressTxs(dbExplorer_, txLog, addressBalance);
+  _rollbackTx        (dbExplorer_, txLog);
 }
 
 // 获取上次txlog的进度偏移量

@@ -8,6 +8,7 @@ class Bitcoin {
     private $port;
     private $url;
     private $id = 0;
+    private $debug;
 
     private static $instance = null;
 
@@ -30,6 +31,7 @@ class Bitcoin {
         $this->host          = $host;
         $this->port          = $port;
         $this->url           = $url;
+        $this->debug         = Config::get('bitcoind.debug');
     }
 
     function __call($method, $params) {
@@ -47,7 +49,9 @@ class Bitcoin {
             'params' => $params,
         ]);
 
-//        Log::debug('Bitcoind POST BODY', [$request]);
+        if ($this->debug) {
+            Log::debug('Bitcoind POST BODY', [$request]);
+        }
 
         // Build the cURL session
         $url = "http://{$this->username}:{$this->password}@{$this->host}:{$this->port}/{$this->url}";
@@ -73,11 +77,13 @@ class Bitcoin {
         $curlError = curl_error($curl);
         curl_close($curl);
 
-//        Log::debug('Bitconid response', [
-//            'rawResponse' => $rawResponse,
-//            'statusCode' => $statusCode,
-//            'curlError' => $curlError,
-//        ]);
+        if ($this->debug) {
+            Log::debug('Bitconid response', [
+                'rawResponse' => $rawResponse,
+                'statusCode' => $statusCode,
+                'curlError' => $curlError,
+            ]);
+        }
 
         if ($statusCode >= 400 && $statusCode < 500) {
             throw new Exception('与 Bitcoind 连接失败', $statusCode);

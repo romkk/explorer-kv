@@ -42,6 +42,9 @@ class BlockQueue {
             $orphanBlocks->reverse()->each(function (Block $block) {
                 $block->rollback();
             });
+
+            $latestValidBlock = $this->getBlock(-2);
+            static::setLocalHeight($latestValidBlock ? $latestValidBlock->getHeight() : -1);  // 更新数据库中最新块高度为 blockqueue 中倒数第二个（倒数第一个是新块）
         });
     }
 
@@ -88,8 +91,18 @@ class BlockQueue {
         }
     }
 
+    public static function getLocalHeight() {
+        return ExplorerMeta::get('daoru.local_height', -1);
+    }
+
+    public static function setLocalHeight($h){
+        ExplorerMeta::put('daoru.local_height', $h);
+    }
+
     public static function make() {
+        $localHeight = static::getLocalHeight();
         $blocks = RawBlock::where('chain_id', 0)
+            ->where('block_height', '<=', $localHeight)
             ->orderBy('id', 'desc')
             ->take(50)
             ->get(['id', 'block_hash', 'block_height', 'chain_id', 'created_at'])
@@ -105,24 +118,4 @@ class BlockQueue {
         return new static($blocks);
     }
 
-    public static function getRemoteBlockInfo() {
-        $i = Bitcoin::make()->bm_get_best_block();
-        return [
-            'block_height' => $i['height'],
-            'block_hash' => $i['hash'],
-        ];
-    }
-
-    public static function getLocalBlockInfo() {
-        $i = RawBlock::findLatestBlock();
-
-        if (is_null($i)) {
-            return [
-                'block_height' => -1,
-                'block_hash' => null
-            ];
-        }
-
-        return $i->toArray();
-    }
 }

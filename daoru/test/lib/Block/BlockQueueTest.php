@@ -5,50 +5,6 @@ use Illuminate\Support\Collection;
 
 class BlockQueueTest extends ExplorerDatabaseTestCase {
 
-    public function testGetLocalFirstBlock() {
-        $this->assertNotNull($block = BlockQueue::getLocalBlockInfo());
-        $this->assertEquals(-1, $block['block_height']);
-        $this->assertNull($block['block_hash']);
-    }
-
-    public function testGetLatestLocalBlock() {
-        $this->tableInsert('0_raw_blocks', [
-            ['id' => 1, 'block_hash' => 'block_hash_1', 'block_height' => 0, 'chain_id' => 0, 'hex' => 'hex1', 'created_at' => Carbon::now()->toDateTimeString()],
-            ['id' => 2, 'block_hash' => 'block_hash_2', 'block_height' => 1, 'chain_id' => 0, 'hex' => 'hex2', 'created_at' => Carbon::now()->toDateTimeString()],
-        ]);
-
-        $this->assertNotNull($block = BlockQueue::getLocalBlockInfo());
-        $this->assertEquals(1, $block['block_height']);
-        $this->assertEquals(2, $block['id']);
-
-        $this->tableTruncate('0_raw_blocks');
-    }
-
-    public function testGetLatestRemoteBlock() {
-        $this->assertNotNull($block = BlockQueue::getRemoteBlockInfo());
-        $this->assertArrayHasKey('block_height', $block);
-        $this->assertArrayHasKey('block_hash', $block);
-        $this->assertArrayNotHasKey('hash', $block);
-        $this->assertArrayNotHasKey('height', $block);
-        $this->assertGreaterThan(0, $block['block_height']);
-        $this->assertGreaterThan(0, strlen($block['block_height']));
-    }
-
-    public function testMake() {
-        $queue = BlockQueue::make();
-        $this->assertEquals(0, $queue->length());
-
-        $this->tableInsert('0_raw_blocks', [
-            ['id' => 1, 'block_hash' => '000000000000226f7618566e70a2b5e020e29579b46743f05348427239bf41a1', 'block_height' => 300000, 'chain_id' => 0, 'hex' => 'hex1', 'created_at' => Carbon::now()->toDateTimeString()],
-            ['id' => 2, 'block_hash' => '0000000000004829474748f3d1bc8fcf893c88be255e6d7f571c548aff57abf4', 'block_height' => 300001, 'chain_id' => 0, 'hex' => 'hex2', 'created_at' => Carbon::now()->toDateTimeString()],
-        ]);
-
-        $queue = BlockQueue::make();
-        $this->assertEquals(2, $queue->length());
-
-        $this->tableTruncate('0_raw_blocks');
-    }
-
     public function testPush() {
         $queue = new BlockQueue(new Collection(), 1);
         $this->assertEquals(0, $queue->length());
@@ -170,6 +126,7 @@ class BlockQueueTest extends ExplorerDatabaseTestCase {
     protected function getDataSet() {
         return new DbUnit_ArrayDataSet([
             '0_raw_blocks' => [],
+            '0_explorer_meta' => [],
         ]);
     }
 }

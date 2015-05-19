@@ -48,7 +48,7 @@ while (true) {
             ]);
             $detail = $bitcoinClient->bm_get_block_detail($remote->getHash());      // 获取同高度 block
         } else {
-            $detail = $bitcoinClient->bm_get_block_detail($latestBlock->getHeight() + 1);
+            $detail = $bitcoinClient->bm_get_block_detail(strval($latestBlock->getHeight() + 1));
         }
 
         Log::info(sprintf('当前高度 %d，目标高度 %d', $latestBlock->getHeight(), $detail['height']));

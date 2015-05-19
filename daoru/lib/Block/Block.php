@@ -142,8 +142,13 @@ class Block {
             ]);
         }
         Log::info('txs 插入完毕');
+
+        BlockQueue::setLocalHeight($this->getHeight());
+
         // done
         $conn->commit();
+
+        Log::info('块 ' . $this->getHeight() . ' 插入完毕');
     }
 
     public function rollback() {

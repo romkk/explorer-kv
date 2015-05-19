@@ -30,7 +30,7 @@ installdb:
 		 	mysql -D"$$db" -u"$$user" -p"$$pass" -h"$$host" -e 'drop table '$$table -D "$$db"; \
 	 	 done && \
 	 	echo "setup new tables..." && \
-	 	/bin/bash ../install/generate_initialize_sql.sh | mysql -u"$$user" -p"$$user" -D"$$db" -h"$$host"
+	 	/bin/bash ../install/generate_initialize_sql.sh | mysql -u"$$user" -p"$$pass" -D"$$db" -h"$$host"
 
 .PHONY: clear-post-process-data
 clear-post-process-data: ENV_FILE = ".env"

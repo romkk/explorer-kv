@@ -65,7 +65,7 @@ class Txlogs extends Model {
         $rowCount = 0;
 
         if (!is_null($table)) {
-            $rowCount = $conn->selectOne('select count(`id`) as cnt from ' . $table)['cnt'];
+            $rowCount = $conn->selectOne(sprintf("show table status where name = '%s'", $table))['Rows'];
         }
 
         if (is_null($table) || $rowCount >= Config::get('app.txlogs_maximum_rows')) {

@@ -20,6 +20,11 @@ class ExplorerMetaTest extends ExplorerDatabaseTestCase {
         ExplorerMeta::put('k2', 'v2');
         $this->assertTableRowCount('0_explorer_meta', 2);
         $this->assertEquals('v2', ExplorerMeta::get('k2'));
+
+        ExplorerMeta::put('k3', 0);
+        $this->assertTableRowCount('0_explorer_meta', 3);
+        $this->assertEquals(0, ExplorerMeta::get('k3', 'bong'));
+        $this->assertEquals(0, ExplorerMeta::get('k3'));
     }
 
     /**

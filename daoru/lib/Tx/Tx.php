@@ -48,7 +48,6 @@ class Tx {
             Log::info('该交易数据已经存在于 rawtxs 表中，跳过');
         } else {
             $rawTx = new RawTx();
-            $rawTx->id = RawTx::getNextId(RawTx::getTableByHash($this->getHash()));
             $rawTx->tx_hash = $this->getHash();
             $rawTx->hex = $this->getHex();
             $rawTx->created_at = Carbon::now()->toDateTimeString();

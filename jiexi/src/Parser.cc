@@ -157,6 +157,12 @@ void Parser::run() {
       continue;
     }
 
+//    if (txlog.logId_ >= 4571100LL) {
+//      // debug
+//      LOG_DEBUG("debug to stop, logId_: %lld", txlog.logId_);
+//      exit(EXIT_SUCCESS);
+//    }
+
     checkTableAddressTxs(txlog.blockTimestamp_);
 
     if (!dbExplorer_.execute("START TRANSACTION")) {
@@ -757,7 +763,7 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
 // 插入交易
 void _insertTx(MySQLConnection &db, class TxLog *txLog, int64_t valueIn) {
   // (`tx_id`, `hash`, `height`, `is_coinbase`, `version`, `lock_time`, `size`, `fee`, `total_in_value`, `total_out_value`, `inputs_count`, `outputs_count`, `created_at`)
-  const string tName = Strings::Format("tx_%04d", txLog->txId_ / BILLION);
+  const string tName = Strings::Format("txs_%04d", txLog->txId_ / BILLION);
   const CTransaction &tx = txLog->tx_;  // alias
   string sql;
 
@@ -789,6 +795,17 @@ void _insertTx(MySQLConnection &db, class TxLog *txLog, int64_t valueIn) {
 
 // 接收一个新的交易
 void Parser::acceptTx(class TxLog *txLog) {
+  // 硬编码特殊交易处理
+  // 该交易在两个不同的高度块(91812, 91842)中出现过
+  // tx hash: d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599
+  // 91842块中有且仅有这一个交易
+  if (txLog->blkHeight_ == 91842) {
+    assert(txLog->txHash_ == uint256("d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599"));
+    LOG_WARN("ignore tx, height: %d, hash: %s",
+             txLog->blkHeight_, txLog->txHash_.ToString().c_str());
+    return;
+  }
+
   // 交易的输入之和，遍历交易后才能得出
   int64_t valueIn = 0;
 

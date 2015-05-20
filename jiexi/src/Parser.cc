@@ -157,16 +157,33 @@ void Parser::run() {
       continue;
     }
 
+//    if (txlog.logId_ >= 4571100LL) {
+//      // debug
+//      LOG_DEBUG("debug to stop, logId_: %lld", txlog.logId_);
+//      exit(EXIT_SUCCESS);
+//    }
+
     checkTableAddressTxs(txlog.blockTimestamp_);
 
     if (!dbExplorer_.execute("START TRANSACTION")) {
       goto error;
     }
 
-    if (txlog.tx_.IsCoinBase()) {
-      acceptBlock(txlog.blkHeight_);
+    if (txlog.type_ == TXLOG_TYPE_ACCEPT) {
+      if (txlog.tx_.IsCoinBase()) {
+        acceptBlock(txlog.blkHeight_);
+      }
+      acceptTx(&txlog);
     }
-    acceptTx(&txlog);
+    else if (txlog.type_ == TXLOG_TYPE_ROLLBACK) {
+      if (txlog.tx_.IsCoinBase()) {
+      	rollbackBlock(txlog.blkHeight_);
+      }
+      rollbackTx(&txlog);
+    }
+    else {
+      LOG_FATAL("invalid txlog type: %d", txlog.type_);
+    }
 
     // 设置为当前的ID，该ID不一定连续
     updateLastTxlogId(lastTxLogOffset / 100000000 + txlog.logId_);
@@ -260,12 +277,13 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
   string prevBlockHash = header.hashPrevBlock.ToString();
   MySQLResult res;
   char **row = nullptr;
+  string sql;
 
   // 查询前向块信息，前向块信息必然存在(创始块没有前向块)
   int64_t prevBlockId = 0;
   if (height > 0) {
-    string sql = Strings::Format("SELECT `block_id` FROM `0_blocks` WHERE `hash` = '%s'",
-                                 prevBlockHash.c_str());
+    sql = Strings::Format("SELECT `block_id` FROM `0_blocks` WHERE `hash` = '%s'",
+                          prevBlockHash.c_str());
     db.query(sql, res);
     if (res.numRows() != 1) {
       THROW_EXCEPTION_DBEX("prev block not exist in DB, hash: ", prevBlockHash.c_str());
@@ -277,45 +295,48 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
 
   // 将当前高度的块的chainID增一，若存在分叉的话. UNIQUE	(height, chain_id)
   // 当前即将插入的块的chainID必然为0
-  {
-    string sql = Strings::Format("UPDATE `0_blocks` SET `chain_id`=`chain_id`+1 "
-                                 " WHERE `height` = %d ", height);
-    db.update(sql.c_str());
-  }
+  sql = Strings::Format("UPDATE `0_blocks` SET `chain_id`=`chain_id`+1 "
+                        " WHERE `height` = %d ", height);
+  db.update(sql.c_str());
 
   // 构造插入SQL
-  uint64_t difficulty = 0;
-  BitsToDifficulty(header.nBits, difficulty);
-  const int64_t rewardBlock = GetBlockValue(height, 0);
-  const int64_t rewardFees  = blk.vtx[0].GetValueOut() - rewardBlock;
-  assert(rewardFees >= 0);
-  string sql1 = Strings::Format("INSERT INTO `0_blocks` (`block_id`, `height`, `hash`,"
-                                " `version`, `mrkl_root`, `timestamp`, `bits`, `nonce`,"
-                                " `prev_block_id`, `prev_block_hash`, `next_block_id`, "
-                                " `next_block_hash`, `chain_id`, `size`,"
-                                " `difficulty`, `tx_count`, `reward_block`, `reward_fees`, "
-                                " `created_at`) VALUES ("
-                                // 1. `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`
-                                " %lld, %d, '%s', %d, '%s', %u, "
-                                // 2. `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
-                                " %lld, %lld, %lld, '%s', "
-                                // 3. `next_block_id`, `next_block_hash`, `chain_id`, `size`,
-                                " 0, '', %d, %d, "
-                                // 4. `difficulty`, `tx_count`, `reward_block`, `reward_fees`, `created_at`
-                                "%llu, %d, %lld, %lld, '%s');",
-                                // 1.
-                                blockId, height,
-                                header.GetHash().ToString().c_str(),
-                                header.nVersion,
-                                header.hashMerkleRoot.ToString().c_str(),
-                                (uint32_t)header.nTime,
-                                // 2.
-                                header.nBits, header.nNonce, prevBlockId, prevBlockHash.c_str(),
-                                // 3.
-                                0/* chainId */, blockBytes,
-                                // 4.
-                                difficulty, blk.vtx.size(), rewardBlock, rewardFees, date("%F %T").c_str());
-  db.updateOrThrowEx(sql1, 1);
+  sql = Strings::Format("SELECT `block_id` FROM `0_blocks` WHERE `block_id`=%lld",
+                        blockId);
+  db.query(sql, res);
+  if (res.numRows() == 0) {  // 不存在则插入，由于有rollback等行为，块由可能已经存在了
+    uint64_t difficulty = 0;
+    BitsToDifficulty(header.nBits, difficulty);
+    const int64_t rewardBlock = GetBlockValue(height, 0);
+    const int64_t rewardFees  = blk.vtx[0].GetValueOut() - rewardBlock;
+    assert(rewardFees >= 0);
+    string sql1 = Strings::Format("INSERT INTO `0_blocks` (`block_id`, `height`, `hash`,"
+                                  " `version`, `mrkl_root`, `timestamp`, `bits`, `nonce`,"
+                                  " `prev_block_id`, `prev_block_hash`, `next_block_id`, "
+                                  " `next_block_hash`, `chain_id`, `size`,"
+                                  " `difficulty`, `tx_count`, `reward_block`, `reward_fees`, "
+                                  " `created_at`) VALUES ("
+                                  // 1. `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`
+                                  " %lld, %d, '%s', %d, '%s', %u, "
+                                  // 2. `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
+                                  " %lld, %lld, %lld, '%s', "
+                                  // 3. `next_block_id`, `next_block_hash`, `chain_id`, `size`,
+                                  " 0, '', %d, %d, "
+                                  // 4. `difficulty`, `tx_count`, `reward_block`, `reward_fees`, `created_at`
+                                  "%llu, %d, %lld, %lld, '%s');",
+                                  // 1.
+                                  blockId, height,
+                                  header.GetHash().ToString().c_str(),
+                                  header.nVersion,
+                                  header.hashMerkleRoot.ToString().c_str(),
+                                  (uint32_t)header.nTime,
+                                  // 2.
+                                  header.nBits, header.nNonce, prevBlockId, prevBlockHash.c_str(),
+                                  // 3.
+                                  0/* chainId */, blockBytes,
+                                  // 4.
+                                  difficulty, blk.vtx.size(), rewardBlock, rewardFees, date("%F %T").c_str());
+    db.updateOrThrowEx(sql1, 1);
+  }
 
   // 更新前向块信息, 高度一以后的块需要，创始块不需要
   if (height > 0) {
@@ -327,6 +348,7 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
   }
 }
 
+// 已经存在则会忽略
 void _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t blockId,
                      std::map<uint256, int64_t> &hash2id) {
   const string tableName = Strings::Format("block_txs_%04d", blockId % 100);
@@ -340,6 +362,8 @@ void _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t block
   assert(res.numRows() == 1);
   row = res.nextRow();
   int32_t existMaxPosition = atoi(row[0]);
+
+  // 仅允许两种情况，要么记录全部都存在，要么记录都不存在
   if (existMaxPosition != -1) {
     LOG_WARN("block_txs already exist");
     // 数量不符合，异常
@@ -347,6 +371,7 @@ void _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t block
       THROW_EXCEPTION_DBEX("exist txs is not equal block.vtx, now position is %d, should be %d",
                            existMaxPosition, (int32_t)blk.vtx.size() - 1);
     }
+    return;  // 记录全部都存在
   }
 
   // 不存在，则插入新的记录
@@ -473,7 +498,8 @@ DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t po
 }
 
 void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
-                     const int64_t txId, map<int64_t, int64_t> &addressBalance) {
+                     const int64_t txId, map<int64_t, int64_t> &addressBalance,
+                     int64_t &valueIn) {
   int n;
   const string tableName = Strings::Format("tx_inputs_%04d", txId % 100);
   const string now = date("%F %T");
@@ -482,6 +508,7 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
   " `sequence`, `prev_tx_id`, `prev_position`, `prev_value`,"
   " `prev_address`, `prev_address_ids`, `created_at`";
   vector<string> values;
+  string sql;
 
   n = -1;
   for (auto &in : tx.vin) {
@@ -510,12 +537,12 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
       prevPos  = (int32_t)in.prevout.n;
 
       // 将前向交易标记为已花费
-      string sql = Strings::Format("UPDATE `tx_outputs_%04d` SET "
-                                   " `spent_tx_id`=%lld, `spent_position`=%d"
-                                   " WHERE `tx_id`=%lld AND `position`=%d "
-                                   " AND `spent_tx_id`=0 AND `spent_position`=-1 ",
-                                   prevTxId % 100, txId, n,
-                                   prevTxId, prevPos);
+      sql = Strings::Format("UPDATE `tx_outputs_%04d` SET "
+                            " `spent_tx_id`=%lld, `spent_position`=%d"
+                            " WHERE `tx_id`=%lld AND `position`=%d "
+                            " AND `spent_tx_id`=0 AND `spent_position`=-1 ",
+                            prevTxId % 100, txId, n,
+                            prevTxId, prevPos);
       db.updateOrThrowEx(sql, 1);
 
       // 将 address_unspent_outputs_xxxx 相关记录删除
@@ -537,6 +564,7 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
                                        dbTxOutput.address.c_str(),
                                        dbTxOutput.addressIds.c_str(),
                                        now.c_str()));
+      valueIn += dbTxOutput.value;
     }
   } /* /for */
 
@@ -732,20 +760,351 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
   } /* /for */
 }
 
+// 插入交易
+void _insertTx(MySQLConnection &db, class TxLog *txLog, int64_t valueIn) {
+  // (`tx_id`, `hash`, `height`, `is_coinbase`, `version`, `lock_time`, `size`, `fee`, `total_in_value`, `total_out_value`, `inputs_count`, `outputs_count`, `created_at`)
+  const string tName = Strings::Format("txs_%04d", txLog->txId_ / BILLION);
+  const CTransaction &tx = txLog->tx_;  // alias
+  string sql;
+
+  int64_t fee = 0;
+  const int64_t valueOut = txLog->tx_.GetValueOut();
+  if (txLog->tx_.IsCoinBase()) {
+    // coinbase的fee为 block rewards
+    fee = valueOut - GetBlockValue(txLog->blkHeight_, 0);
+  } else {
+    fee = valueIn - valueOut;
+  }
+
+  sql = Strings::Format("INSERT INTO `%s`(`tx_id`, `hash`, `height`, `is_coinbase`,"
+                        " `version`, `lock_time`, `size`, `fee`, `total_in_value`, "
+                        " `total_out_value`, `inputs_count`, `outputs_count`, `created_at`)"
+                        " VALUES (%lld, '%s', %d, %d, %d, %u, %d, %lld, %lld, %lld, %d, %d, '%s') ",
+                        tName.c_str(),
+                        // `tx_id`, `hash`, `height`
+                        txLog->txId_, txLog->txHash_.ToString().c_str(), txLog->blkHeight_,
+                        // `is_coinbase`, `version`, `lock_time`
+                        txLog->tx_.IsCoinBase() ? 1 : 0, tx.nVersion, tx.nLockTime,
+                        // `size`, `fee`, `total_in_value`, `total_out_value`
+                        txLog->txHex_.length()/2, fee, valueIn, valueOut,
+                        // `inputs_count`, `outputs_count`, `created_at`
+                        tx.vin.size(), tx.vout.size(), date("%F %T").c_str());
+  db.updateOrThrowEx(sql, 1);
+}
+
+
 // 接收一个新的交易
 void Parser::acceptTx(class TxLog *txLog) {
+  // 硬编码特殊交易处理
+  //
+  // 1. tx hash: d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599
+  // 该交易在两个不同的高度块(91812, 91842)中出现过
+  // 91842块中有且仅有这一个交易
+  //
+  // 2. tx hash: e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468
+  // 该交易在两个不同的高度块(91722, 91880)中出现过
+  if ((txLog->blkHeight_ == 91842 &&
+       txLog->txHash_ == uint256("d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599")) ||
+      (txLog->blkHeight_ == 91880 &&
+       txLog->txHash_ == uint256("e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468"))) {
+    LOG_WARN("ignore tx, height: %d, hash: %s",
+             txLog->blkHeight_, txLog->txHash_.ToString().c_str());
+    return;
+  }
+
+
+  // 交易的输入之和，遍历交易后才能得出
+  int64_t valueIn = 0;
 
   // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
   map<int64_t, int64_t> addressBalance;
 
   // 处理inputs
-  _insertTxInputs(dbExplorer_, txLog->tx_, txLog->txId_, addressBalance);
+  _insertTxInputs(dbExplorer_, txLog->tx_, txLog->txId_, addressBalance, valueIn);
 
   // 处理outputs
   _insertTxOutputs(dbExplorer_, txLog->tx_, txLog->txId_, txLog->blkHeight_, addressBalance);
 
   // 变更地址相关信息
   _insertAddressTxs(dbExplorer_, txLog, addressBalance);
+
+  // 插入交易tx
+  _insertTx(dbExplorer_, txLog, valueIn);
+}
+
+
+// 回滚一个块操作
+void Parser::rollbackBlock(const int32_t height) {
+  MySQLResult res;
+  string sql;
+
+  // 获取块Raw Hex
+  string blkRawHex;
+  int32_t chainId;
+  int64_t blockId;
+  if (!getBlockRawHex(nullptr, &height, dbExplorer_, &blkRawHex, &chainId, &blockId)) {
+    THROW_EXCEPTION_DBEX("can't find block by height: %d", height);
+  }
+  assert(chainId == 0);
+
+  // 解码Raw Hex
+  vector<unsigned char> blockData(ParseHex(blkRawHex));
+  CDataStream ssBlock(blockData, SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+  CBlock blk;
+  try {
+    ssBlock >> blk;
+  }
+  catch (std::exception &e) {
+    THROW_EXCEPTION_DBEX("Block decode failed, height: %d, blockId: %lld",
+                         height, blockId);
+  }
+  const CBlockHeader header = blk.GetBlockHeader();  // alias
+  const  string prevBlockHash = header.hashPrevBlock.ToString();
+
+  // 移除前向block的next指向
+  sql = Strings::Format("UPDATE `0_blocks` SET `next_block_id`=0, `next_block_hash`=''"
+                        " WHERE `hash` = '%s' ", prevBlockHash.c_str());
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  // table.0_blocks
+  sql = Strings::Format("DELETE FROM `0_blocks` WHERE `hash`='%s'",
+                        header.GetHash().ToString().c_str());
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  // table.block_txs_xxxx
+  sql = Strings::Format("DELETE FROM `block_txs_%04d` WHERE `block_id`=%lld",
+                        blockId % 100, blockId);
+  dbExplorer_.updateOrThrowEx(sql, (int32_t)blk.vtx.size());
+}
+
+// 回滚，重新插入未花费记录
+void _unremoveUnspentOutputs(MySQLConnection &db, const int64_t blockHeight,
+                             const int64_t txId, const int32_t position,
+                             map<int64_t, int64_t> &addressBalance) {
+  MySQLResult res;
+  string sql;
+  string tableName;
+  char **row;
+  int n;
+
+  // 获取相关output信息
+  tableName = Strings::Format("tx_outputs_%04d", txId % 100);
+  sql = Strings::Format("SELECT `address_ids`,`value` FROM `%s` WHERE `tx_id`=%lld AND `position`=%d",
+                        tableName.c_str(), txId, position);
+  db.query(sql, res);
+  row = res.nextRow();
+  assert(res.numRows() == 1);
+
+  // 获取地址
+  const string s = string(row[0]);
+  const int64_t value = atoi64(row[1]);
+  vector<string> addressIdsStrVec = split(s, ',');
+  n = -1;
+  for (auto &addrIdStr : addressIdsStrVec) {
+    n++;
+    const int64_t addrId = atoi64(addrIdStr.c_str());
+    addressBalance[addrId] += -1 * value;
+
+    // 恢复每一个输出地址的 address_unspent_outputs 记录
+    sql = Strings::Format("INSERT INTO `address_unspent_outputs_%04d`"
+                          " (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)"
+                          " VALUES (%lld, %lld, %d, %d, %lld, %lld, '%s') ",
+                          addrId % 10, addrId, txId, position, n, blockHeight,
+                          value, date("%F %T").c_str());
+    db.updateOrThrowEx(sql, 1);
+  }
+}
+
+// 回滚交易 inputs
+void _rollbackTxInputs(MySQLConnection &db, class TxLog *txLog,
+                       map<int64_t, int64_t> &addressBalance) {
+  const CTransaction &tx = txLog->tx_;
+  const int32_t blockHeight = txLog->blkHeight_;
+  const int64_t txId = txLog->txId_;
+
+  string sql;
+  int n = -1;
+  for (auto &in : tx.vin) {
+    n++;
+
+    // 非 coinbase 无需处理前向交易
+    if (tx.IsCoinBase()) { continue; }
+
+    uint256 prevHash = in.prevout.hash;
+    int64_t prevTxId = txHash2Id(db, prevHash);
+    int32_t prevPos  = (int32_t)in.prevout.n;
+
+    // 将前向交易标记为未花费
+    sql = Strings::Format("UPDATE `tx_outputs_%04d` SET "
+                          " `spent_tx_id`=0, `spent_position`=-1"
+                          " WHERE `tx_id`=%lld AND `position`=%d "
+                          " AND `spent_tx_id`<>0 AND `spent_position`<>-1 ",
+                          prevTxId % 100, prevTxId, prevPos);
+    db.updateOrThrowEx(sql, 1);
+
+    // 重新插入 address_unspent_outputs_xxxx 相关记录
+    _unremoveUnspentOutputs(db, blockHeight, prevTxId, prevPos, addressBalance);
+  } /* /for */
+
+  // 删除 table.tx_inputs_xxxx 记录
+  sql = Strings::Format("DELETE FROM `tx_inputs_%04d` WHERE `tx_id`=%lld ",
+                        txId % 100, txId);
+  db.updateOrThrowEx(sql, (int32_t)tx.vin.size());
+}
+
+// 回滚交易 outputs
+void _rollbackTxOutputs(MySQLConnection &db, class TxLog *txLog,
+                        map<int64_t, int64_t> &addressBalance) {
+  const CTransaction &tx = txLog->tx_;
+  const int64_t txId = txLog->txId_;
+
+  int n;
+  const string now = date("%F %T");
+  set<string> allAddresss;
+  string sql;
+
+  // 提取涉及到的所有地址
+  for (auto &out : tx.vout) {
+    txnouttype type;
+    vector<CTxDestination> addresses;
+    int nRequired;
+    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
+      LOG_WARN("extract destinations failure, txId: %lld, hash: %s",
+               txId, tx.GetHash().ToString().c_str());
+      continue;
+    }
+    for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
+      allAddresss.insert(CBitcoinAddress(addr).ToString());
+    }
+  }
+  // 拿到所有地址的id
+  map<string, int64_t> addrMap;
+  GetAddressIds(db, allAddresss, addrMap);
+
+  // 处理输出
+  // (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)
+  n = -1;
+  for (auto &out : tx.vout) {
+    n++;
+    txnouttype type;
+    vector<CTxDestination> addresses;
+    int nRequired;
+    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
+      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
+               txId, tx.GetHash().ToString().c_str(), n);
+    }
+
+    // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
+    int i = -1;
+    for (auto &addr : addresses) {
+      i++;
+      const string addrStr = CBitcoinAddress(addr).ToString();
+      const int64_t addrId = addrMap[addrStr];
+      addressBalance[addrId] += out.nValue;
+
+      // 删除： address_unspent_outputs 记录
+      sql = Strings::Format("DELETE FROM `address_unspent_outputs_%04d` "
+                            " WHERE `address_id`=%lld AND `position`=%d AND `position2`=%d ",
+                            addrId % 10, addrId, txId, n, i);
+      db.updateOrThrowEx(sql, 1);
+    }
+  }
+
+  // delete table.tx_outputs_xxxx
+  sql = Strings::Format("DELETE FROM `tx_outputs_%04d` WHERE `tx_id`=%lld",
+                        txId % 100, txId);
+  db.updateOrThrowEx(sql, (int32_t)tx.vout.size());
+}
+
+
+// 回滚：变更地址&地址对应交易记录
+void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
+                         const map<int64_t, int64_t> &addressBalance) {
+  MySQLResult res;
+  char **row;
+  string sql;
+
+  // 前面步骤会确保该表已经存在
+  const int32_t ymd = atoi(date("%Y%m%d", txLog->blockTimestamp_).c_str());
+
+  for (auto &it : addressBalance) {
+    const int64_t addrID      = it.first;
+    const int64_t balanceDiff = it.second;
+
+    // 获取地址信息
+    string addrTableName = Strings::Format("addresses_%04d", addrID / BILLION);
+    sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id` FROM `%s` WHERE `id`=%lld ",
+                          addrTableName.c_str(), addrID);
+    db.query(sql, res);
+    assert(res.numRows() == 1);
+    row = res.nextRow();
+
+    const int32_t endTxYmd = atoi(row[0]);
+    const int64_t endTxId  = atoi64(row[1]);
+
+    // 当前要回滚的记录应该就是最后一条记录
+    if (endTxYmd != ymd || endTxId != txLog->txId_) {
+      THROW_EXCEPTION_DBEX("address's last tx NOT match, addrId: %lld, "
+                           "last ymd(%lld) should be %lld, "
+                           "last txId(%lld) should be %lld",
+                           addrID, endTxYmd, ymd, endTxId, txLog->txId_);
+    }
+
+    // 获取最后一条记录的前向记录，倒数第二条记录，如果存在的话
+    int64_t totalRecv = 0, finalBalance = 0, end2TxId = 0;
+    int32_t end2TxYmd = 0;
+    sql = Strings::Format("SELECT `total_received`,`balance_final`,`prev_ymd`, `prev_tx_id` "
+                          " FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                          endTxYmd, addrID, endTxId);
+    db.query(sql, res);
+    if (res.numRows() != 1) {
+      row = res.nextRow();
+      totalRecv    = atoi64(row[0]);
+      finalBalance = atoi64(row[1]);
+      end2TxYmd = atoi(row[2]);
+      end2TxId  = atoi64(row[3]);
+
+      // 设置倒数第二条记录 next 记录为空
+      sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=0, `next_tx_id`=0 "
+                            " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                            end2TxYmd, addrID, end2TxId);
+      db.updateOrThrowEx(sql, 1);
+    }
+
+    // 删除最后一条记录
+    sql = Strings::Format("DELETE FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                          ymd, addrID, txLog->txId_);
+    db.updateOrThrowEx(sql, 1);
+
+    // 更新地址信息
+    sql = Strings::Format("UPDATE `%s` SET `tx_count`=`tx_count`-1, "
+                          " `total_received` = `total_received` - %lld,"
+                          " `total_sent`     = `total_sent`     - %lld,"
+                          " `end_tx_ymd`=%d, `end_tx_id`=%lld, `updated_at`='%s' "
+                          " WHERE `id`=%lld ",
+                          addrTableName.c_str(),
+                          (balanceDiff > 0 ? balanceDiff : 0),
+                          (balanceDiff < 0 ? balanceDiff * -1 : 0),
+                          end2TxYmd, end2TxId, date("%F %T").c_str(), addrID);
+    db.updateOrThrowEx(sql, 1);
+  } /* /for */
+}
+
+void _rollbackTx(MySQLConnection &db, class TxLog *txLog) {
+  string sql = Strings::Format("DELETE FROM `tx_%04d` WHERE `tx_id`=%lld ",
+                               txLog->txId_ / BILLION);
+  db.updateOrThrowEx(sql, 1);
+}
+
+// 回滚一个交易
+void Parser::rollbackTx(class TxLog *txLog) {
+  // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
+  map<int64_t, int64_t> addressBalance;
+
+  _rollbackTxInputs  (dbExplorer_, txLog, addressBalance);
+  _rollbackTxOutputs (dbExplorer_, txLog, addressBalance);
+  _rollbackAddressTxs(dbExplorer_, txLog, addressBalance);
+  _rollbackTx        (dbExplorer_, txLog);
 }
 
 // 获取上次txlog的进度偏移量

@@ -13,7 +13,8 @@ var pool = mysql.createPool({
     multipleStatements: true,
     acquireTimeout: 3000,
     waitForConnections: true,
-    queueLimit: 5
+    queueLimit: 5,
+    debug: true
 });
 
 pool.on('connection', ()=> {

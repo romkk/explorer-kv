@@ -12,7 +12,8 @@
     "debug": "^2.2.0",
     "dotenv": "^1.1.0",
     "mysql": "^2.6.2",
-    "restify": "^3.0.3"
+    "restify": "^3.0.3",
+    "sprintf": "^0.1.5"
   },
   "devDependencies": {
     "babel": "^5.4.5",

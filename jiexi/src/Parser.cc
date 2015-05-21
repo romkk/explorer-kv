@@ -700,15 +700,18 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
     // 获取地址信息
     string addrTableName = Strings::Format("addresses_%04d", addrID / BILLION);
     sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id`,`total_received`,"
-                          " `total_sent` FROM `%s` WHERE `id`=%lld ",
+                          " `total_sent`,`begin_tx_id`,`begin_tx_ymd` "
+                          " FROM `%s` WHERE `id`=%lld ",
                           addrTableName.c_str(), addrID);
     db.query(sql, res);
     assert(res.numRows() == 1);
     row = res.nextRow();
 
-    int32_t prevTxYmd = atoi(row[0]);
-    int64_t prevTxId  = atoi64(row[1]);
+    const int32_t prevTxYmd   = atoi(row[0]);
+    const int64_t prevTxId    = atoi64(row[1]);
     const int64_t addrBalance = atoi64(row[2]) - atoi64(row[3]);
+    const int64_t beginTxID   = atoi64(row[4]);
+    const int32_t beginTxYmd  = atoi(row[5]);
     int64_t totalRecv = 0, finalBalance = 0;
 
     // 处理前向记录
@@ -750,12 +753,16 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
     sql = Strings::Format("UPDATE `%s` SET `tx_count`=`tx_count`+1, "
                           " `total_received` = `total_received` + %lld,"
                           " `total_sent`     = `total_sent`     + %lld,"
-                          " `end_tx_ymd`=%d, `end_tx_id`=%lld, `updated_at`='%s' "
-                          " WHERE `id`=%lld ",
+                          " `end_tx_ymd`=%d, `end_tx_id`=%lld,  "
+                          " `begin_tx_ymd`=%d, `begin_tx_id`=%lld,  "
+                          " `updated_at`='%s' WHERE `id`=%lld ",
                           addrTableName.c_str(),
                           (balanceDiff > 0 ? balanceDiff : 0),
                           (balanceDiff < 0 ? balanceDiff * -1 : 0),
-                          ymd, txLog->txId_, date("%F %T").c_str(), addrID);
+                          ymd, txLog->txId_,
+                          beginTxYmd == 0 ? ymd : beginTxYmd,
+                          beginTxID  == 0 ? txLog->txId_ : beginTxID,
+                          date("%F %T").c_str(), addrID);
     db.updateOrThrowEx(sql, 1);
   } /* /for */
 }

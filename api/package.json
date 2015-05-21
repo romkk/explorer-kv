@@ -1,0 +1,23 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "description": "API Service for Explorer",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "tianzhao.li@bitmain.com",
+  "private": true,
+  "dependencies": {
+    "debug": "^2.2.0",
+    "dotenv": "^1.1.0",
+    "mysql": "^2.6.2",
+    "restify": "^3.0.3"
+  },
+  "devDependencies": {
+    "babel": "^5.4.5",
+    "dotenv": "^1.1.0",
+    "mocha": "^2.2.5",
+    "mysql": "^2.6.2"
+  }
+}

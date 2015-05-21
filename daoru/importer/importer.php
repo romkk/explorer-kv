@@ -46,7 +46,7 @@ function format(array $detail) {
     $now = date('Y-m-d H:i:s');
 
     // rawblocks
-    $ret['rawBlocks'] = join(',', [$hash, $height, 0, $rawhex, $now]) . "\n";
+    $ret['rawBlocks'] = join(',', [$height + 1, $hash, $height, 0, $rawhex, $now]) . "\n";
 
     // txlogs
     $ret['txlogs'] = array_map(function($t) use ($detail, $now) {

@@ -26,7 +26,7 @@ conn="mysql -h"$host" -P"$port" -u"$user" -p"$pass" -D"$db" --local-infile"
 raw_blocks="load data local infile '0_raw_blocks'
 into table 0_raw_blocks
 fields terminated by ','
-(block_hash, block_height, chain_id, hex, created_at)
+(id, block_hash, block_height, chain_id, hex, created_at)
 "
 
 echo "$raw_blocks" | $conn

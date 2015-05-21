@@ -4,7 +4,9 @@
   "description": "API Service for Explorer",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "DEBUG=api:* nodemon --exec npm run babel-node -- index.js",
+    "babel-node": "babel-node index.js",
+    "test": "mocha -r test/bootstrap.js --compilers js:babel/register --recursive test"
   },
   "author": "tianzhao.li@bitmain.com",
   "private": true,
@@ -17,8 +19,13 @@
   },
   "devDependencies": {
     "babel": "^5.4.5",
+    "bluebird": "^2.9.25",
+    "bunyan": "^1.3.5",
+    "chai": "^2.3.0",
+    "chai-as-promised": "^5.0.0",
     "dotenv": "^1.1.0",
     "mocha": "^2.2.5",
-    "mysql": "^2.6.2"
+    "mysql": "^2.6.2",
+    "nodemon": "^1.3.7"
   }
 }

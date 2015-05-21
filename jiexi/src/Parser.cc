@@ -201,12 +201,17 @@ error:
 
 // 检测表是否存在，`create table` 这样的语句会导致DB事务隐形提交，必须摘离出事务之外
 void Parser::checkTableAddressTxs(const uint32_t timestamp) {
+  static std::set<int32_t> addressTxs;
   MySQLResult res;
   string sql;
 
+  const int32_t ymd = atoi(date("%Y%m%d", timestamp).c_str());
+  if (addressTxs.count(ymd)) {
+    return;
+  }
+
   // show table like to check if exist
-  const string tName = Strings::Format("address_txs_%s",
-                                       date("%Y%m%d", timestamp).c_str());
+  const string tName = Strings::Format("address_txs_%d", ymd);
   sql = Strings::Format("SHOW TABLES LIKE '%s'", tName.c_str());
   dbExplorer_.query(sql, res);
   if (res.numRows() > 0) {
@@ -216,6 +221,7 @@ void Parser::checkTableAddressTxs(const uint32_t timestamp) {
   // create if not exist
   sql = Strings::Format("CREATE TABLE `%s` LIKE `0_tpl_address_txs`", tName.c_str());
   dbExplorer_.updateOrThrowEx(sql);
+  addressTxs.insert(ymd);
 }
 
 // 获取当前txlogs的最大表索引

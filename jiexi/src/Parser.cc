@@ -16,6 +16,10 @@
  * limitations under the License.
  */
 
+#include <string>
+#include <iostream>
+#include <fstream>
+
 #include "Parser.h"
 #include "Common.h"
 #include "Util.h"
@@ -206,7 +210,7 @@ void Parser::checkTableAddressTxs(const uint32_t timestamp) {
   string sql;
 
   const int32_t ymd = atoi(date("%Y%m%d", timestamp).c_str());
-  if (addressTxs.count(ymd)) {
+  if (addressTxs.find(ymd) != addressTxs.end()) {
     return;
   }
 
@@ -215,6 +219,7 @@ void Parser::checkTableAddressTxs(const uint32_t timestamp) {
   sql = Strings::Format("SHOW TABLES LIKE '%s'", tName.c_str());
   dbExplorer_.query(sql, res);
   if (res.numRows() > 0) {
+    addressTxs.insert(ymd);
     return;
   }
 
@@ -1151,6 +1156,106 @@ int64_t Parser::getLastTxLogOffset() {
   return lastTxLogOffset;
 }
 
+void _getRawTxFromDB(MySQLConnection &db, class TxLog *txLog) {
+  MySQLResult res;
+  string sql;
+  char **row;
+  const string txHashStr = txLog->txHash_.ToString();
+
+  sql = Strings::Format("SELECT `hex`,`id` FROM `raw_txs_%04d` WHERE `tx_hash` = '%s' ",
+                        HexToDecLast2Bytes(txHashStr) % 64, txHashStr.c_str());
+  db.query(sql, res);
+  if (res.numRows() == 0) {
+    THROW_EXCEPTION_DBEX("can't find raw tx by hash: %s", txHashStr.c_str());
+  }
+  row = res.nextRow();
+  txLog->txHex_ = string(row[0]);
+  txLog->txId_  = atoi64(row[1]);
+}
+
+// 从磁盘读取 raw_tx 批量文件
+void _loadRawTxsFromDisk(map<uint256, std::pair<string, int64_t> > &txCache, const int32_t height) {
+  string dir = Config::GConfig.get("cache.rawdata.dir", "");
+  // 尾部添加 '/'
+  if (dir.length() == 0) {
+    dir = "./";
+  }
+  else if (dir[dir.length()-1] != '/') {
+    dir += "/";
+  }
+
+  // 遍历循环64个文件
+  const int32_t height2 = (height / 10000) * 10000;
+  string path = Strings::Format("%d_%d", height2, height2 + 9999);
+  for (int i = 0; i < 64; i++) {
+    const string fname = Strings::Format("%s%s/raw_txs_%04d",
+                                         dir.c_str(), path.c_str(), i);
+    LOG_INFO("load raw tx file: %s", fname.c_str());
+    std::ifstream input(fname);
+    std::string line;
+    while (std::getline(input, line)) {
+      auto arr = split(line, ',');
+      // line: raw_id,hash,hex,create_time
+      const uint256 hash(arr[1]);
+      const int64_t txId = atoi64(arr[0].c_str());
+      txCache[hash] = std::make_pair(arr[2], txId);
+    }
+  }
+}
+
+void _getRawTxFromDisk(class TxLog *txLog) {
+  // 从磁盘直接读取文件，缓存起来，减少数据库交互
+  static map<uint256, std::pair<string, int64_t> > txCache;
+  static int32_t heightBegin = -1;
+
+  if (heightBegin != (txLog->blkHeight_ / 10000)) {
+    // 载入数据
+    LOG_INFO("try load raw tx data from disk...");
+    txCache.clear();
+    heightBegin = txLog->blkHeight_ / 10000;
+    _loadRawTxsFromDisk(txCache, txLog->blkHeight_);
+  }
+
+  auto it = txCache.find(txLog->txHash_);
+  if (it == txCache.end()) {
+    THROW_EXCEPTION_DBEX("can't find rawtx from disk cache, txLogId: %lld",
+                         txLog->logId_);
+  }
+  txLog->txHex_ = it->second.first;
+  txLog->txId_  = it->second.second;
+}
+
+
+// 获取tx Hash/ID
+void _getTxHexId(MySQLConnection &db, class TxLog *txLog) {
+  // 是否使用磁盘raw 缓存
+  const bool isUseDisk = Config::GConfig.getBool("cache.raw", false);
+  const int32_t maxCacheHeight = Config::GConfig.getInt("cache.raw.max.block.height", 0);
+
+  if (isUseDisk && maxCacheHeight >= txLog->blkHeight_) {
+    _getRawTxFromDisk(txLog);
+  } else {
+    _getRawTxFromDB(db, txLog);
+  }
+
+  // parse hex string from parameter
+  vector<unsigned char> txData(ParseHex(txLog->txHex_));
+  CDataStream ssData(txData, SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+
+  // deserialize binary data stream
+  try {
+    ssData >> txLog->tx_;
+  }
+  catch (std::exception &e) {
+    THROW_EXCEPTION_DBEX("TX decode failed: %s", e.what());
+  }
+  if (txLog->tx_.GetHash() != txLog->txHash_) {
+    THROW_EXCEPTION_DBEX("TX decode failed, hash is not match, db: %s, calc: %s",
+                         txLog->txHash_.ToString().c_str(),
+                         txLog->tx_.GetHash().ToString().c_str());
+  }
+}
+
 bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
   MySQLResult res;
   int32_t tableNameIdx = -1, logId = -1;
@@ -1213,37 +1318,8 @@ bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
            tableNameIdx, txLog->logId_, txLog->type_, txLog->blkHeight_,
            txLog->txHash_.ToString().c_str(), txLog->createdAt_.c_str());
 
-  // find raw tx hex
-  string txHashStr = txLog->txHash_.ToString();
-  sql = Strings::Format("SELECT `hex`,`id` FROM `raw_txs_%04d` WHERE `tx_hash` = '%s' ",
-                        HexToDecLast2Bytes(txHashStr) % 64, txHashStr.c_str());
-  dbExplorer_.query(sql, res);
-  if (res.numRows() == 0) {
-    LOG_FATAL("can't find raw tx by hash: %s", txHashStr.c_str());
-    return false;
-  }
-  row = res.nextRow();
-  txLog->txHex_ = string(row[0]);
-  txLog->txId_  = atoi64(row[1]);
-
-  // parse hex string from parameter
-  vector<unsigned char> txData(ParseHex(txLog->txHex_));
-  CDataStream ssData(txData, SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
-
-  // deserialize binary data stream
-  try {
-    ssData >> txLog->tx_;
-  }
-  catch (std::exception &e) {
-    LOG_FATAL("TX decode failed: %s", e.what());
-    return false;
-  }
-  if (txLog->tx_.GetHash() != txLog->txHash_) {
-    LOG_FATAL("TX decode failed, hash is not match, db: %s, calc: %s",
-              txLog->txHash_.ToString().c_str(),
-              txLog->tx_.GetHash().ToString().c_str());
-    return false;
-  }
+  // find raw tx hex/id
+  _getTxHexId(dbExplorer_, txLog);
 
   return true;
 }

@@ -42,6 +42,8 @@ while (true) {
             $detail = $bitcoinClient->getBlockByHeight(0);
             $detail['previousblockhash'] = '';
             Log::info('初始化创世纪块', $detail);
+            print('10s 后从创世纪块开始处理');
+            sleep(10);
         } else if ($needBackof) {    // 高度相同，hash 不同
             Log::notice('高度相同，但是 hash 不同', [
                 'height' => $latestBlock->getHeight(),

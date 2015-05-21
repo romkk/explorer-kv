@@ -27,33 +27,87 @@
 #include "bitcoin/base58.h"
 #include "bitcoin/util.h"
 
-static bool getBlockRawHex(const uint256 *hash, const int32_t *height,
-                           MySQLConnection &db,
-                           string *rawHex, int32_t *chainId, int64_t *blockId);
 
-bool getBlockRawHex(const uint256 *hash, const int32_t *height,
-                    MySQLConnection &db,
-                    string *rawHex, int32_t *chainId, int64_t *blockId) {
-  if (hash == nullptr && height == nullptr) {
-    return false;
+// 从磁盘读取 raw_block 批量文件
+void _loadRawBlockFromDisk(map<int32_t, RawBlock> &blkCache, const int32_t height) {
+  string dir = Config::GConfig.get("cache.rawdata.dir", "");
+  // 尾部添加 '/'
+  if (dir.length() == 0) {
+    dir = "./";
+  }
+  else if (dir[dir.length()-1] != '/') {
+    dir += "/";
   }
 
-  MySQLResult res;
-  string sql;
-  if (hash != nullptr) {
-    sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
-                          " WHERE `block_hash` = '%s' ",
-                          hash->ToString().c_str());
-  } else if (height != nullptr) {
-    sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
-                          " WHERE `block_height` = %d AND `chain_id`=0 ",
-                          *height);
+  const int32_t height2 = (height / 10000) * 10000;
+  string path = Strings::Format("%d_%d", height2, height2 + 9999);
+
+  const string fname = Strings::Format("%s%s/0_raw_blocks",
+                                       dir.c_str(), path.c_str());
+  LOG_INFO("load raw block file: %s", fname.c_str());
+  std::ifstream input(fname);
+  std::string line;
+  while (std::getline(input, line)) {
+    auto arr = split(line, ',');
+    // line: blockId, hash, height, chain_id, hex
+    const int64_t blkId = atoi64(arr[0].c_str());
+    const uint256 blkHash(arr[1]);
+    const int32_t blkHeight  = atoi(arr[2].c_str());
+    const int32_t blkChainId = atoi(arr[3].c_str());
+    const string  blkHex     = arr[4];
+
+    blkCache[blkHeight] = RawBlock(blkId, blkHeight, blkChainId, blkHash, blkHex);
+  }
+}
+
+void _getRawBlockFromDisk(const int32_t height, string *rawHex,
+                          int32_t *chainId, int64_t *blockId) {
+  // 从磁盘直接读取文件，缓存起来，减少数据库交互
+  static map<int32_t, RawBlock> blkCache;
+  static int32_t heightBegin = -1;
+
+  if (heightBegin != (height / 10000)) {
+    // 载入数据
+    LOG_INFO("try load raw block data from disk...");
+    blkCache.clear();
+    heightBegin = height / 10000;
+    _loadRawBlockFromDisk(blkCache, height);
   }
 
-  char **row = nullptr;
+  auto it = blkCache.find(height);
+  if (it == blkCache.end()) {
+    THROW_EXCEPTION_DBEX("can't find rawblock from disk cache, height: %d", height);
+  }
 
-  db.query(sql, res);
-  if (res.numRows() == 1) {
+  *rawHex  = it->second.hex_;
+  *chainId = it->second.chainId_;
+  *blockId = it->second.blockId_;
+}
+
+void _getBlockRawHex(const int32_t height,
+                     MySQLConnection &db,
+                     string *rawHex, int32_t *chainId, int64_t *blockId) {
+  // 是否使用磁盘raw缓存
+  const bool isUseDisk = Config::GConfig.getBool("cache.raw", false);
+  const int32_t maxCacheHeight = Config::GConfig.getInt("cache.raw.max.block.height", 0);
+
+  if (isUseDisk && maxCacheHeight >= height) {
+    // 从磁盘获取raw block
+    _getRawBlockFromDisk(rawHex, chainId, blockId);
+  }
+  else
+  {
+    // 从DB获取raw block
+    MySQLResult res;
+    string sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
+                                 " WHERE `block_height` = %d AND `chain_id`=0 ",
+                                 height);
+    char **row = nullptr;
+    db.query(sql, res);
+    if (res.numRows() == 0) {
+      THROW_EXCEPTION_DBEX("can't find block by height from DB: %d", height);
+    }
+
     row = res.nextRow();
     if (rawHex != nullptr) {
       rawHex->assign(row[0]);
@@ -65,10 +119,7 @@ bool getBlockRawHex(const uint256 *hash, const int32_t *height,
     if (blockId != nullptr) {
       *blockId  = atoi64(row[2]);
     }
-    return true;
   }
-
-  return false;
 }
 
 // 批量插入函数
@@ -408,9 +459,8 @@ void Parser::acceptBlock(const int32_t height) {
   string blkRawHex;
   int32_t chainId;
   int64_t blockId;
-  if (!getBlockRawHex(nullptr, &height, dbExplorer_, &blkRawHex, &chainId, &blockId)) {
-    THROW_EXCEPTION_DBEX("can't find block by height: %d", height);
-  }
+
+  _getBlockRawHex(height, dbExplorer_, &blkRawHex, &chainId, &blockId);
   assert(chainId == 0);
 
   // 解码Raw Hex
@@ -863,9 +913,8 @@ void Parser::rollbackBlock(const int32_t height) {
   string blkRawHex;
   int32_t chainId;
   int64_t blockId;
-  if (!getBlockRawHex(nullptr, &height, dbExplorer_, &blkRawHex, &chainId, &blockId)) {
-    THROW_EXCEPTION_DBEX("can't find block by height: %d", height);
-  }
+
+  _getBlockRawHex(height, dbExplorer_, &blkRawHex, &chainId, &blockId);
   assert(chainId == 0);
 
   // 解码Raw Hex

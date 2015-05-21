@@ -29,6 +29,24 @@
 #define TXLOG_TYPE_ACCEPT   1
 #define TXLOG_TYPE_ROLLBACK 2
 
+class RawBlock {
+public:
+  int64_t blockId_;
+  int32_t height_;
+  int32_t chainId_;
+  uint256 hash_;
+  string  hex_;
+
+  RawBlock(const int64_t blockId, const int32_t height, const int32_t chainId,
+           const uint256 hash, const string &hex) {
+    blockId_ = blockId;
+    height_  = height;
+    chainId_ = chainId;
+    hash_    = hash;
+    hex_     = hex;
+  }
+};
+
 class DBTxOutput {
 public:
   int64_t txId;

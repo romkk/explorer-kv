@@ -38,13 +38,7 @@ public:
   string  hex_;
 
   RawBlock(const int64_t blockId, const int32_t height, const int32_t chainId,
-           const uint256 hash, const string &hex) {
-    blockId_ = blockId;
-    height_  = height;
-    chainId_ = chainId;
-    hash_    = hash;
-    hex_     = hex;
-  }
+           const uint256 hash, const string &hex);
 };
 
 class DBTxOutput {

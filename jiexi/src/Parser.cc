@@ -27,9 +27,18 @@
 #include "bitcoin/base58.h"
 #include "bitcoin/util.h"
 
+RawBlock::RawBlock(const int64_t blockId, const int32_t height, const int32_t chainId,
+                   const uint256 hash, const string &hex) {
+  blockId_ = blockId;
+  height_  = height;
+  chainId_ = chainId;
+  hash_    = hash;
+  hex_     = hex;
+}
+
 
 // 从磁盘读取 raw_block 批量文件
-void _loadRawBlockFromDisk(map<int32_t, RawBlock> &blkCache, const int32_t height) {
+void _loadRawBlockFromDisk(map<int32_t, RawBlock*> &blkCache, const int32_t height) {
   string dir = Config::GConfig.get("cache.rawdata.dir", "");
   // 尾部添加 '/'
   if (dir.length() == 0) {
@@ -50,25 +59,27 @@ void _loadRawBlockFromDisk(map<int32_t, RawBlock> &blkCache, const int32_t heigh
   while (std::getline(input, line)) {
     auto arr = split(line, ',');
     // line: blockId, hash, height, chain_id, hex
-    const int64_t blkId = atoi64(arr[0].c_str());
     const uint256 blkHash(arr[1]);
     const int32_t blkHeight  = atoi(arr[2].c_str());
     const int32_t blkChainId = atoi(arr[3].c_str());
-    const string  blkHex     = arr[4];
 
-    blkCache[blkHeight] = RawBlock(blkId, blkHeight, blkChainId, blkHash, blkHex);
+    blkCache[blkHeight] = new RawBlock(atoi64(arr[0].c_str()), blkHeight, blkChainId, blkHash, arr[4]);
   }
 }
 
+// 从文件读取raw block
 void _getRawBlockFromDisk(const int32_t height, string *rawHex,
                           int32_t *chainId, int64_t *blockId) {
   // 从磁盘直接读取文件，缓存起来，减少数据库交互
-  static map<int32_t, RawBlock> blkCache;
+  static map<int32_t, RawBlock*> blkCache;
   static int32_t heightBegin = -1;
 
   if (heightBegin != (height / 10000)) {
     // 载入数据
     LOG_INFO("try load raw block data from disk...");
+    for (auto &it : blkCache) {
+      delete it.second;
+    }
     blkCache.clear();
     heightBegin = height / 10000;
     _loadRawBlockFromDisk(blkCache, height);
@@ -79,11 +90,12 @@ void _getRawBlockFromDisk(const int32_t height, string *rawHex,
     THROW_EXCEPTION_DBEX("can't find rawblock from disk cache, height: %d", height);
   }
 
-  *rawHex  = it->second.hex_;
-  *chainId = it->second.chainId_;
-  *blockId = it->second.blockId_;
+  *rawHex  = it->second->hex_;
+  *chainId = it->second->chainId_;
+  *blockId = it->second->blockId_;
 }
 
+// 获取block raw hex/id/chainId...
 void _getBlockRawHex(const int32_t height,
                      MySQLConnection &db,
                      string *rawHex, int32_t *chainId, int64_t *blockId) {
@@ -93,7 +105,7 @@ void _getBlockRawHex(const int32_t height,
 
   if (isUseDisk && maxCacheHeight >= height) {
     // 从磁盘获取raw block
-    _getRawBlockFromDisk(rawHex, chainId, blockId);
+    _getRawBlockFromDisk(height, rawHex, chainId, blockId);
   }
   else
   {

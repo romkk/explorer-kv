@@ -41,6 +41,19 @@ public:
            const uint256 hash, const string &hex);
 };
 
+class LastestAddressInfo {
+public:
+  int32_t beginTxYmd_;
+  int32_t endTxYmd_;
+  int64_t beginTxId_;
+  int64_t endTxId_;
+  int64_t totalReceived_;
+  int64_t totalSent_;
+
+  LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd, int64_t beginTxId,
+                     int64_t endTxId, int64_t totalReceived, int64_t totalSent);
+};
+
 class DBTxOutput {
 public:
   int64_t txId;

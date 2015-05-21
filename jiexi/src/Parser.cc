@@ -27,6 +27,8 @@
 #include "bitcoin/base58.h"
 #include "bitcoin/util.h"
 
+std::unordered_map<int64_t, LastestAddressInfo *> gAddrTxCache;
+
 RawBlock::RawBlock(const int64_t blockId, const int32_t height, const int32_t chainId,
                    const uint256 hash, const string &hex) {
   blockId_ = blockId;
@@ -36,6 +38,16 @@ RawBlock::RawBlock(const int64_t blockId, const int32_t height, const int32_t ch
   hex_     = hex;
 }
 
+LastestAddressInfo::LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd,
+                                       int64_t beginTxId, int64_t endTxId,
+                                       int64_t totalReceived, int64_t totalSent) {
+  beginTxYmd_    = beginTxYmd;
+  endTxYmd_      = endTxYmd;
+  beginTxId_     = beginTxId;
+  endTxId_       = endTxId;
+  totalReceived_ = totalReceived;
+  totalSent_     = totalSent;
+}
 
 // 从磁盘读取 raw_block 批量文件
 void _loadRawBlockFromDisk(map<int32_t, RawBlock*> &blkCache, const int32_t height) {
@@ -769,45 +781,52 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
   for (auto &it : addressBalance) {
     const int64_t addrID      = it.first;
     const int64_t balanceDiff = it.second;
+    const string addrTableName = Strings::Format("addresses_%04d", addrID / BILLION);
+    std::unordered_map<int64_t, LastestAddressInfo *>::iterator it2;
 
     // 获取地址信息
-    string addrTableName = Strings::Format("addresses_%04d", addrID / BILLION);
-    sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id`,`total_received`,"
-                          " `total_sent`,`begin_tx_id`,`begin_tx_ymd` "
-                          " FROM `%s` WHERE `id`=%lld ",
-                          addrTableName.c_str(), addrID);
-    db.query(sql, res);
-    assert(res.numRows() == 1);
-    row = res.nextRow();
+    int32_t beginTxYmd, prevTxYmd;
+    int64_t beginTxID, prevTxId, totalRecv, finalBalance;
 
-    const int32_t prevTxYmd   = atoi(row[0]);
-    const int64_t prevTxId    = atoi64(row[1]);
-    const int64_t addrBalance = atoi64(row[2]) - atoi64(row[3]);
-    const int64_t beginTxID   = atoi64(row[4]);
-    const int32_t beginTxYmd  = atoi(row[5]);
-    int64_t totalRecv = 0, finalBalance = 0;
+    it2 = gAddrTxCache.find(addrID);
+    if (it2 != gAddrTxCache.end()) {
+      prevTxYmd    = it2->second->endTxYmd_;
+      prevTxId     = it2->second->endTxId_;
+      beginTxID    = it2->second->beginTxId_;
+      beginTxYmd   = it2->second->beginTxYmd_;
+      totalRecv    = it2->second->totalReceived_;
+      finalBalance = it2->second->totalReceived_ - it2->second->totalSent_;
+    } else {
+      sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id`,`total_received`,"
+                            " `total_sent`,`begin_tx_id`,`begin_tx_ymd` "
+                            " FROM `%s` WHERE `id`=%lld ",
+                            addrTableName.c_str(), addrID);
+      db.query(sql, res);
+      assert(res.numRows() == 1);
+      row = res.nextRow();
+
+      prevTxYmd   = atoi(row[0]);
+      prevTxId    = atoi64(row[1]);
+      totalRecv   = atoi64(row[2]);
+      finalBalance = totalRecv - atoi64(row[3]);
+      beginTxID   = atoi64(row[4]);
+      beginTxYmd  = atoi(row[5]);
+
+      auto ptr = new LastestAddressInfo(beginTxYmd, prevTxYmd, beginTxID, prevTxId, atoi64(row[2]), atoi64(row[3]));
+      gAddrTxCache[addrID] = ptr;
+    }
+    if ((it2 = gAddrTxCache.find(addrID)) == gAddrTxCache.end()) {
+      THROW_EXCEPTION_DB("gAddrTxCache fatal");
+    }
 
     // 处理前向记录
     if (prevTxYmd > 0 && prevTxId > 0) {
-      // 获取前向记录
-      sql = Strings::Format("SELECT `total_received`,`balance_final` FROM `address_txs_%d`"
-                            " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                            prevTxYmd, addrID, prevTxId);
-      db.query(sql, res);
-      if (res.numRows() != 1) {
-      	THROW_EXCEPTION_DBEX("prev address_tx not exist in DB");
-      }
-      row = res.nextRow();
-      totalRecv    = atoi64(row[0]);
-      finalBalance = atoi64(row[1]);
-
       // 更新前向记录
       sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d, `next_tx_id`=%lld "
                             " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                             prevTxYmd, ymd, txLog->txId_, addrID, prevTxId);
       db.updateOrThrowEx(sql, 1);
     }
-    assert(addrBalance == finalBalance);
     assert(finalBalance + balanceDiff >= 0);
 
     // 插入当前记录
@@ -828,6 +847,8 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
       assert(beginTxID  == 0);
       sqlBegin = Strings::Format("`begin_tx_ymd`=%d, `begin_tx_id`=%lld,",
                                  ymd, txLog->txId_);
+      it2->second->beginTxId_  = txLog->txId_;
+      it2->second->beginTxYmd_ = ymd;
     }
     sql = Strings::Format("UPDATE `%s` SET `tx_count`=`tx_count`+1, "
                           " `total_received` = `total_received` + %lld,"
@@ -840,6 +861,11 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
                           ymd, txLog->txId_, sqlBegin.c_str(),
                           date("%F %T").c_str(), addrID);
     db.updateOrThrowEx(sql, 1);
+
+    it2->second->totalReceived_ += (balanceDiff > 0 ? balanceDiff : 0);
+    it2->second->totalSent_     += (balanceDiff < 0 ? balanceDiff * -1 : 0);
+    it2->second->endTxId_  = txLog->txId_;
+    it2->second->endTxYmd_ = ymd;
   } /* /for */
 }
 

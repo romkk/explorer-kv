@@ -750,18 +750,21 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
     db.updateOrThrowEx(sql, 1);
 
     // 更新地址信息
+    string sqlBegin = "";  // 是否更新 `begin_tx_ymd`/`begin_tx_id`
+    if (beginTxYmd == 0) {
+      assert(beginTxID  == 0);
+      sqlBegin = Strings::Format("`begin_tx_ymd`=%d, `begin_tx_id`=%lld,",
+                                 ymd, txLog->txId_);
+    }
     sql = Strings::Format("UPDATE `%s` SET `tx_count`=`tx_count`+1, "
                           " `total_received` = `total_received` + %lld,"
                           " `total_sent`     = `total_sent`     + %lld,"
-                          " `end_tx_ymd`=%d, `end_tx_id`=%lld,  "
-                          " `begin_tx_ymd`=%d, `begin_tx_id`=%lld,  "
+                          " `end_tx_ymd`=%d, `end_tx_id`=%lld, %s "
                           " `updated_at`='%s' WHERE `id`=%lld ",
                           addrTableName.c_str(),
                           (balanceDiff > 0 ? balanceDiff : 0),
                           (balanceDiff < 0 ? balanceDiff * -1 : 0),
-                          ymd, txLog->txId_,
-                          beginTxYmd == 0 ? ymd : beginTxYmd,
-                          beginTxID  == 0 ? txLog->txId_ : beginTxID,
+                          ymd, txLog->txId_, sqlBegin.c_str(),
                           date("%F %T").c_str(), addrID);
     db.updateOrThrowEx(sql, 1);
   } /* /for */
@@ -1087,12 +1090,15 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
     sql = Strings::Format("UPDATE `%s` SET `tx_count`=`tx_count`-1, "
                           " `total_received` = `total_received` - %lld,"
                           " `total_sent`     = `total_sent`     - %lld,"
-                          " `end_tx_ymd`=%d, `end_tx_id`=%lld, `updated_at`='%s' "
+                          " `end_tx_ymd`=%d, `end_tx_id`=%lld, %s `updated_at`='%s' "
                           " WHERE `id`=%lld ",
                           addrTableName.c_str(),
                           (balanceDiff > 0 ? balanceDiff : 0),
                           (balanceDiff < 0 ? balanceDiff * -1 : 0),
-                          end2TxYmd, end2TxId, date("%F %T").c_str(), addrID);
+                          end2TxYmd, end2TxId,
+                          // 没有倒数第二条，重置起始位置为空
+                          end2TxYmd == 0 ? "`begin_tx_id`=0,`begin_tx_ymd`=0," : "",
+                          date("%F %T").c_str(), addrID);
     db.updateOrThrowEx(sql, 1);
   } /* /for */
 }

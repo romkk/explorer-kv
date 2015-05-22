@@ -5,38 +5,13 @@ var log = require('debug')('api:lib:tx');
 var moment = require('moment');
 
 /**
- * @example https://blockchain.info/rawtx/3fd5fa0798281c9c417dc548e921f2c08a57b14c442c1ffb146238a895277813
  *
- * {
- *     "ver": 1,
- *     "inputs": [
- *         {
- *             "sequence": 4294967295,
- *             "script": "049d8e2f1b0114"
- *         }
- *     ],
- *     "block_height": 85150,
- *     "relayed_by": "0.0.0.0",
- *     "out": [
- *         {
- *             "spent": true,
- *             "tx_index": 150483,
- *             "type": 0,
- *             "addr": "1HQUH9KPLo8YLEvf2LiaGCCqJZmZC2szK9",
- *             "value": 5000000000,
- *             "n": 0,
- *             "script": "410437b36a7221bc977dce712728a954e3b5d88643ed5aef46660ddcfeeec132724cd950c1fdd008ad4a2dfd354d6af0ff155fc17c1ee9ef802062feb07ef1d065f0ac"
- *         }
- *     ],
- *     "lock_time": 0,
- *     "size": 134,
- *     "double_spend": false,
- *     "time": 1287094230,
- *     "tx_index": 150483,
- *     "vin_sz": 1,
- *     "hash": "3fd5fa0798281c9c417dc548e921f2c08a57b14c442c1ffb146238a895277813",
- *     "vout_sz": 1
- * }
+ * Coinbase Tx
+ * https://blockchain.info/rawtx/9afb8dd3b2b4f9d5ffe21ce69e44287c4216acf53469c7eb7457e6cead9b6283
+ *
+ * Normal TX
+ * https://blockchain.info/rawtx/84ae6680e19da59a948634247648054c45d3bce36bad2f2c8b5d67daa6c03e2e
+ *
  */
 
 class Tx {

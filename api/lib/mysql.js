@@ -11,18 +11,18 @@ class Mysql {
             return Mysql.instance;
         }
         var pool = mysql.createPool({
-            connectionLimit: 20,
             host: config.get('database.host'),
             database: config.get('database.name'),
             port: config.get('database.port'),
             user: config.get('database.user'),
             password: config.get('database.pass'),
+            connectionLimit: 100,
             charset: 'utf8',
             timezone: 'UTC',
             multipleStatements: true,
-            acquireTimeout: 3000,
             waitForConnections: true,
-            queueLimit: 5,
+            queueLimit: 100000,
+            acquireTimeout: 30000,
             debug: false
         });
 

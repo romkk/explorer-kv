@@ -1,12 +1,24 @@
 var mysql = require('./mysql');
 var helper = require('./helper');
 var sprintf = require('sprintf').sprintf;
-var log = require('debug')('api:lib:tx');
+var log = require('debug')('api:lib:block');
 var moment = require('moment');
+var Tx = require('./tx');
 
 class Block {
     constructor(row) {
         this.attrs = row;
+    }
+
+    get txs() {
+        if (this._txs == null) {
+            throw new Error('Block instance has not been loaded');
+        }
+        return this._txs;
+    }
+
+    set txs(v) {
+        this._txs = v;
     }
 
     toJSON() {
@@ -28,11 +40,33 @@ class Block {
         };
     }
 
+    load() {
+        var table = Block.getBlockTxTableByBlockId(this.attrs.block_id);
+        var sql = `select tx_id
+                   from ${table}
+                   where block_id = ?
+                   order by position asc`;
+        return mysql.list(sql, 'tx_id', [ this.attrs.block_id ])
+            .then(txIndexes => {
+                var promises = txIndexes.map(id => {
+                    return Tx.make(id)
+                        .then((tx) => {
+                            return tx.load();
+                        });
+                });
+                return Promise.all(promises);
+            })
+            .then(txs => {
+                this.txs = txs;
+                return this;
+            });
+    }
+
     static make(id) {
         var idType = helper.paramType(id);
         var sql = `select *
                    from 0_blocks
-                   where ${idType == helper.constant.HASH_IDENTIFIER ? 'hash' : 'height'} = ? and chain_id = 0`;
+                   where ${idType == helper.constant.HASH_IDENTIFIER ? 'hash' : 'block_id'} = ? and chain_id = 0`;
         return mysql.selectOne(sql, [id])
             .then(blk => {
                 return blk == null ? null : new Block(blk);
@@ -40,7 +74,7 @@ class Block {
     }
 
     static getBlockTxTableByBlockId(blockId) {
-        return sprintf('block_txs_%04d', parseInt(blockId, 10) % 64);
+        return sprintf('block_txs_%04d', parseInt(blockId, 10) % 100);
     }
 }
 

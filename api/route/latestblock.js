@@ -31,7 +31,7 @@ module.exports = (server) => {
                 ret.block_index = block.id;
 
                 var table = Block.getBlockTxTableByBlockId(block.id);
-                var sql = `select tx_id from ${table} where block_id = ?`;
+                var sql = `select tx_id from ${table} where block_id = ? order by position asc`;
 
                 return mysql.list(sql, 'tx_id', [block.id]);
             }).then(txIndexes => {

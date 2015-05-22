@@ -10,6 +10,7 @@ module.exports ={
         HASH_IDENTIFIER: Symbol('hash')
     },
     paramType(str) {
+        str = String(str);
         return parseInt(str, 10).toString() === str ? this.constant.ID_IDENTIFIER : this.constant.HASH_IDENTIFIER;
     }
 };

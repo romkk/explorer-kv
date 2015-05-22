@@ -16,7 +16,7 @@ module.exports = (server) => {
                 if (blk == null) {
                     return next(new restify.ResourceNotFoundError('Block not found'));
                 }
-                return blk;
+                return blk.load();
             })
             .then(blk => {
                 res.send(blk);

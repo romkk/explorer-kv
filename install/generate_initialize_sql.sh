@@ -74,6 +74,7 @@ CREATE TABLE `txs_%04d` (
   `tx_id` bigint(20) NOT NULL,
   `hash` char(64) NOT NULL,
   `height` bigint(20) NOT NULL,
+  `block_timestamp` bigint(20) NOT NULL,
   `is_coinbase` tinyint(1) NOT NULL,
   `version` int(11) NOT NULL,
   `lock_time` bigint(20) NOT NULL,

@@ -1,5 +1,5 @@
 var mysql = require('../lib/mysql');
-var helper = require('../lib/helper');
+var helper = require('../lib/block');
 var log = require('debug')('api:route:latestblock');
 
 /**

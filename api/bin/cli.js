@@ -15,12 +15,12 @@ server.use(restify.jsonp());
 server.use(restify.bodyParser());
 server.use(restify.gzipResponse());
 
-//server.on('after', restify.auditLogger({
-//    log: bunyan.createLogger({
-//        name: 'Audit',
-//        stream: process.stdout
-//    })
-//}));
+server.on('after', restify.auditLogger({
+    log: bunyan.createLogger({
+        name: 'Audit',
+        stream: process.stdout
+    })
+}));
 
 require('../route')(server);
 

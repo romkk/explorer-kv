@@ -1,5 +1,5 @@
 var mysql = require('../lib/mysql');
-var helper = require('../lib/block');
+var Block = require('../lib/block');
 var log = require('debug')('api:route:latestblock');
 
 /**
@@ -30,7 +30,7 @@ module.exports = (server) => {
                 ret.height = block.block_height;
                 ret.block_index = block.id;
 
-                var table = helper.getBlockTxTableByBlockId(block.id);
+                var table = Block.getBlockTxTableByBlockId(block.id);
                 var sql = `select tx_id from ${table} where block_id = ?`;
 
                 return mysql.list(sql, 'tx_id', [block.id]);

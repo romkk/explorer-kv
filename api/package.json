@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "DEBUG=api:* nodemon --exec npm run babel-node -- index.js",
     "babel-node": "babel-node index.js",
-    "test": "NODE_ENV=test mocha -r test/bootstrap.js --compilers js:babel/register --recursive test"
+    "test": "NODE_ENV=test mocha -r test/bootstrap.js --compilers js:babel/register --recursive test",
+    "clean": "rm -rf npm-debug.log"
   },
   "author": "tianzhao.li@bitmain.com",
   "private": true,

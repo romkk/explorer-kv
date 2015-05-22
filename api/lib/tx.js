@@ -135,7 +135,7 @@ class Tx {
                    where ${idType == helper.constant.HASH_IDENTIFIER ? `hash = ?` : `tx_id = ?`}`;
         return mysql.selectOne(sql, [id])
             .then((txRow) => {
-                return txRow == null ? txRow : new Tx(txRow);
+                return txRow == null ? null : new Tx(txRow);
             });
     }
 

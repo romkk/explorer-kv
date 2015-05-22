@@ -4,7 +4,7 @@
   "description": "API Service for Explorer",
   "main": "index.js",
   "scripts": {
-    "dev": "DEBUG=api:* nogdemon --exec npm run babel-node -- index.js",
+    "dev": "DEBUG=api:* nodemon --exec npm run babel-node -- index.js",
     "babel-node": "babel-node index.js",
     "test": "NODE_ENV=test mocha -r test/bootstrap.js --compilers js:babel/register --recursive test"
   },

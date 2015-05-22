@@ -1,5 +1,6 @@
 var mysql = require('mysql');
 var log = require('debug')('api:mysql');
+var config = require('config');
 
 class Mysql {
 
@@ -11,11 +12,11 @@ class Mysql {
         }
         var pool = mysql.createPool({
             connectionLimit: 20,
-            host: process.env.DATABASE_HOST,
-            database: process.env.DATABASE_NAME,
-            port: process.env.DATABASE_PORT,
-            user: process.env.DATABASE_USER,
-            password: process.env.DATABASE_PASS,
+            host: config.get('database.host'),
+            database: config.get('database.name'),
+            port: config.get('database.port'),
+            user: config.get('database.user'),
+            password: config.get('database.pass'),
             charset: 'utf8',
             timezone: 'UTC',
             multipleStatements: true,

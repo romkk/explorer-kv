@@ -1,6 +1,7 @@
 var mysql = require('../lib/mysql');
 var Block = require('../lib/block');
 var log = require('debug')('api:route:block');
+var restify = require('restify');
 
 /**
  * Get block detail.
@@ -14,7 +15,7 @@ module.exports = (server) => {
         Block.make(req.params.blockIdentifier)
             .then(blk => {
                 if (blk == null) {
-                    return next(new restify.ResourceNotFoundError('Block not found'));
+                    return new restify.ResourceNotFoundError('Block not found');
                 }
                 return blk.load();
             })

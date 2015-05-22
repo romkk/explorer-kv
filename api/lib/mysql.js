@@ -16,12 +16,12 @@ class Mysql {
             port: config.get('database.port'),
             user: config.get('database.user'),
             password: config.get('database.pass'),
-            connectionLimit: 100,
+            connectionLimit: 50,
             charset: 'utf8',
             timezone: 'UTC',
             multipleStatements: true,
             waitForConnections: true,
-            queueLimit: 100000,
+            queueLimit: 20000,
             acquireTimeout: 30000,
             debug: false
         });

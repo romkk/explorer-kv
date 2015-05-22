@@ -1,8 +1,13 @@
 SHELL := /bin/bash
 
-.PHONY: all
-all:
-	@echo what do you want ?
+.PHONY: test
+test:
+	./vendor/bin/phpunit --bootstrap test/bootstrap.php test
+
+.PHONY: deploy
+deploy:
+	@rm -rf log/*
+	@ansible-playbook -u root -i deploy/inventory --private-key=~/.ssh/common.pem deploy/deploy.yml
 
 .PHONY: import-db
 import-db: ENV_FILE = ".env"
@@ -25,7 +30,7 @@ installdb:
 		 	mysql -D"$$db" -u"$$user" -p"$$pass" -h"$$host" -e 'drop table '$$table -D "$$db"; \
 	 	 done && \
 	 	echo "setup new tables..." && \
-	 	/bin/bash ../install/generate_initialize_sql.sh | mysql -u"$$user" -p"$$user" -D"$$db" -h"$$host"
+	 	/bin/bash ../install/generate_initialize_sql.sh | mysql -u"$$user" -p"$$pass" -D"$$db" -h"$$host"
 
 .PHONY: clear-post-process-data
 clear-post-process-data: ENV_FILE = ".env"

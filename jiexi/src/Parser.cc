@@ -885,13 +885,13 @@ void _insertTx(MySQLConnection &db, class TxLog *txLog, int64_t valueIn) {
     fee = valueIn - valueOut;
   }
 
-  sql = Strings::Format("INSERT INTO `%s`(`tx_id`, `hash`, `height`, `is_coinbase`,"
+  sql = Strings::Format("INSERT INTO `%s`(`tx_id`, `hash`, `height`,`block_timestamp`, `is_coinbase`,"
                         " `version`, `lock_time`, `size`, `fee`, `total_in_value`, "
                         " `total_out_value`, `inputs_count`, `outputs_count`, `created_at`)"
-                        " VALUES (%lld, '%s', %d, %d, %d, %u, %d, %lld, %lld, %lld, %d, %d, '%s') ",
+                        " VALUES (%lld, '%s', %d, %u, %d, %d, %u, %d, %lld, %lld, %lld, %d, %d, '%s') ",
                         tName.c_str(),
                         // `tx_id`, `hash`, `height`
-                        txLog->txId_, txLog->txHash_.ToString().c_str(), txLog->blkHeight_,
+                        txLog->txId_, txLog->txHash_.ToString().c_str(), txLog->blkHeight_, txLog->blockTimestamp_,
                         // `is_coinbase`, `version`, `lock_time`
                         txLog->tx_.IsCoinBase() ? 1 : 0, tx.nVersion, tx.nLockTime,
                         // `size`, `fee`, `total_in_value`, `total_out_value`

@@ -36,7 +36,7 @@ module.exports = (server) => {
                 return mysql.list(sql, 'tx_id', [block.id]);
             }).then(txIndexes => {
                 ret.txIndexes = txIndexes;
-                res.end(JSON.stringify(ret));
+                res.send(JSON.stringify(ret));
                 next();
             });
     });

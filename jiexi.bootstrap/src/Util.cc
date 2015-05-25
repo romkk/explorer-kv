@@ -67,6 +67,7 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
   static std::unordered_map<string, int64_t> addrMapCache;
   const string now = date("%F %T");
   const bool isUseCache = Config::GConfig.getBool("cache.address2ids", false);
+  string sql;
 
   for (auto &a : allAddresss) {
     if (addrMap.find(a) != addrMap.end()) {
@@ -85,10 +86,6 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
     const string tableName = Strings::Format("addresses_%04d", tableIdx);
     const string sqlSelect = Strings::Format("SELECT `id` FROM `%s` WHERE `address`='%s' ",
                                              tableName.c_str(), a.c_str());
-    string sql;
-
-    // TODO 插入地址需要加锁
-
     db.query(sqlSelect, res);
     if (res.numRows() == 0) {
       // 地址不存在，创建一条记录
@@ -116,7 +113,7 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
   } /* /for */
 }
 
-int64_t txHash2Id(MySQLConnection &db, const uint256 &txHash) {
+int64_t txHash2Id(MySQLConnection *db, const uint256 &txHash) {
   MySQLResult res;
   char **row;
   string sql;
@@ -124,7 +121,7 @@ int64_t txHash2Id(MySQLConnection &db, const uint256 &txHash) {
   const string hashStr = txHash.ToString();
   sql = Strings::Format("SELECT `id` FROM `raw_txs_%04d` WHERE `tx_hash`='%s'",
                         HexToDecLast2Bytes(hashStr) % 64, hashStr.c_str());
-  db.query(sql, res);
+  db->query(sql, res);
   if (res.numRows() != 1) {
     THROW_EXCEPTION_DBEX("can't find rawtx: %s", hashStr.c_str());
   }

@@ -107,6 +107,10 @@ private:
   vector<vector<BlockTx *> > poolBlockTx_;
   int32_t threadsNumber_;
 
+  vector<atomic<int32_t> > runThreads_;
+
+  map<string, int64_t> curBlockAddrMap_;
+
   int32_t getLastHeight();
   void updateLastHeight(const int32_t newHeight);
 
@@ -115,7 +119,7 @@ private:
   void acceptBlock(const int32_t height);
 
   void acceptTxThread(const int32_t i);
-  void acceptTx(MySQLConnection &db, const BlockTx *blkTx);
+  void acceptTx(MySQLConnection *db, const BlockTx *blkTx);
 
 public:
   Parser();

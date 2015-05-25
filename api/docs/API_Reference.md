@@ -86,8 +86,6 @@
     "block_height, 12200,
 	"tx_index":"12563028",
 	"inputs":[
-
-
 			{
 				"prev_out":{
 					"hash":"a3e2bcc9a5f776112497a32b05f4b9e5b2405ed9",

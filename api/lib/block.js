@@ -66,7 +66,7 @@ class Block {
         var idType = helper.paramType(id);
         var sql = `select *
                    from 0_blocks
-                   where ${idType == helper.constant.HASH_IDENTIFIER ? 'hash' : 'block_id'} = ? and chain_id = 0`;
+                   where ${idType == helper.constant.HASH_IDENTIFIER ? 'hash' : 'height'} = ? and chain_id = 0`;
         return mysql.selectOne(sql, [id])
             .then(blk => {
                 return blk == null ? null : new Block(blk);

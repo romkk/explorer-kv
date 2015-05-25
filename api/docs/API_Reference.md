@@ -1,10 +1,20 @@
 # BITMAIN Block Explorer API Reference
 
-## Auth
+## API 前缀
+
+## 鉴权
+
+### 如何获取 Access Key
+
+### 鉴权方法
+
+## 请求编码
+
+## 常见异常
 
 ## API List
 
-### Single Blcok
+### Single Block
 
 #### Request
 

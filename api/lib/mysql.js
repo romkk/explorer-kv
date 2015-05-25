@@ -21,7 +21,7 @@ class Mysql {
             timezone: 'UTC',
             multipleStatements: true,
             waitForConnections: true,
-            queueLimit: 20000,
+            queueLimit: 0,
             acquireTimeout: 30000,
             debug: false
         });

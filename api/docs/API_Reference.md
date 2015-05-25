@@ -122,7 +122,7 @@
 |---|---|---|---|---|
 |bitcoin_address|比特币地址|Path|√|string|
 |offset|返回结果集跳过的个数|Query|✗|int|
-|limit|范湖结果集个数|Query|✗|int|
+|limit|返回结果集个数|Query|✗|int|
 
 #### Response
 

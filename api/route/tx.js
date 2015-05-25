@@ -17,7 +17,7 @@ module.exports = (server) => {
                 if (tx == null) {
                     return new restify.ResourceNotFoundError('Transaction not found');
                 }
-                return tx.load();
+                return tx.load(req.query.scripts === 'true');
             })
             .then((tx) => {
                 res.send(tx);

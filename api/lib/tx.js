@@ -65,11 +65,11 @@ class Tx {
         return ret;
     }
 
-    load() {    //加载全部数据
+    load(withScripts = false) {    //加载全部数据
         var sql;
 
         // 获取 inputs
-        sql = `SELECT id, tx_id, position, input_script_hex, sequence,
+        sql = `SELECT id, tx_id, position, ${withScripts ? 'input_script_hex, ' : ''}sequence,
                         prev_tx_id, prev_position, prev_value, prev_address,
                         prev_address_ids, created_at
                 FROM \`${this.getInputTable()}\`
@@ -96,7 +96,7 @@ class Tx {
 
 
         // 获取 outputs
-        sql = `SELECT tx_id, position, address, address_ids, value, output_script_hex,
+        sql = `SELECT tx_id, position, address, address_ids, value, ${withScripts ? 'output_script_hex, ' : ''}
                         spent_tx_id
                 FROM \`${this.getOutputTable()}\`
                 WHERE \`tx_id\` = ?

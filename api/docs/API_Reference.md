@@ -121,8 +121,8 @@
 |参数|描述|位置|必须|数据类型|
 |---|---|---|---|---|
 |bitcoin_address|比特币地址|Path|√|string|
-|offset|返回结果集跳过的个数|Query|✗|int|
-|limit|返回结果集个数|Query|✗|int|
+|offset|返回结果集跳过的个数，默认为`0`|Query|✗|int|
+|limit|返回结果集个数，默认为`50`|Query|✗|int|
 
 #### Response
 

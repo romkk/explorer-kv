@@ -11,6 +11,8 @@ var config = require('config');
 
 chai.use(require("chai-as-promised"));
 
+global.Promise = require('bluebird');
+
 global.conn = mysql.createConnection({
     host: config.get('database.host'),
     port: config.get('database.port'),
@@ -18,7 +20,7 @@ global.conn = mysql.createConnection({
     password: config.get('database.pass'),
     database: config.get('database.name'),
     multipleStatements: true,
-    debug: true
+    debug: false
 });
 
 global.expect = chai.expect;

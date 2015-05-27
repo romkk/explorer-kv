@@ -70,8 +70,8 @@
     
 |参数|描述|位置|必须|数据类型|
 |---|---|---|---|---|
-|tx_hash|交易哈希|Query|√|string|
-|scripts|返回值是否包含输入和输出脚本，默认为`false`|Query|✗|boolean|
+|tx_hash|交易哈希|Query|√|String|
+|scripts|返回值是否包含输入和输出脚本，默认为`false`|Query|✗|Boolean|
 
 #### Response
 
@@ -120,9 +120,13 @@
     
 |参数|描述|位置|必须|数据类型|
 |---|---|---|---|---|
-|bitcoin_address|比特币地址|Path|√|string|
-|offset|返回结果集跳过的个数，默认为`0`|Query|✗|int|
-|limit|返回结果集个数，默认为`50`|Query|✗|int|
+|bitcoin_address|比特币地址|Path|√|String|
+|offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
+|timestamp|返回结果集开始的时间戳，默认为查询时间|Query|✗|Int|
+|limit|返回结果集个数，默认为`50`|Query|✗|Int|
+|sort|排序方式，可选为`desc`和`asc`，默认为`desc`|Query|✗|String|
+
+**注意：`offset`与`timestamp`同时使用时，将忽略`timestamp`。**
 
 #### Response
 

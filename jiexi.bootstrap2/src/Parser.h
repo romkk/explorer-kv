@@ -18,6 +18,8 @@
 #ifndef Explorer_Parser_h
 #define Explorer_Parser_h
 
+#include <string.h>
+
 #include "Common.h"
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
@@ -36,6 +38,118 @@ public:
   RawBlock(const int64_t blockId, const int32_t height, const int32_t chainId,
            const uint256 hash, const char *hex);
   ~RawBlock();
+};
+
+struct AddrTx {
+  int64_t txId_;
+  int64_t totalReceived_;
+  int64_t balanceDiff_;
+  int64_t balanceFinal_;
+  int32_t prevYmd_;
+  int32_t nextYmd_;
+  int64_t prevTxId_;
+  int64_t nextTxId_;
+  int32_t txHeight_;
+
+  AddrTx() {
+    memset((char *)&txId_, 0, sizeof(struct AddrTx));
+  }
+};
+
+struct AddrInfo {
+  char addrStr_[36];
+  int64_t addrId_;
+  int64_t txCount_;
+  int32_t beginTxYmd_;
+  int32_t endTxYmd_;
+  int64_t beginTxId_;
+  int64_t endTxId_;
+  int64_t totalReceived_;
+  int64_t totalSent_;
+
+  struct AddrTx addrTx_;
+
+  AddrInfo() {
+    memset((char *)&addrStr_, 0, sizeof(struct AddrInfo));
+  }
+  bool operator<(const AddrInfo &val) const {
+    int r = strncmp(addrStr_, val.addrStr_, 35);
+    if (r < 0) {
+      return true;
+    }
+    return false;
+  }
+};
+
+class TxOutput {
+  string  addressStr_;
+  string  addressIdsStr_;
+  int64_t value;
+  string  scriptHex_;
+  string  scriptAsm_;
+  string  typeStr_;
+
+public:
+  TxOutput();
+};
+
+struct TxInfo {
+  uint256 hash256_;
+  int64_t txId_;
+
+  int32_t outputsCount_;
+  TxOutput *outputs_;
+
+  TxInfo(): hash256_(), txId_(0), outputsCount_(0), outputs_(nullptr) {
+  }
+  bool operator<(const TxInfo &val) const {
+    return hash256_ < val.hash256_;
+  }
+};
+
+class AddrHandler {
+  vector<struct AddrInfo> addrInfo_;
+  size_t addrCount_;
+
+public:
+  AddrHandler(const size_t addrCount, const string &file);
+  vector<struct AddrInfo>::iterator find(const string &address);
+};
+
+class TxHandler {
+  vector<struct TxInfo> txInfo_;
+  size_t txCount_;
+
+public:
+  TxHandler(const size_t txCount, const string &file);
+  vector<struct TxInfo>::iterator find(const uint256 &hash);
+  vector<struct TxInfo>::iterator find(const string &hashStr);
+};
+
+class PreParser {
+  atomic<bool> running_;
+  int32_t height_;
+  mutex lockHeight_;
+
+  AddrHandler *addrHandler_;
+  TxHandler *txHandler_;
+
+  string filePreTx_;
+  string filePreAddr_;
+  size_t addrCount_;
+  size_t txCount_;
+
+  int32_t stopHeight_;
+
+  void initAddr();
+
+public:
+  PreParser();
+  ~PreParser();
+
+  void init();
+  void run();
+  void stop();
 };
 
 #endif

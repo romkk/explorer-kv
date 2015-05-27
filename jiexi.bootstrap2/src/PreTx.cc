@@ -32,7 +32,6 @@
 
 PreTx::PreTx(): f_(nullptr) {
   const string file = Config::GConfig.get("pre.tx.output.file", "");
-  ;
   if (file.length() == 0 || (f_ = fopen(file.c_str(), "w")) == nullptr) {
     THROW_EXCEPTION_DBEX("open file failure: %s", file.c_str());
   }

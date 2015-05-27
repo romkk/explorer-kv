@@ -16,6 +16,9 @@
  * limitations under the License.
  */
 
+#include <stdlib.h>
+
+#include <algorithm>
 #include <string>
 #include <iostream>
 #include <fstream>
@@ -129,4 +132,133 @@ void getRawBlockFromDisk(const int32_t height, string *rawHex,
     *blockId = it->second->blockId_;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+//-------------------------------- AddrHandler ---------------------------------
+////////////////////////////////////////////////////////////////////////////////
+AddrHandler::AddrHandler(const size_t addrCount, const string &filePreAddr) {
+  addrInfo_.resize(addrCount);
+  addrCount_ = addrCount;
 
+  std::ifstream f(filePreAddr);
+  std::string line;
+  for (size_t i = 0; std::getline(f, line); ++i) {
+    if (i > addrCount_) {
+      THROW_EXCEPTION_DBEX("pre address count not match, i: %lld, addrCount_: %lld", i, addrCount_);
+    }
+    vector<string> arr = split(line, ',');
+
+    addrInfo_[i].addrId_ = atoi64(arr[1]);
+    strncpy(addrInfo_[i].addrStr_, arr[0].c_str(), arr[0].length());
+  }
+  // sort for binary search
+  std::sort(addrInfo_.begin(), addrInfo_.end());
+}
+
+vector<struct AddrInfo>::iterator AddrHandler::find(const string &address) {
+  AddrInfo needle;
+  strncpy(needle.addrStr_, address.c_str(), 35);
+  vector<struct AddrInfo>::iterator it;
+
+  it = std::upper_bound(addrInfo_.begin(), addrInfo_.end(), needle);
+  if (it > addrInfo_.end() || it <= addrInfo_.begin()) {
+    THROW_EXCEPTION_DBEX("AddrHandler can't find AddrInfo by address: %s", address.c_str());
+  }
+  it--;
+  if (strncmp(it->addrStr_, address.c_str(), 36) != 0) {
+    THROW_EXCEPTION_DBEX("AddrHandler can't find AddrInfo by address: %s", address.c_str());
+  }
+  return it;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//--------------------------------- TxHandler ----------------------------------
+////////////////////////////////////////////////////////////////////////////////
+TxHandler::TxHandler(const size_t txCount, const string &file) {
+  txInfo_.resize(txCount);
+  txCount_ = txCount;
+
+  std::ifstream f(file);
+  std::string line;
+  for (size_t i = 0; std::getline(f, line); ++i) {
+    if (i > txCount_) {
+      THROW_EXCEPTION_DBEX("pre tx count not match, i: %lld, txCount_: %lld", i, txCount_);
+    }
+    vector<string> arr = split(line, ',');
+
+    txInfo_[i].hash256_ = uint256(arr[0]);
+    txInfo_[i].txId_    = atoi64(arr[1].c_str());
+  }
+  // sort for binary search
+  std::sort(txInfo_.begin(), txInfo_.end());
+}
+
+vector<struct TxInfo>::iterator TxHandler::find(const uint256 &hash) {
+  TxInfo needle;
+  needle.hash256_ = hash;
+  vector<struct TxInfo>::iterator it;
+
+  it = std::upper_bound(txInfo_.begin(), txInfo_.end(), needle);
+  if (it > txInfo_.end() || it <= txInfo_.begin()) {
+    THROW_EXCEPTION_DBEX("TxHandler can't find TxInfo by hash: %s", hash.ToString().c_str());
+  }
+  it--;
+  if (it->hash256_ != hash) {
+    THROW_EXCEPTION_DBEX("TxHandler can't find TxInfo by hash: %s", hash.ToString().c_str());
+  }
+  return it;
+}
+
+vector<struct TxInfo>::iterator TxHandler::find(const string &hashStr) {
+  return find(uint256(hashStr));
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+//--------------------------------- PreParser ----------------------------------
+////////////////////////////////////////////////////////////////////////////////
+PreParser::PreParser() {
+  stopHeight_  = (int32_t)Config::GConfig.getInt("raw.max.block.height", -1);
+  filePreTx_   = Config::GConfig.get("pre.tx.output.file", "");
+  filePreAddr_ = Config::GConfig.get("pre.address.output.file", "");
+  txCount_ = addrCount_ = 0;
+  addrHandler_ = nullptr;
+  height_  = 0;
+  running_ = true;
+}
+
+PreParser::~PreParser() {
+  stop();
+}
+
+void PreParser::stop() {
+  if (running_) {
+    running_ = false;
+    LOG_INFO("stop PreParser...");
+  }
+}
+
+void PreParser::init() {
+  LOG_INFO("get tx / address size...");
+  addrCount_ = getNumberOfLines(filePreAddr_);
+  txCount_   = getNumberOfLines(filePreTx_);
+  if (addrCount_ == 0 || txCount_ == 0) {
+    THROW_EXCEPTION_DBEX("number of line PreTx(%lld) or PreAddr(%lld) invalid",
+                         txCount_, addrCount_);
+  }
+  LOG_INFO("tx count: %lld, address count: %lld", txCount_, addrCount_);
+
+  // init
+  {
+    LogScope ls("init address Handler");
+    addrHandler_ = new AddrHandler(addrCount_, filePreAddr_);
+  }
+  {
+    LogScope ls("init txs Handler");
+    txHandler_   = new TxHandler(txCount_, filePreTx_);
+  }
+
+
+  while (running_) {
+    sleep(1);
+  }
+}

@@ -10,7 +10,7 @@ module.exports ={
     },
     paramType(str) {
         str = String(str);
-        return parseInt(str, 10).toString() === str ? this.constant.ID_IDENTIFIER : this.constant.HASH_IDENTIFIER;
+        return new BN(str, 10).toString(10) === str ? this.constant.ID_IDENTIFIER : this.constant.HASH_IDENTIFIER;
     },
     addressToHash160(addr) {
         addr = bs58.decode(addr);

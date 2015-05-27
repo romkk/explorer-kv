@@ -20,6 +20,8 @@
 #include "MySQLConnection.h"
 
 #include <string>
+#include <iostream>
+#include <fstream>
 #include <sstream>
 #include <vector>
 
@@ -37,6 +39,15 @@ std::vector<std::string> split(const std::string &s, char delim) {
   std::vector<std::string> elems;
   split(s, delim, elems);
   return elems;
+}
+
+size_t getNumberOfLines(const string &file) {
+  std::ifstream f(file);
+  std::size_t linesCount = 0;
+  std::string line;
+  while (std::getline(f , line))
+    ++linesCount;
+  return linesCount;
 }
 
 int32_t HexToDecLast2Bytes(const string &hex) {

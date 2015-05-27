@@ -97,6 +97,12 @@ for ($i = $startIndex; $i <= $endIndex; $i++) {
     Log::info('processing block ' . $i);
 
     $detail = $bitcoinClient->bm_get_block_detail(strval($i));
+
+    if (is_null($detail)) {
+        $i--;
+        continue;
+    }
+
     $lines = format($detail);
 
     fwrite($rawBlocksFile, $lines['rawBlocks']);

@@ -82,15 +82,24 @@ struct AddrInfo {
 };
 
 class TxOutput {
-  string  addressStr_;
-  string  addressIdsStr_;
-  int64_t value;
+public:
+  vector<string> address_;
+  vector<int64_t> addressIds_;
+  int64_t value_;
   string  scriptHex_;
   string  scriptAsm_;
   string  typeStr_;
 
 public:
-  TxOutput();
+  TxOutput(): value_(0) {}
+  void operator=(const TxOutput &val) {
+    address_    = val.address_;
+    addressIds_ = val.addressIds_;
+    value_      = val.value_;
+    scriptHex_  = val.scriptHex_;
+    scriptAsm_  = val.scriptAsm_;
+    typeStr_    = val.typeStr_;
+  }
 };
 
 struct TxInfo {
@@ -98,7 +107,7 @@ struct TxInfo {
   int64_t txId_;
 
   int32_t outputsCount_;
-  TxOutput *outputs_;
+  TxOutput **outputs_;
 
   TxInfo(): hash256_(), txId_(0), outputsCount_(0), outputs_(nullptr) {
   }
@@ -114,6 +123,7 @@ class AddrHandler {
 public:
   AddrHandler(const size_t addrCount, const string &file);
   vector<struct AddrInfo>::iterator find(const string &address);
+  const int64_t getAddressId(const string &address);
 };
 
 class TxHandler {
@@ -124,6 +134,10 @@ public:
   TxHandler(const size_t txCount, const string &file);
   vector<struct TxInfo>::iterator find(const uint256 &hash);
   vector<struct TxInfo>::iterator find(const string &hashStr);
+
+  void addOutputs(CTransaction &tx, AddrHandler *addrHandler);
+  void delOutput (const uint256 &hash, const int32_t n);
+  class TxOutput *getOutput(const uint256 &hash, const int32_t n);
 };
 
 class PreParser {

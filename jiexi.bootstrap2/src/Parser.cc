@@ -170,6 +170,10 @@ vector<struct AddrInfo>::iterator AddrHandler::find(const string &address) {
   return it;
 }
 
+const int64_t AddrHandler::getAddressId(const string &address) {
+  return find(address)->addrId_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 //--------------------------------- TxHandler ----------------------------------
 ////////////////////////////////////////////////////////////////////////////////
@@ -212,6 +216,82 @@ vector<struct TxInfo>::iterator TxHandler::find(const string &hashStr) {
   return find(uint256(hashStr));
 }
 
+void TxHandler::addOutputs(CTransaction &tx, AddrHandler *addrHandler) {
+  vector<struct TxInfo>::iterator it = find(tx.GetHash());
+  it->outputs_ = (TxOutput **)calloc(tx.vout.size(), sizeof(TxOutput *));
+  it->outputsCount_ = (int32_t)tx.vout.size();
+
+  int32_t n = -1;
+  for (auto &out : tx.vout) {
+    n++;
+    TxOutput *ptr = new TxOutput();
+    *(it->outputs_ + n) = ptr;
+
+    // script
+    ptr->scriptHex_ = HexStr(out.scriptPubKey.begin(), out.scriptPubKey.end());
+    ptr->scriptAsm_ = out.scriptPubKey.ToString();
+    // asm大小超过1MB, 且大于hex的4倍，则认为asm是非法的，置空
+    if (ptr->scriptAsm_.length() > 1024*1024 &&
+        ptr->scriptAsm_.length() > 4 * ptr->scriptHex_.length()) {
+      ptr->scriptAsm_ = "";
+    }
+    ptr->value_ = out.nValue;
+
+    // 解析出输出的地址
+    string addressStr;
+    string addressIdsStr;
+    txnouttype type;
+    vector<CTxDestination> addresses;
+    int nRequired;
+    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
+      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
+               tx.GetHash().ToString().c_str(), n);
+    }
+
+    // type
+    ptr->typeStr_ = GetTxnOutputType(type) ? GetTxnOutputType(type) : "";
+
+    // address, address_ids
+    int i = -1;
+    for (auto &addr : addresses) {
+      i++;
+      const string addrStr = CBitcoinAddress(addr).ToString();
+      ptr->address_.push_back(addrStr);
+      ptr->addressIds_.push_back(addrHandler->getAddressId(addrStr));
+    }
+  }
+}
+
+void TxHandler::delOutput(const uint256 &hash, const int32_t n) {
+  auto it = find(hash);
+  if (it->outputs_ == nullptr || *(it->outputs_ + n) == nullptr) {
+    THROW_EXCEPTION_DBEX("already delete output: %s,%d",
+                         hash.ToString().c_str(), n);
+  }
+  delete *(it->outputs_ + n);
+  *(it->outputs_ + n) = nullptr;
+
+  // 检测是否释放整个tx的output部分. 很多tx的所有输出是花掉的状态，free之尽量回收内存
+  bool isEmpty = true;
+  for (int i = 0; i < it->outputsCount_; i++) {
+    if (*(it->outputs_ + i) != nullptr) {
+      isEmpty = false;
+      break;
+    }
+  }
+  if (isEmpty) {
+    free(it->outputs_);
+    it->outputs_ = nullptr;
+  }
+}
+
+class TxOutput *TxHandler::getOutput(const uint256 &hash, const int32_t n) {
+  auto it = find(hash);
+  if (it->outputs_ == nullptr || *(it->outputs_ + n) == nullptr) {
+    THROW_EXCEPTION_DBEX("can't get output: %s,%d", hash.ToString().c_str(), n);
+  }
+  return *(it->outputs_ + n);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 //--------------------------------- PreParser ----------------------------------

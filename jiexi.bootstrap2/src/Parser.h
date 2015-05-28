@@ -166,7 +166,8 @@ public:
   void addOutputs(const CTransaction &tx,
                   AddrHandler *addrHandler, const int32_t height,
                   map<string, int64_t> &addressBalance);
-  void delOutput (const uint256 &hash, const int32_t n);
+  void delOutput(const uint256 &hash, const int32_t n);
+  void delOutput(TxInfo &txInfo, const int32_t n);
   class TxOutput *getOutput(const uint256 &hash, const int32_t n);
 
   void dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs);
@@ -183,6 +184,9 @@ class PreParser {
 
   FILE *fBlocks_;
   vector<FILE *>       fBlockTxs_;
+  vector<FILE *>       fTxs_;
+  vector<FILE *>       fTxInputs_;
+  vector<FILE *>       fTxOutputs_;
   vector<FILE *>       fUnspentOutputs_;
   map<int32_t, FILE *> fAddrTxs_;
 

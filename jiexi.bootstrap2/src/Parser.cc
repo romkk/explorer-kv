@@ -234,7 +234,7 @@ void TxHandler::addOutputs(const CTransaction &tx,
   vector<struct TxInfo>::iterator it = find(tx.GetHash());
   it->outputs_ = (TxOutput **)calloc(tx.vout.size(), sizeof(TxOutput *));
   it->outputsCount_ = (int32_t)tx.vout.size();
-  if (it->blockHeight_ == -1) { it->blockHeight_ = height; }
+  it->blockHeight_ = height;
 
   int32_t n = -1;
   for (auto &out : tx.vout) {
@@ -283,27 +283,30 @@ void TxHandler::addOutputs(const CTransaction &tx,
   }
 }
 
-void TxHandler::delOutput(const uint256 &hash, const int32_t n) {
-  auto it = find(hash);
-  if (it->outputs_ == nullptr || *(it->outputs_ + n) == nullptr) {
+void TxHandler::delOutput(TxInfo &txInfo, const int32_t n) {
+  if (txInfo.outputs_ == nullptr || *(txInfo.outputs_ + n) == nullptr) {
     THROW_EXCEPTION_DBEX("already delete output: %s,%d",
-                         hash.ToString().c_str(), n);
+                         txInfo.hash256_.ToString().c_str(), n);
   }
-  delete *(it->outputs_ + n);
-  *(it->outputs_ + n) = nullptr;
+  delete *(txInfo.outputs_ + n);
+  *(txInfo.outputs_ + n) = nullptr;
 
   // 检测是否释放整个tx的output部分. 很多tx的所有输出是花掉的状态，free之尽量回收内存
   bool isEmpty = true;
-  for (int i = 0; i < it->outputsCount_; i++) {
-    if (*(it->outputs_ + i) != nullptr) {
+  for (int i = 0; i < txInfo.outputsCount_; i++) {
+    if (*(txInfo.outputs_ + i) != nullptr) {
       isEmpty = false;
       break;
     }
   }
   if (isEmpty) {
-    free(it->outputs_);
-    it->outputs_ = nullptr;
+    free(txInfo.outputs_);
+    txInfo.outputs_ = nullptr;
   }
+}
+
+void TxHandler::delOutput(const uint256 &hash, const int32_t n) {
+  delOutput(*find(hash), n);
 }
 
 class TxOutput *TxHandler::getOutput(const uint256 &hash, const int32_t n) {
@@ -314,15 +317,36 @@ class TxOutput *TxHandler::getOutput(const uint256 &hash, const int32_t n) {
   return *(it->outputs_ + n);
 }
 
+void _saveUnspentOutput(TxInfo &txInfo, int32_t n, FILE *f) {
+  string s;
+  const string now = date("%F %T");
+  TxOutput *out = *(txInfo.outputs_ + n);
+
+  for (int i = 0; i < out->address_.size(); i++) {
+    // table.address_unspent_outputs_xxxx
+    // `address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`
+    s = Strings::Format("%lld,%lld,%d,%d,%lld,%lld,%s",
+                        out->addressIds_[i], txInfo.txId_, n, i,
+                        txInfo.blockHeight_, out->value_, now.c_str());
+    fprintf(f, "%s\n", s.c_str());
+  }
+}
+
 void TxHandler::dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs) {
-  // TODO
   // 遍历整个tx区，将未花费的数据写入文件
-  
+  for (auto &it : txInfo_) {
+    if (it.outputs_ == nullptr) {
+      continue;
+    }
+    for (int32_t i = 0; i < it.outputsCount_; i++) {
+      _saveUnspentOutput(it, i, fUnspentOutputs[it.txId_%10]);
+      delOutput(it, i);
+    }
+  }
 }
 
 int64_t TxHandler::getTxId(const uint256 &hash) {
-  // TODO
-  return 0ll;
+  return find(hash)->txId_;
 }
 
 
@@ -374,8 +398,7 @@ void PreParser::init() {
     txHandler_   = new TxHandler(txCount_, filePreTx_);
   }
 
-  // TODO
-  // fBlocks_, fBlockTxs_
+  // TODO: 初始化各类文件写入句柄FILE*: fBlocks_, fBlockTxs_...
 
   while (running_) {
     sleep(1);
@@ -514,7 +537,10 @@ void PreParser::parseTxInputs(const CTransaction &tx, const int64_t txId,
     }
   } /* /for */
 
-  // TODO: 保存 inputs 至磁盘
+  // 保存inputs
+  for (auto &it : values) {
+    fprintf(fTxInputs_[txId%100], "%s\n", it.c_str());
+  }
 }
 
 void PreParser::parseTxSelf(const int32_t height, const int64_t txId, const uint256 &txHash,
@@ -545,7 +571,8 @@ void PreParser::parseTxSelf(const int32_t height, const int64_t txId, const uint
                       tx.vin.size(), tx.vout.size(),
                       date("%F %T").c_str());
 
-  // TODO: 写入s至磁盘
+  // 写入s至磁盘
+  fprintf(fTxs_[txId / BILLION % 64], "%s\n", s.c_str());
 }
 
 void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo, FILE *f) {
@@ -704,6 +731,8 @@ void PreParser::run() {
   // 最后清理数据：未花费的output, 地址最后关联的交易
   txHandler_->dumpUnspentOutputToFile(fUnspentOutputs_);
   addrHandler_->dumpTxs(fAddrTxs_);
+
+  // TODO: 未存储的output
 }
 
 

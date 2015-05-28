@@ -34,7 +34,7 @@ module.exports = (server) => {
 
                 return mysql.list(sql, 'tx_id', [block.block_id]);
             }).then(txIndexes => {
-                ret.txIndexes = txIndexes.sort((a, b) => a - b);
+                ret.txIndexes = txIndexes;
                 res.send(ret);
                 next();
             });

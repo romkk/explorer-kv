@@ -66,12 +66,24 @@
 
 #### Request
 
-    GET /rawblock/{$tx_hash}
-    
-|参数|描述|位置|必须|数据类型|
-|---|---|---|---|---|
-|tx_hash|交易哈希|Query|√|String|
-|scripts|返回值是否包含输入和输出脚本，默认为`false`|Query|✗|Boolean|
+* Get Transaction By Hash
+
+        GET /rawblock/{$tx_hash}
+
+    |参数|描述|位置|必须|数据类型|
+    |---|---|---|---|---|
+    |tx_hash|交易哈希|Path|√|String|
+    |scripts|返回值是否包含输入和输出脚本，默认为`false`|Query|✗|Boolean|
+
+* Get Transaction By Tx_id
+
+        GET /rawblock/${tx_id}
+
+    |参数|描述|位置|必须|数据类型|
+    |---|---|---|---|---|
+    |tx_id|交易 id|Path|√|String|
+    |scripts|返回值是否包含输入和输出脚本，默认为`false`|Query|✗|Boolean|
+
 
 #### Response
 
@@ -179,7 +191,7 @@
 
 ```
 
-### Unspend outputs
+### Unspent outputs
 
 #### Request
 

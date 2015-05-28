@@ -36,8 +36,8 @@
 
 static void _getRawTxFromDisk(const uint256 &hash, const int32_t height,
                               string *hex, int64_t *txId);
-static
-void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo, FILE *f);
+static void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo, FILE *f);
+static void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f);
 
 
 RawBlock::RawBlock(const int64_t blockId, const int32_t height, const int32_t chainId,
@@ -317,29 +317,68 @@ class TxOutput *TxHandler::getOutput(const uint256 &hash, const int32_t n) {
   return *(it->outputs_ + n);
 }
 
-void _saveUnspentOutput(TxInfo &txInfo, int32_t n, FILE *f) {
+void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f) {
+  // table.tx_outputs_xxxx
+  //   `tx_id`,`position`,`address`,`address_ids`,`value`,`output_script_asm`,
+  //   `output_script_hex`,`output_script_type`,
+  //   `spent_tx_id`,`spent_position`,`created_at`,`updated_at`
+  string s;
+  const string now = date("%F %T");
+  TxOutput *poutput = *(txInfo.outputs_ + n);
+
+  // 处理地址
+  string addressStr, addressIdsStr;
+  for (int i = 0; i < poutput->address_.size(); i++) {
+    const string addrStr = poutput->address_[i];
+    addressStr    += Strings::Format("%s,", addrStr.c_str());
+    addressIdsStr += Strings::Format("%lld,", poutput->addressIds_[i]);
+  }
+  if (addressStr.length()) {  // 移除最后一个逗号
+    addressStr.resize(addressStr.length() - 1);
+    addressIdsStr.resize(addressIdsStr.length() - 1);
+  }
+
+  s = Strings::Format("%lld,%d,%s,%s,%lld,%s,%s,%s,%lld,%d,%s,%s",
+                      txInfo.txId_, n, addressStr.c_str(), addressIdsStr.c_str(),
+                      poutput->value_,
+                      poutput->scriptAsm_.c_str(), poutput->scriptHex_.c_str(),
+                      poutput->typeStr_.c_str(),
+                      poutput->spentTxId_, poutput->spentPosition_,
+                      now.c_str(), now.c_str());
+  fprintf(f, "%s\n", s.c_str());
+}
+
+void _saveUnspentOutput(TxInfo &txInfo, int32_t n,
+                        FILE *fUnspentOutput, FILE *fTxoutput) {
   string s;
   const string now = date("%F %T");
   TxOutput *out = *(txInfo.outputs_ + n);
 
   for (int i = 0; i < out->address_.size(); i++) {
     // table.address_unspent_outputs_xxxx
-    // `address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`
-    s = Strings::Format("%lld,%lld,%d,%d,%lld,%lld,%s",
+    // `address_id`, `tx_id`, `position`, `position2`, `block_height`,
+    // `value`, `output_script_type`, `created_at`
+    s = Strings::Format("%lld,%lld,%d,%d,%lld,%lld,%s,%s",
                         out->addressIds_[i], txInfo.txId_, n, i,
-                        txInfo.blockHeight_, out->value_, now.c_str());
-    fprintf(f, "%s\n", s.c_str());
+                        txInfo.blockHeight_, out->value_,
+                        out->typeStr_.c_str(), now.c_str());
+    fprintf(fUnspentOutput, "%s\n", s.c_str());
   }
+
+  // 也需要将为花费的，存入至table.tx_outputs_xxxx
+  _saveTxOutput(txInfo, n, fTxoutput);
 }
 
-void TxHandler::dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs) {
+void TxHandler::dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs,
+                                        vector<FILE *> &fTxOutputs) {
   // 遍历整个tx区，将未花费的数据写入文件
   for (auto &it : txInfo_) {
     if (it.outputs_ == nullptr) {
       continue;
     }
     for (int32_t i = 0; i < it.outputsCount_; i++) {
-      _saveUnspentOutput(it, i, fUnspentOutputs[it.txId_%10]);
+      _saveUnspentOutput(it, i, fUnspentOutputs[it.txId_%10],
+                         fTxOutputs[it.txId_%100]);
       delOutput(it, i);
     }
   }
@@ -498,13 +537,15 @@ void PreParser::parseTxInputs(const CTransaction &tx, const int64_t txId,
       int32_t prevPos  = (int32_t)in.prevout.n;
 
       // 将前向交易标记为已花费
-      TxOutput *poutput = txHandler_->getOutput(prevHash, prevPos);
+      auto pTxInfo = txHandler_->find(prevHash);
+      TxOutput *poutput = *(pTxInfo->outputs_ + prevPos);
       assert(poutput->spentTxId_ == 0);
       assert(poutput->spentPosition_ == -1);
       poutput->spentTxId_     = txId;
       poutput->spentPosition_ = n;
 
-      // TODO: 保存poutput磁盘
+      // 保存前向交易output，一旦花掉，将不会再次使用
+      _saveTxOutput(*pTxInfo, prevPos, fTxOutputs_[pTxInfo->txId_ % 100]);
 
       // 处理地址
       string addressStr, addressIdsStr;
@@ -678,11 +719,10 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
   // 处理地址变更
   const int32_t ymd = atoi(date("%Y%m%d", nTime).c_str());
   handleAddressTxs(addressBalance, txId, ymd, height);
-
 }
 
-
-void PreParser::parseBlocks() {
+void PreParser::run() {
+  // 解析
   while (running_) {
     if (curHeight_ > stopHeight_) {
       LOG_INFO("reach max height: %d", stopHeight_);
@@ -693,7 +733,6 @@ void PreParser::parseBlocks() {
     int32_t chainId;
     int64_t blockId;
     getRawBlockFromDisk(curHeight_, &blkRawHex, &chainId, &blockId);
-
 
     // 解码Raw Hex
     vector<unsigned char> blockData(ParseHex(blkRawHex));
@@ -717,22 +756,10 @@ void PreParser::parseBlocks() {
 
     curHeight_++;
   }
-}
-
-// 完成清理工作
-void PreParser::cleanup() {
-
-}
-
-void PreParser::run() {
-  // 解析
-  parseBlocks();
 
   // 最后清理数据：未花费的output, 地址最后关联的交易
-  txHandler_->dumpUnspentOutputToFile(fUnspentOutputs_);
+  txHandler_->dumpUnspentOutputToFile(fUnspentOutputs_, fTxOutputs_);
   addrHandler_->dumpTxs(fAddrTxs_);
-
-  // TODO: 未存储的output
 }
 
 

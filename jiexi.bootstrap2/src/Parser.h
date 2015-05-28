@@ -170,7 +170,8 @@ public:
   void delOutput(TxInfo &txInfo, const int32_t n);
   class TxOutput *getOutput(const uint256 &hash, const int32_t n);
 
-  void dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs);
+  void dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs,
+                               vector<FILE *> &fTxOutputs);
 };
 
 class PreParser {
@@ -211,9 +212,6 @@ class PreParser {
                    const uint32_t ntime);
   void handleAddressTxs(const map<string, int64_t> &addressBalance,
                         const int64_t txId, const int32_t ymd, const int32_t height);
-
-  void parseBlocks();
-  void cleanup();
 
 public:
   PreParser();

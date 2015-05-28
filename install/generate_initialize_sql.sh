@@ -103,7 +103,6 @@ CREATE TABLE `tx_inputs_%04d` (
   `sequence` bigint(20) NOT NULL,
   `prev_tx_id` bigint(20) NOT NULL,
   `prev_position` int(11) NOT NULL,
-  `prev_address_id` bigint(20) NOT NULL,
   `prev_value` bigint(20) NOT NULL,
   `prev_address` varchar(1024) NOT NULL,
   `prev_address_ids` varchar(512) NOT NULL,

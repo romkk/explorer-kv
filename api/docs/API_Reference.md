@@ -192,7 +192,7 @@ TODO
     
 |参数|描述|位置|必须|数据类型|
 |---|---|---|---|---|
-|active|多个比特币地址，使用 <code>&#124;</code> 分隔|Query|√|string|
+|active|多个比特币地址，使用 <code>&#124;</code> 分隔，最多 128 个地址|Query|√|string|
 
 #### Response
 
@@ -228,7 +228,7 @@ TODO
     
 |参数|描述|位置|必须|数据类型|
 |---|---|---|---|---|
-|active|多个比特币地址，使用 <code>&#124;</code> 分隔|Query|√|string|
+|active|多个比特币地址，使用 <code>&#124;</code> 分隔，最多 128 个地址|Query|√|string|
 
 #### Response
 

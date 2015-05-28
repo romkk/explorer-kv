@@ -157,7 +157,6 @@
 
 ```JSON
 {
-   "txs" : [--Latest 50 Transactions--],
    "addresses" : [
       {
          "final_balance" : 1400000000,

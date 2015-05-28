@@ -1,6 +1,7 @@
 var sprintf = require('sprintf').sprintf;
 var mysql = require('./mysql');
 var bs58 = require('bs58');
+var BN = require('bn.js');
 var log = require('debug')('api:lib:helper');
 
 module.exports ={

@@ -151,7 +151,7 @@
     
 |参数|描述|位置|必须|数据类型|
 |---|---|---|---|---|
-|active|多个比特币地址，使用`,`分隔|Query|√|string|
+|active|多个比特币地址，使用 <code>&#124;</code> 分隔|Query|√|string|
 
 #### Response
 

@@ -45,24 +45,12 @@ module.exports = (server) => {
     });
 
     server.get('/multiaddr', (req, res, next) => {
-        var active = req.query.active;
-        if (active == null || active.length === 0) {
-            return next(new restify.MissingParameterError('Param `active` not found'));
+        var err = validators.isValidAddressList(req.query.active);
+        if (err != null) {
+            return next(err);
         }
 
-        var parts = active.trim().split('|');
-
-        if (parts.length > 128) {
-            return next(new restify.InvalidArgumentError('Too many addresses'));
-        }
-
-        if (_.uniq(parts).length != parts.length) {
-            return next(new restify.InvalidArgumentError('Duplicate addresses found'));
-        }
-
-        if (!parts.every(v => validators.isValidAddress(v))) {
-            return next(new restify.InvalidArgumentError('Invalid address found'));
-        }
+        var parts = req.params.active.trim().split('|');
 
         Promise.all(parts.map(p => {
             return Address.make(p)

@@ -47,7 +47,7 @@ module.exports = (server) => {
     server.get('/multiaddr', (req, res, next) => {
         var active = req.query.active;
         if (active == null || active.length === 0) {
-            return next(new restify.InvalidArgumentError('Param `active` not found'));
+            return next(new restify.MissingParameterError('Param `active` not found'));
         }
 
         var parts = active.trim().split('|');

@@ -20,23 +20,22 @@ module.exports = (server) => {
     server.get('/latestblock/', (req, res, next)=> {
         var ret = {};
 
-        var sql = `select id, block_hash, block_height, chain_id, hex, created_at
-                   from 0_raw_blocks
-                   where chain_id = 0 order by id desc limit 1`;
+        var sql = `select height, hash, timestamp, block_id
+                   from 0_blocks
+                   where chain_id = 0 order by block_id desc limit 1`;
         mysql.selectOne(sql)
             .then(block => {
-                ret.hash = block.block_hash;
-                ret.time = block.time;
-                ret.height = block.block_height;
-                ret.block_index = block.id;
+                ret.hash = block.hash;
+                ret.time = block.timestamp;
+                ret.height = block.height;
 
-                var table = Block.getBlockTxTableByBlockId(block.id);
+                var table = Block.getBlockTxTableByBlockId(block.block_id);
                 var sql = `select tx_id from ${table} where block_id = ? order by position asc`;
 
-                return mysql.list(sql, 'tx_id', [block.id]);
+                return mysql.list(sql, 'tx_id', [block.block_id]);
             }).then(txIndexes => {
-                ret.txIndexes = txIndexes;
-                res.send(JSON.stringify(ret));
+                ret.txIndexes = txIndexes.sort((a, b) => a - b);
+                res.send(ret);
                 next();
             });
     });

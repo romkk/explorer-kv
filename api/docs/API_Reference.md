@@ -234,19 +234,20 @@ TODO
 
 ```JSON
 {
-	"unspent_outputs":[
-		{
-			"tx_age":"1322659106",
-			"tx_hash":"e6452a2cb71aa864aaa959e647e7a4726a22e640560f199f79b56b5502114c37",
-			"tx_index":"12790219",
-			"tx_output_n":"0",	
-			"script":"76a914641ad5051edd97029a003fe9efb29359fcee409d88ac", (Hex encoded)
-			"value":"5000661330"
-		}
-	]
+    "unspent_outputs": [
+        {
+            "tx_hash": "d93fa00752e4d8acb16a8508349be7ff5c00ce3c9fae275dde00e4f92f8f6168",
+            "tx_hash_big_endian": "68618f2ff9e400de5d27ae9f3cce005cffe79b3408856ab1acd8e45207a03fd9",
+            "tx_index": 88309954,
+            "tx_output_n": 0,
+            "script": "76a914ba5e3f24d9abc305453526ce2c16c233913ea2ff88ac",
+            "value": 309299180,
+            "value_hex": "126f87ec",
+            "confirmations": 6
+        }
+    ]
 }
 ```
-
 
 ### Latest Block
 

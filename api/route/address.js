@@ -9,15 +9,12 @@ module.exports = (server) => {
         req.checkParams('addr', 'Not a valid address').isValidAddress();
 
         req.checkQuery('offset', 'should be a valid number').optional().isNumeric();
-        req.sanitize('offset').defaultValue(0);
         req.sanitize('offset').toInt();
 
-        req.checkQuery('limit', 'should be between 0 and 50').optional().isNumeric().isInt({ max: 50, min: 0});
-        req.sanitize('limit').defaultValue(50);
+        req.checkQuery('limit', 'should be between 10 and 50').optional().isNumeric().isInt({ max: 50, min: 1});
         req.sanitize('limit').toInt();
 
         req.checkQuery('sort', 'should be desc or asc').optional().isIn(['desc', 'asc']);
-        req.sanitize('limit').defaultValue('desc');
 
         var errors = req.validationErrors();
 
@@ -32,7 +29,11 @@ module.exports = (server) => {
                 if (address == null) {
                     return new restify.ResourceNotFoundError('Address not found');
                 }
-                return address.load(req.query.sort, req.query.offset, req.query.limit);
+                return address.load(
+                    req.params.sort,
+                    req.params.offset,
+                    req.params.limit
+                );
             })
             .then(address => {
                 res.send(address);

@@ -38,67 +38,69 @@ class Address {
 
     load(order = 'desc', offset = 0, limit = 50) {
         order = order === 'desc' ? 'desc' : 'asc';
-        var addrTableProp = `${order === 'desc' ? 'end' : 'begin'}_tx_ymd`;
         var addrMapTableProp = `${order === 'desc' ? 'prev' : 'next'}_ymd`;
 
         return new Promise((resolve, reject) => {
-            var ret = [],
-                fetched = 0, offsetOverload = false,
-                table = this.getAddressToTxTable(this.attrs[addrTableProp]);
+            var ret = [], table = this.getStartTable(order);
 
-            var loop = function() {
-                if (table == null) {        //没有更多了
+            var loop = () => {
+
+                if (table == null) {    //没有更多了
                     return resolve(ret);
                 }
 
-                var sql = `select *
-                   from ${table}
-                   where address_id = ?
-                   order by tx_height ${order}, id ${order}
-                   limit ?`;
-
-                mysql.query(sql, [this.attrs.id, limit - ret.length])
-                    .then(rows => {
-                        assert(rows.length > 0, 'AddressTx 表为空');
-
-                        fetched += rows.length;
-
-                        console.log('table: ', rows[rows.length - 1][addrMapTableProp], rows[rows.length - 1]);
-
-                        table = this.getAddressToTxTable(rows[rows.length - 1][addrMapTableProp]);
-
-                        if (fetched <= offset) {
+                var sqlRowCnt = `select count(id) as cnt from ${table}
+                                 where address_id = ?`;
+                var sqlNextTable = `select ${addrMapTableProp} as next from ${table}
+                                    where address_id = ?
+                                    order by tx_height ${order}, id ${order}
+                                    limit 1`;
+                Promise.all([mysql.pluck(sqlRowCnt, 'cnt', [this.attrs.id]), mysql.pluck(sqlNextTable, 'next', [this.attrs.id])])
+                    .then(([cnt, next]) => {
+                        if (cnt <= offset) {        //单表无法满足 offset，直接下一张表
+                            log(`单表无法满足offset, cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
+                            offset -= cnt;
+                            table = this.getAddressToTxTable(next);
                             return loop();
                         }
 
-                        /**
-                         *             start = offset - fetched
-                         *               |
-                         *  .  .  . [ .  .  .  .  . ][ .  .  .  . ]
-                         *            |           |             |
-                         *            |           |             |
-                         *          offset     fetched   overloaded, push all
-                         */
-                        ret.push.apply(ret, offsetOverload ? rows : rows.slice(offset - fetched));
-                        offsetOverload = true;
+                        var sql = `select * from ${table}
+                                    where address_id = ?
+                                    order by tx_height ${order}, id ${order}
+                                    limit ?, ?`;
 
-                        if (ret.length < limit) {
-                            return loop();
-                        } else {
-                            return resolve(ret);
-                        }
+                        log(`单表 cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
+                        return mysql.query(sql, [this.attrs.id, offset, limit])
+                            .then(rows => {
+
+                                ret.push.apply(ret, rows);
+
+                                if (cnt >= offset + limit) {    //单表即满足要求
+                                    table = null;
+                                } else {    //单表不满足，需要继续下一张表
+                                    limit -= rows.length;
+                                    offset = 0;
+                                    table = this.getAddressToTxTable(rows[rows.length - 1][addrMapTableProp]);
+                                }
+                                return loop();
+                            });
                     });
-            }.bind(this);
+            };
 
             loop();
-        }).then(rows => {
-            return Promise.all(rows.map(r => {
-                return Tx.make(r.tx_id).then(tx => tx.load());
-            }))
-        }).then(txs => {
-            this.txs = txs;
-            return this;
-        });
+        })
+            .then(rows => {
+                return Promise.all(rows.map(r => {
+                    return Tx.make(r.tx_id).then(tx => tx.load());
+                }))
+            }).then(txs => {
+                this.txs = txs;
+                return this;
+            });
+    }
+
+    getStartTable(order) {      //修改为异步获取，支持 offset 起点优化
+        return this.getAddressToTxTable(this.attrs[`${order === 'desc' ? 'end' : 'begin'}_tx_ymd`]);
     }
 
     static make(addr) {

@@ -1,16 +1,48 @@
 # BITMAIN Block Explorer API Reference
 
-## API 前缀
+该 API 的设计目标是提供一个高性能的区块链数据查询接口，并尽量兼容 [blockchain.info](https://blockchain.info/api/blockchain_api) 的 API 约定，降低用户的使用成本。
+
+## URI
+
+* 协议： `HTTP`
+* Host： `api.explorer.btc.com`
+* API 版本： `/{api_version}`，可选版本为 `v1`
+* 请求类型：`GET`
+
+以下如无特别说明，所有的 API 调用时均使用以上 URI 前缀，如获取最新区块信息：
+
+    GET http://api.explorer.btc.com/v1/latestblock
 
 ## 鉴权
 
-### 如何获取 Access Key
+API 访问时需要验证用户身份，需要在请求中加入认证字符串，即 AccessKey。
+
+如果请求中没有 AccessKey 或者包含的 AccessKey 无效，访问将被拒绝。
+
+### 如何申请 / 获取 Access Key
+
+TODO
 
 ### 鉴权方法
 
-## 请求编码
+1. 请求的 URI 中添加`__access_key__`字段：
 
-## 常见异常
+        GET /latestblock?__access_key__=${AccessKey}
+        
+2. 在 Request Header 中添加`X-Access-Key`字段：
+
+        GET /latestblock HTTP/1.1
+        X-Access-Key: ${AccessKey}
+
+## 访问频率限制
+
+API 服务根据 AccessKey 限制访问频率。
+
+TODO
+
+## 异常
+
+TODO
 
 ## API List
 
@@ -37,9 +69,6 @@
 
 
 #### Response
-
-|字段名称|类型|含义|备注|
-|---|---|---|---|
 
 ```JSON
 {

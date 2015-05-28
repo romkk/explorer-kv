@@ -1,5 +1,9 @@
 var bitcore = require('bitcore');
 
+function isValidAddress(v) {
+    return bitcore.Address.isValid(v);
+}
+
 module.exports = {
-    isValidAddress: v => bitcore.Address.isValid(v)
+    isValidAddress: isValidAddress
 };

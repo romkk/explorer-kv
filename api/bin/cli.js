@@ -3,6 +3,8 @@ var mysql = require('../lib/mysql');
 var sprintf = require('sprintf').sprintf;
 var log = require('debug')('api:server');
 var bunyan = require('bunyan');
+var expressValidator = require('express-validator');
+var customValidators = require('../lib/custom_validators');
 
 var server = restify.createServer();
 
@@ -13,6 +15,7 @@ server.use(restify.CORS());
 server.use(restify.queryParser());
 server.use(restify.jsonp());
 server.use(restify.bodyParser());
+server.use(expressValidator({ customValidators: customValidators }));
 server.use(restify.gzipResponse());
 
 server.on('after', restify.auditLogger({

@@ -43,6 +43,10 @@ class Address {
         return new Promise((resolve, reject) => {
             var ret = [], table = this.getStartTable(order);
 
+            if (this.attrs.tx_count <= offset) {
+                return resolve(ret);
+            }
+
             var loop = () => {
 
                 if (table == null) {    //没有更多了
@@ -51,17 +55,24 @@ class Address {
 
                 var sqlRowCnt = `select count(id) as cnt from ${table}
                                  where address_id = ?`;
-                var sqlNextTable = `select ${addrMapTableProp} as next from ${table}
-                                    where address_id = ?
-                                    order by tx_height ${order}, id ${order}
-                                    limit 1`;
-                Promise.all([mysql.pluck(sqlRowCnt, 'cnt', [this.attrs.id]), mysql.pluck(sqlNextTable, 'next', [this.attrs.id])])
-                    .then(([cnt, next]) => {
+                mysql.pluck(sqlRowCnt, 'cnt', [this.attrs.id])
+                    .then((cnt) => {
                         if (cnt <= offset) {        //单表无法满足 offset，直接下一张表
                             log(`单表无法满足offset, cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
                             offset -= cnt;
-                            table = this.getAddressToTxTable(next);
-                            return loop();
+
+                            let tmpOrder = order === 'desc' ? 'asc' : 'desc';
+
+                            var sqlNextTable = `select ${addrMapTableProp} as next from ${table}
+                                    where address_id = ?
+                                    order by tx_height ${tmpOrder}, id ${tmpOrder}
+                                    limit 1`;
+
+                            return mysql.pluck(sqlNextTable, 'next', [this.attrs.id])
+                                .then(next => {
+                                    table = this.getAddressToTxTable(next);
+                                    return loop();
+                                });
                         }
 
                         var sql = `select * from ${table}

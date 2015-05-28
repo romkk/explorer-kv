@@ -10,8 +10,8 @@ var server = restify.createServer();
 
 server.pre(restify.pre.userAgentConnection());
 server.pre(restify.pre.sanitizePath());
-server.use(restify.acceptParser(server.acceptable));
 server.use(restify.CORS());
+server.use(restify.acceptParser(server.acceptable));
 server.use(restify.queryParser());
 server.use(restify.jsonp());
 server.use(restify.bodyParser());

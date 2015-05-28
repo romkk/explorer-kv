@@ -3,13 +3,6 @@ var log = require('debug')('api:route:tx');
 var Tx = require('../lib/tx');
 var restify = require('restify');
 
-/**
- * Get block detail.
- *
- * @URL /rawblock
- *
- */
-
 module.exports = (server) => {
     server.get('/rawtx/:txIdentifier', (req, res, next) => {
         Tx.make(req.params.txIdentifier)

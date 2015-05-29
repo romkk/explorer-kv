@@ -389,6 +389,7 @@ void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f) {
                       poutput->spentTxId_, poutput->spentPosition_,
                       now.c_str(), now.c_str());
   fprintf(f, "%s\n", s.c_str());
+  LOG_DEBUG("%s", s.c_str());
 }
 
 void _saveUnspentOutput(TxInfo &txInfo, int32_t n,
@@ -408,6 +409,7 @@ void _saveUnspentOutput(TxInfo &txInfo, int32_t n,
                         out->typeStr_.c_str(), now.c_str());
     fprintf(fUnspentOutputs[tableIdx_AddrUnspentOutput(out->addressIds_[i])],
             "%s\n", s.c_str());
+    LOG_DEBUG("%s", s.c_str());
   }
 
   // 也需要将为花费的，存入至table.tx_outputs_xxxx
@@ -565,6 +567,7 @@ void _saveBlock(BlockInfo &b, FILE *f) {
                          b.chainId_, b.size_, b.diff_, b.txCount_,
                          b.rewardBlock_, b.rewardFee_, date("%F %T").c_str());
   fprintf(f, "%s\n", line.c_str());
+  LOG_DEBUG("%s", line.c_str());
 }
 
 void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
@@ -610,6 +613,7 @@ void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
     string s = Strings::Format("%lld,%d,%lld,%s", blockId, i++,
                                txHandler_->getTxId(it.GetHash()), now.c_str());
     fprintf(fBlockTxs_[tableIdx_BlockTxs(blockId)], "%s\n", s.c_str());
+    LOG_DEBUG("%s", s.c_str());
   }
 }
 
@@ -684,6 +688,7 @@ void PreParser::parseTxInputs(const CTransaction &tx, const int64_t txId,
   // 保存inputs
   for (auto &it : values) {
     fprintf(fTxInputs_[tableIdx_TxInput(txId)], "%s\n", it.c_str());
+    LOG_DEBUG("%s", it.c_str());
   }
 }
 
@@ -717,6 +722,7 @@ void PreParser::parseTxSelf(const int32_t height, const int64_t txId, const uint
 
   // 写入s至磁盘
   fprintf(fTxs_[tableIdx_Tx(txId)], "%s\n", s.c_str());
+  LOG_DEBUG("%s", s.c_str());
 }
 
 void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo, FILE *f) {
@@ -733,6 +739,7 @@ void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo, FILE *f) {
                          t.nextYmd_, t.nextTxId_,
                          date("%F %T").c_str());
   fprintf(f, "%s\n", line.c_str());
+  LOG_DEBUG("%s", line.c_str());
 }
 
 void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,

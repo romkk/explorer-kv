@@ -183,6 +183,7 @@ CREATE TABLE `0_tpl_address_txs` (
   `total_received` bigint(20) NOT NULL,
   `balance_diff` bigint(20) NOT NULL,
   `balance_final` bigint(20) NOT NULL,
+  `idx` bigint(20) NOT NULL,
   `prev_ymd` int(11) NOT NULL,
   `prev_tx_id` bigint(20) NOT NULL,
   `next_ymd` int(11) NOT NULL,

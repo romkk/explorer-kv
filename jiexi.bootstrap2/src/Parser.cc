@@ -17,6 +17,8 @@
  */
 
 #include <stdlib.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 #include <algorithm>
 #include <string>
@@ -25,7 +27,7 @@
 
 #include <pthread.h>
 
-#include <boost/thread.hpp>
+#include <boost/filesystem.hpp>
 
 #include "Parser.h"
 #include "Common.h"
@@ -39,6 +41,47 @@ static void _getRawTxFromDisk(const uint256 &hash, const int32_t height,
 static void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo, FILE *f);
 static void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f);
 
+static FILE *openCSV(const char *fmt, ...) {
+  // Strings::Format(const char * fmt, ...)
+  char tmp[512];
+  string dest;
+  va_list al;
+  va_start(al, fmt);
+  int len = vsnprintf(tmp, 512, fmt, al);
+  va_end(al);
+  if (len>511) {
+    char * destbuff = new char[len+1];
+    va_start(al, fmt);
+    len = vsnprintf(destbuff, len+1, fmt, al);
+    va_end(al);
+    dest.append(destbuff, len);
+    delete destbuff;
+  } else {
+    dest.append(tmp, len);
+  }
+
+  const string dir = Config::GConfig.get("csv.data.dir");
+  {
+    // 目录不存在，尝试创建目录
+    boost::filesystem::path datadir(dir.c_str());
+    boost::filesystem::file_status s = boost::filesystem::status(datadir);
+    if (!boost::filesystem::is_directory(s)) {
+      LOG_INFO("mdkir: %s", dir.c_str());
+      if (!boost::filesystem::create_directory(datadir)) {
+        LOG_FATAL("mkdir failure: %s", dir.c_str());
+      }
+    }
+  }
+
+  string path = Strings::Format("%s/%s", dir.c_str(), dest.c_str());
+
+  FILE *f = fopen(path.c_str(), "w");
+  LOG_DEBUG("open file: %s", path.c_str());
+  if (f == nullptr) {
+    THROW_EXCEPTION_DBEX("open file failure: %s", dest.c_str());
+  }
+  return f;
+}
 
 RawBlock::RawBlock(const int64_t blockId, const int32_t height, const int32_t chainId,
                    const uint256 hash, const char *hex) {
@@ -403,19 +446,80 @@ PreParser::PreParser() {
   curHeight_  = 0;
   running_ = true;
 
-  fBlocks_ = nullptr;
-
   memset(&blockInfo_, 0, sizeof(blockInfo_));
 }
 
 PreParser::~PreParser() {
   stop();
+  closeFiles();
 }
 
 void PreParser::stop() {
   if (running_) {
     running_ = false;
     LOG_INFO("stop PreParser...");
+  }
+}
+
+void PreParser::openFiles() {
+  fBlocks_ = openCSV("0_blocks.csv");
+
+  // table.block_txs_xxxx
+  for (int i = 0; i < 100; i++) {
+    fBlockTxs_.push_back(openCSV("block_txs_%04d.csv", i));
+  }
+
+  // table.txs_xxxx
+  for (int i = 0; i < 64; i++) {
+    fTxs_.push_back(openCSV("txs_%04d.csv", i));
+  }
+
+  // table.tx_inputs_xxxx
+  for (int i = 0; i < 100; i++) {
+    fTxInputs_.push_back(openCSV("tx_inputs_%04d.csv", i));
+  }
+
+  // table.tx_outputs_xxxx
+  for (int i = 0; i < 100; i++) {
+    fTxOutputs_.push_back(openCSV("tx_outputs_%04d.csv", i));
+  }
+
+  // table.address_unspent_outputs_xxxx
+  for (int i = 0; i < 10; i++) {
+    fUnspentOutputs_.push_back(openCSV("address_unspent_outputs_%04d.csv", i));
+  }
+
+  // table.address_txs_xxxx
+  const uint32_t startTs = 1230963305u;  // block 0: 2009-01-03 18:15:05
+  const uint32_t endTs   = (uint32_t)time(nullptr);
+  for (uint32_t ts = startTs; ts <= endTs; ts += 86400) {
+    const int32_t ymd = atoi(date("%Y%m", startTs));
+    if (fAddrTxs_.find(ymd) != fAddrTxs_.end()) {
+      continue;
+    }
+    fAddrTxs_.insert(std::make_pair(ymd, openCSV("address_txs_%06d.csv", ymd)));
+  }
+}
+
+void PreParser::closeFiles() {
+  fclose(fBlocks_);
+  for (auto &it : fBlockTxs_) {
+    fclose(it);
+  }
+  for (auto &it : fTxs_) {
+    fclose(it);
+  }
+  for (auto &it : fTxInputs_) {
+    fclose(it);
+  }
+  for (auto &it : fTxOutputs_) {
+    fclose(it);
+  }
+  for (auto &it : fUnspentOutputs_) {
+    fclose(it);
+  }
+  for (auto &it : fAddrTxs_) {
+    fclose(it.second);
   }
 }
 
@@ -439,11 +543,8 @@ void PreParser::init() {
     txHandler_   = new TxHandler(txCount_, filePreTx_);
   }
 
-  // TODO: 初始化各类文件写入句柄FILE*: fBlocks_, fBlockTxs_...
-
-  while (running_) {
-    sleep(1);
-  }
+  // 初始化各类文件句柄
+  openFiles();
 }
 
 void _saveBlock(BlockInfo &b, FILE *f) {
@@ -686,7 +787,7 @@ void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,
 void PreParser::parseTx(const int32_t height, const CTransaction &tx,
                         const uint32_t nTime) {
   const uint256 txHash = tx.GetHash();
-  LOG_INFO("parse tx, height: %d, hash: %s", height, txHash.ToString().c_str());
+  LOG_DEBUG("parse tx, index: %lld, height: %d, hash: %s", height, txHash.ToString().c_str());
 
   // 硬编码特殊交易处理
   //

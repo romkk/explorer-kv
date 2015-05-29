@@ -234,6 +234,9 @@ class PreParser {
   void handleAddressTxs(const map<string, int64_t> &addressBalance,
                         const int64_t txId, const int32_t ymd, const int32_t height);
 
+  void openFiles();
+  void closeFiles();
+
 public:
   PreParser();
   ~PreParser();

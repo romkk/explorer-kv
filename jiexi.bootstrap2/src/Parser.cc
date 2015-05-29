@@ -39,8 +39,9 @@
 
 static void _getRawTxFromDisk(const uint256 &hash, const int32_t height,
                               string *hex, int64_t *txId);
-static void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo, FILE *f);
-static void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f);
+static void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo,
+                        FILE *f, FileWriter *fwriter);
+static void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f, FileWriter *fwriter);
 
 static FILE *openCSV(const char *fmt, ...) {
   // Strings::Format(const char * fmt, ...)
@@ -226,7 +227,7 @@ int64_t AddrHandler::getAddressId(const string &address) {
 
 void AddrHandler::dumpTxs(map<int32_t, FILE *> &fAddrTxs) {
   for (auto it = addrInfo_.begin(); it != addrInfo_.end(); it++) {
-    _saveAddrTx(it, fAddrTxs[it->addrTx_.ymd_/100]);
+    _saveAddrTx(it, fAddrTxs[it->addrTx_.ymd_/100], fwriter_);
   }
 }
 
@@ -445,7 +446,7 @@ void _saveUnspentOutput(TxInfo &txInfo, int32_t n,
   }
 
   // 也需要将未花费的，存入至table.tx_outputs_xxxx
-  _saveTxOutput(txInfo, n, fTxoutput);
+  _saveTxOutput(txInfo, n, fTxoutput, fwriter);
 }
 
 void TxHandler::dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs,
@@ -460,7 +461,7 @@ void TxHandler::dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs,
         continue;
       }
       _saveUnspentOutput(it, i, fUnspentOutputs,
-                         fTxOutputs[tableIdx_TxOutput(it.txId_)]);
+                         fTxOutputs[tableIdx_TxOutput(it.txId_)], fwriter_);
     }
     delOutputAll(it);
   }
@@ -704,13 +705,13 @@ void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
 
   // 保存
   if (height > 0) {
-    _saveBlock(blockInfo_, fBlocks_);
+    _saveBlock(blockInfo_, fBlocks_, fwriter_);
   }
   memcpy(&blockInfo_, &cur, sizeof(BlockInfo));
 
   // 保存最后一个
   if (height == stopHeight_) {
-    _saveBlock(blockInfo_, fBlocks_);
+    _saveBlock(blockInfo_, fBlocks_, fwriter_);
   }
 
   // 保存当前块对应的交易
@@ -759,7 +760,8 @@ void PreParser::parseTxInputs(const CTransaction &tx, const int64_t txId,
       poutput->spentPosition_ = n;
 
       // 保存前向交易output，一旦花掉，将不会再次使用
-      _saveTxOutput(*pTxInfo, prevPos, fTxOutputs_[tableIdx_TxOutput(pTxInfo->txId_)]);
+      _saveTxOutput(*pTxInfo, prevPos,
+                    fTxOutputs_[tableIdx_TxOutput(pTxInfo->txId_)], fwriter_);
 
       // 处理地址
       string addressStr, addressIdsStr;
@@ -877,7 +879,8 @@ void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,
 
       // save last one
       assert(addrInfo->addrTx_.ymd_ != 0);
-      _saveAddrTx(addrInfo, fAddrTxs_[tableIdx_AddrTxs(addrInfo->addrTx_.ymd_)]);
+      _saveAddrTx(addrInfo,
+                  fAddrTxs_[tableIdx_AddrTxs(addrInfo->addrTx_.ymd_)], fwriter_);
     }
 
     // 变更当前记录相关值

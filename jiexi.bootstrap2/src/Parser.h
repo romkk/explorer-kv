@@ -21,11 +21,32 @@
 #include <string.h>
 
 #include "Common.h"
+#include "Util.h"
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
 
 void getRawBlockFromDisk(const int32_t height, string *rawHex,
                          int32_t *chainId, int64_t *blockId);
+
+inline int32_t tableIdx_AddrUnspentOutput(const int64_t addrId) {
+  return (int32_t)(addrId % 10);
+}
+inline int32_t tableIdx_TxOutput(const int64_t txId) {
+  return (int32_t)(txId % 100);
+}
+inline int32_t tableIdx_TxInput(const int64_t txId) {
+  return (int32_t)(txId % 100);
+}
+inline int32_t tableIdx_Tx(const int64_t txId) {
+  return (int32_t)(txId / BILLION % 64);
+}
+inline int32_t tableIdx_AddrTxs(const int32_t ymd) {
+  // 按月分表： 20150515 -> 201505
+  return ymd / 100;
+}
+inline int32_t tableIdx_BlockTxs(const int64_t blockId) {
+  return (int32_t)(blockId % 100);
+}
 
 class RawBlock {
 public:
@@ -189,7 +210,7 @@ class PreParser {
   vector<FILE *>       fTxInputs_;
   vector<FILE *>       fTxOutputs_;
   vector<FILE *>       fUnspentOutputs_;
-  map<int32_t, FILE *> fAddrTxs_;
+  map<int32_t, FILE *> fAddrTxs_;   // <YMD, FILE*>
 
   string filePreTx_;
   string filePreAddr_;

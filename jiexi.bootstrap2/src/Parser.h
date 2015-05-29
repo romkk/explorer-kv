@@ -176,8 +176,7 @@ public:
   AddrHandler(const size_t addrCount, const string &file, FileWriter *fwriter);
   vector<struct AddrInfo>::iterator find(const string &address);
   int64_t getAddressId(const string &address);
-  void dumpTxs(map<int32_t, FILE *> &fAddrTxs);
-  void dumpAddresses(vector<FILE *> &fAddrs_);
+  void dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs, vector<FILE *> &fAddrs_);
 };
 
 class TxHandler {

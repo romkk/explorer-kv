@@ -225,22 +225,22 @@ int64_t AddrHandler::getAddressId(const string &address) {
   return find(address)->addrId_;
 }
 
-void AddrHandler::dumpTxs(map<int32_t, FILE *> &fAddrTxs) {
-  for (auto it = addrInfo_.begin(); it != addrInfo_.end(); it++) {
-    _saveAddrTx(it, fAddrTxs[it->addrTx_.ymd_/100], fwriter_);
-  }
-}
-
-void AddrHandler::dumpAddresses(vector<FILE *> &fAddrs_) {
-  string s;
+void AddrHandler::dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs,
+                                    vector<FILE *> &fAddrs_) {
   const string now = date("%F %T");
-  for (auto &it : addrInfo_) {
+  string s;
+
+  for (auto it = addrInfo_.begin(); it != addrInfo_.end(); it++) {
+    // address tx
+    _saveAddrTx(it, fAddrTxs[tableIdx_AddrTxs(it->addrTx_.ymd_)], fwriter_);
+
+    // address
     s = Strings::Format("%lld,%s,%lld,%lld,%lld,%lld,%d,%lld,%d,%s,%s",
-                        it.addrId_, it.addrStr_, it.idx_, it.totalReceived_, it.totalSent_,
-                        it.beginTxId_, it.beginTxYmd_,
-                        it.endTxId_, it.endTxYmd_,
+                        it->addrId_, it->addrStr_, it->idx_, it->totalReceived_,
+                        it->totalSent_, it->beginTxId_, it->beginTxYmd_,
+                        it->endTxId_, it->endTxYmd_,
                         now.c_str(), now.c_str());
-    fwriter_->append(s, fAddrs_[tableIdx_Addr(it.addrId_)]);
+    fwriter_->append(s, fAddrs_[tableIdx_Addr(it->addrId_)]);
   }
 }
 
@@ -978,21 +978,13 @@ void PreParser::run() {
 
   if (running_) {
     // 清理数据：未花费的output
+    LogScope ls("dump unspent output to file");
     txHandler_->dumpUnspentOutputToFile(fUnspentOutputs_, fTxOutputs_);
   }
   if (running_) {
-    // 清理数据：地址最后关联的交易
-    addrHandler_->dumpTxs(fAddrTxs_);
-  }
-  if (running_) {
-    // 导入地址数据
-    addrHandler_->dumpAddresses(fAddrs_);
+    // 清理数据：地址数据, 地址最后关联的交易
+    LogScope ls("dump address and txs");
+    addrHandler_->dumpAddressAndTxs(fAddrTxs_, fAddrs_);
   }
 }
-
-
-
-
-
-
 

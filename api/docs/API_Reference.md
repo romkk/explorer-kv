@@ -240,7 +240,6 @@ TODO
             "tx_hash_big_endian": "68618f2ff9e400de5d27ae9f3cce005cffe79b3408856ab1acd8e45207a03fd9",
             "tx_index": 88309954,
             "tx_output_n": 0,
-            "script": "76a914ba5e3f24d9abc305453526ce2c16c233913ea2ff88ac",
             "value": 309299180,
             "value_hex": "126f87ec",
             "confirmations": 6

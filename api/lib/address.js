@@ -129,7 +129,7 @@ class Address {
         if (date === 0) {
             return null;
         }
-        return sprintf('address_txs_%04d', date);
+        return sprintf('address_txs_%d', Math.floor(date / 100));
     }
 
     static getTableByAddr(addr) {

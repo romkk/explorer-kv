@@ -158,7 +158,7 @@ struct BlockInfo {
   int64_t rewardFee_;
 
   BlockInfo() {
-    memset((char *)blockId_, 0, sizeof(struct BlockInfo));
+    memset((char *)&blockId_, 0, sizeof(struct BlockInfo));
   }
 };
 

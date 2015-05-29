@@ -305,7 +305,7 @@ void TxHandler::addOutputs(const CTransaction &tx,
     vector<CTxDestination> addresses;
     int nRequired;
     if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
+      LOG_WARN("extract destinations failure, hash: %s, position: %d",
                tx.GetHash().ToString().c_str(), n);
     }
 
@@ -316,12 +316,12 @@ void TxHandler::addOutputs(const CTransaction &tx,
     int i = -1;
     for (auto &addr : addresses) {
       i++;
-      const string addrStr = CBitcoinAddress(addr).ToString();
-      ptr->address_.push_back(addrStr);
-      ptr->addressIds_.push_back(addrHandler->getAddressId(addrStr));
+      const string s = CBitcoinAddress(addr).ToString();
+      ptr->address_.push_back(s);
+      ptr->addressIds_.push_back(addrHandler->getAddressId(s));
 
       // 增加每个地址的余额
-      addressBalance[addressStr] += out.nValue;
+      addressBalance[s] += out.nValue;
     }
   }
 }
@@ -336,7 +336,7 @@ void TxHandler::delOutput(TxInfo &txInfo, const int32_t n) {
 
   // 检测是否释放整个tx的output部分. 很多tx的所有输出是花掉的状态，free之尽量回收内存
   bool isEmpty = true;
-  for (int i = 0; i < txInfo.outputsCount_; i++) {
+  for (size_t i = 0; i < txInfo.outputsCount_; i++) {
     if (*(txInfo.outputs_ + i) != nullptr) {
       isEmpty = false;
       break;
@@ -399,7 +399,7 @@ void _saveUnspentOutput(TxInfo &txInfo, int32_t n,
   TxOutput *out = *(txInfo.outputs_ + n);
 
   // 遍历处理，可能含有多个地址
-  for (int i = 0; i < out->address_.size(); i++) {
+  for (size_t i = 0; i < out->address_.size(); i++) {
     // table.address_unspent_outputs_xxxx
     // `address_id`, `tx_id`, `position`, `position2`, `block_height`,
     // `value`, `output_script_type`, `created_at`
@@ -424,6 +424,9 @@ void TxHandler::dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs,
       continue;
     }
     for (int32_t i = 0; i < it.outputsCount_; i++) {
+      if (*(it.outputs_ + i) == nullptr) {
+        continue;
+      }
       _saveUnspentOutput(it, i, fUnspentOutputs,
                          fTxOutputs[tableIdx_TxOutput(it.txId_)]);
       delOutput(it, i);
@@ -495,7 +498,7 @@ void PreParser::openFiles() {
   const uint32_t startTs = 1230963305u;  // block 0: 2009-01-03 18:15:05
   const uint32_t endTs   = (uint32_t)time(nullptr);
   for (uint32_t ts = startTs; ts <= endTs; ts += 86400) {
-    const int32_t ymd = atoi(date("%Y%m", startTs));
+    const int32_t ymd = atoi(date("%Y%m", ts));
     if (fAddrTxs_.find(ymd) != fAddrTxs_.end()) {
       continue;
     }
@@ -597,7 +600,9 @@ void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
   }
 
   // 保存
-  _saveBlock(blockInfo_, fBlocks_);
+  if (height > 0) {
+    _saveBlock(blockInfo_, fBlocks_);
+  }
   memcpy(&blockInfo_, &cur, sizeof(BlockInfo));
 
   // 保存最后一个
@@ -738,8 +743,8 @@ void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo, FILE *f) {
                          t.balanceDiff_, t.balanceFinal_, t.prevYmd_, t.prevTxId_,
                          t.nextYmd_, t.nextTxId_,
                          date("%F %T").c_str());
-  fprintf(f, "%s\n", line.c_str());
   LOG_DEBUG("%s", line.c_str());
+  fprintf(f, "%s\n", line.c_str());
 }
 
 void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,
@@ -747,7 +752,7 @@ void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,
   for (auto &it : addressBalance) {
     const string &addrStr      = it.first;
     const int64_t &balanceDiff = it.second;
-
+    LOG_DEBUG("handleAddressTxs, address: %s, balanceDiff: %lld", addrStr.c_str(), balanceDiff);
     vector<struct AddrInfo>::iterator addrInfo = addrHandler_->find(addrStr);
 
     // 记录当前交易信息
@@ -772,6 +777,7 @@ void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,
 
       // save last one
       assert(addrInfo->addrTx_.ymd_ != 0);
+//      LOG_DEBUG("tableIdx_AddrTxs(addrInfo->addrTx_.ymd_): %d", tableIdx_AddrTxs(addrInfo->addrTx_.ymd_));
       _saveAddrTx(addrInfo, fAddrTxs_[tableIdx_AddrTxs(addrInfo->addrTx_.ymd_)]);
     }
 
@@ -794,7 +800,7 @@ void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,
 void PreParser::parseTx(const int32_t height, const CTransaction &tx,
                         const uint32_t nTime) {
   const uint256 txHash = tx.GetHash();
-  LOG_DEBUG("parse tx, index: %lld, height: %d, hash: %s", height, txHash.ToString().c_str());
+  LOG_DEBUG("parse tx, height: %d, hash: %s", height, txHash.ToString().c_str());
 
   // 硬编码特殊交易处理
   //

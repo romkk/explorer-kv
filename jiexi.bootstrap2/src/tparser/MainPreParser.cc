@@ -105,6 +105,7 @@ int main(int argc, char **argv) {
   try {
     gPreParser = new PreParser();
     gPreParser->init();
+    gPreParser->run();
     delete gPreParser;
     gPreParser = nullptr;
   } catch (std::exception & e) {

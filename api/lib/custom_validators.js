@@ -21,6 +21,10 @@ function isValidAddressList(active) {
         return new restify.InvalidArgumentError('Duplicate addresses found');
     }
 
+    if (_.compact(parts).length != parts.length) {
+        return new restify.InvalidArgumentError('Invalid address found');
+    }
+
     if (!parts.every(v => module.exports.isValidAddress(v))) {
         return new restify.InvalidArgumentError('Invalid address found');
     }

@@ -245,7 +245,7 @@ TxHandler::TxHandler(const size_t txCount, const string &file) {
 
     txInfo_[i].hash256_ = uint256(arr[0]);
     txInfo_[i].txId_    = atoi64(arr[1].c_str());
-    // blockHeight_ 尚未设置
+    // blockHeight_ 尚未设置，后面设置output时会补上
   }
   // sort for binary search
   std::sort(txInfo_.begin(), txInfo_.end());
@@ -348,6 +348,21 @@ void TxHandler::delOutput(TxInfo &txInfo, const int32_t n) {
   }
 }
 
+void TxHandler::delOutputAll(TxInfo &txInfo) {
+  if (txInfo.outputs_ == nullptr) {
+    THROW_EXCEPTION_DBEX("already delete output: %s",
+                         txInfo.hash256_.ToString().c_str());
+  }
+  for (size_t i = 0; i < txInfo.outputsCount_; i++) {
+    if (*(txInfo.outputs_ + i) != nullptr) {
+      delete *(txInfo.outputs_ + i);
+      *(txInfo.outputs_ + i) = nullptr;
+    }
+  }
+  free(txInfo.outputs_);
+  txInfo.outputs_ = nullptr;
+}
+
 void TxHandler::delOutput(const uint256 &hash, const int32_t n) {
   delOutput(*find(hash), n);
 }
@@ -373,10 +388,10 @@ void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f) {
   string addressStr, addressIdsStr;
   for (int i = 0; i < poutput->address_.size(); i++) {
     const string addrStr = poutput->address_[i];
-    addressStr    += Strings::Format("%s,", addrStr.c_str());
-    addressIdsStr += Strings::Format("%lld,", poutput->addressIds_[i]);
+    addressStr    += Strings::Format("%s|", addrStr.c_str());
+    addressIdsStr += Strings::Format("%lld|", poutput->addressIds_[i]);
   }
-  if (addressStr.length()) {  // 移除最后一个逗号
+  if (addressStr.length()) {  // 移除最后一个|
     addressStr.resize(addressStr.length() - 1);
     addressIdsStr.resize(addressIdsStr.length() - 1);
   }
@@ -389,7 +404,6 @@ void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f) {
                       poutput->spentTxId_, poutput->spentPosition_,
                       now.c_str(), now.c_str());
   fprintf(f, "%s\n", s.c_str());
-  LOG_DEBUG("%s", s.c_str());
 }
 
 void _saveUnspentOutput(TxInfo &txInfo, int32_t n,
@@ -397,22 +411,22 @@ void _saveUnspentOutput(TxInfo &txInfo, int32_t n,
   string s;
   const string now = date("%F %T");
   TxOutput *out = *(txInfo.outputs_ + n);
+  assert(out != nullptr);
 
   // 遍历处理，可能含有多个地址
   for (size_t i = 0; i < out->address_.size(); i++) {
     // table.address_unspent_outputs_xxxx
     // `address_id`, `tx_id`, `position`, `position2`, `block_height`,
     // `value`, `output_script_type`, `created_at`
-    s = Strings::Format("%lld,%lld,%d,%d,%lld,%lld,%s,%s",
+    s = Strings::Format("%lld,%lld,%d,%d,%d,%lld,%s,%s",
                         out->addressIds_[i], txInfo.txId_, n, i,
                         txInfo.blockHeight_, out->value_,
                         out->typeStr_.c_str(), now.c_str());
     fprintf(fUnspentOutputs[tableIdx_AddrUnspentOutput(out->addressIds_[i])],
             "%s\n", s.c_str());
-    LOG_DEBUG("%s", s.c_str());
   }
 
-  // 也需要将为花费的，存入至table.tx_outputs_xxxx
+  // 也需要将未花费的，存入至table.tx_outputs_xxxx
   _saveTxOutput(txInfo, n, fTxoutput);
 }
 
@@ -429,8 +443,8 @@ void TxHandler::dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs,
       }
       _saveUnspentOutput(it, i, fUnspentOutputs,
                          fTxOutputs[tableIdx_TxOutput(it.txId_)]);
-      delOutput(it, i);
     }
+    delOutputAll(it);
   }
 }
 
@@ -570,7 +584,6 @@ void _saveBlock(BlockInfo &b, FILE *f) {
                          b.chainId_, b.size_, b.diff_, b.txCount_,
                          b.rewardBlock_, b.rewardFee_, date("%F %T").c_str());
   fprintf(f, "%s\n", line.c_str());
-  LOG_DEBUG("%s", line.c_str());
 }
 
 void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
@@ -618,7 +631,6 @@ void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
     string s = Strings::Format("%lld,%d,%lld,%s", blockId, i++,
                                txHandler_->getTxId(it.GetHash()), now.c_str());
     fprintf(fBlockTxs_[tableIdx_BlockTxs(blockId)], "%s\n", s.c_str());
-    LOG_DEBUG("%s", s.c_str());
   }
 }
 
@@ -637,8 +649,8 @@ void PreParser::parseTxInputs(const CTransaction &tx, const int64_t txId,
       // 插入当前交易的inputs, coinbase tx的 scriptSig 不做decode，可能含有非法字符
       // 通常无法解析成功。 coinbase无需担心其长度，bitcoind对coinbase tx的coinbase
       // 字段长度做了限制
-      values.push_back(Strings::Format("%lld,%d,'','%s',%u,"
-                                       "0,-1,0,'','','%s'",
+      values.push_back(Strings::Format("%lld,%d,,%s,%u,"
+                                       "0,-1,0,,,%s",
                                        txId, n,
                                        HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
                                        in.nSequence, now.c_str()));
@@ -663,19 +675,19 @@ void PreParser::parseTxInputs(const CTransaction &tx, const int64_t txId,
       string addressStr, addressIdsStr;
       for (int i = 0; i < poutput->address_.size(); i++) {
         const string addrStr = poutput->address_[i];
-        addressStr    += Strings::Format("%s,", addrStr.c_str());
-        addressIdsStr += Strings::Format("%lld,", poutput->addressIds_[i]);
+        addressStr    += Strings::Format("%s|", addrStr.c_str());
+        addressIdsStr += Strings::Format("%lld|", poutput->addressIds_[i]);
         // 减扣该地址额度
         addressBalance[addrStr] += -1 * poutput->value_;
       }
-      if (addressStr.length()) {  // 移除最后一个逗号
+      if (addressStr.length()) {  // 移除最后一个|
         addressStr.resize(addressStr.length() - 1);
         addressIdsStr.resize(addressIdsStr.length() - 1);
       }
 
       // 插入当前交易的inputs
-      values.push_back(Strings::Format("%lld,%d,'%s','%s',%u,%lld,%d,"
-                                       "%lld,'%s','%s','%s'",
+      values.push_back(Strings::Format("%lld,%d,%s,%s,%u,%lld,%d,"
+                                       "%lld,%s,%s,%s",
                                        txId, n,
                                        in.scriptSig.ToString().c_str(),
                                        HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
@@ -693,7 +705,6 @@ void PreParser::parseTxInputs(const CTransaction &tx, const int64_t txId,
   // 保存inputs
   for (auto &it : values) {
     fprintf(fTxInputs_[tableIdx_TxInput(txId)], "%s\n", it.c_str());
-    LOG_DEBUG("%s", it.c_str());
   }
 }
 
@@ -727,7 +738,6 @@ void PreParser::parseTxSelf(const int32_t height, const int64_t txId, const uint
 
   // 写入s至磁盘
   fprintf(fTxs_[tableIdx_Tx(txId)], "%s\n", s.c_str());
-  LOG_DEBUG("%s", s.c_str());
 }
 
 void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo, FILE *f) {
@@ -735,15 +745,15 @@ void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo, FILE *f) {
   AddrTx &t = addrInfo->addrTx_;
 
   // table.address_txs_<yyyymm>
-  // `address_id`, `tx_id`, `tx_height`, `total_received`, `balance_diff`,
+  // `address_id`, `tx_id`, `tx_height`, `total_received`, `balance_diff`, `idx`,
   // `balance_final`, `prev_ymd`, `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`
-  line = Strings::Format("%lld,%lld,%d,%lld,%lld,%lld,"
+  line = Strings::Format("%lld,%lld,%d,%lld,%lld,%lld,%lld,"
                          "%d,%lld,%d,%lld,%s",
-                         addrInfo->addrId_, t.txId_, t.txHeight_, addrInfo->totalReceived_,
+                         addrInfo->addrId_, t.txId_, t.txHeight_, addrInfo->idx_,
+                         addrInfo->totalReceived_,
                          t.balanceDiff_, t.balanceFinal_, t.prevYmd_, t.prevTxId_,
                          t.nextYmd_, t.nextTxId_,
                          date("%F %T").c_str());
-  LOG_DEBUG("%s", line.c_str());
   fprintf(f, "%s\n", line.c_str());
 }
 
@@ -777,7 +787,6 @@ void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,
 
       // save last one
       assert(addrInfo->addrTx_.ymd_ != 0);
-//      LOG_DEBUG("tableIdx_AddrTxs(addrInfo->addrTx_.ymd_): %d", tableIdx_AddrTxs(addrInfo->addrTx_.ymd_));
       _saveAddrTx(addrInfo, fAddrTxs_[tableIdx_AddrTxs(addrInfo->addrTx_.ymd_)]);
     }
 
@@ -790,7 +799,7 @@ void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,
     addrInfo->endTxYmd_ = ymd;
     addrInfo->totalReceived_ += balanceDiff > 0 ? balanceDiff : 0;
     addrInfo->totalSent_     += balanceDiff < 0 ? balanceDiff * -1 : 0;
-    addrInfo->txCount_++;
+    addrInfo->idx_++;
 
     // switch
     memcpy(&(addrInfo->addrTx_), &cur, sizeof(struct AddrTx));
@@ -873,9 +882,11 @@ void PreParser::run() {
     curHeight_++;
   }
 
-  // 最后清理数据：未花费的output, 地址最后关联的交易
-  txHandler_->dumpUnspentOutputToFile(fUnspentOutputs_, fTxOutputs_);
-  addrHandler_->dumpTxs(fAddrTxs_);
+  if (running_) {
+    // 最后清理数据：未花费的output, 地址最后关联的交易
+    txHandler_->dumpUnspentOutputToFile(fUnspentOutputs_, fTxOutputs_);
+    addrHandler_->dumpTxs(fAddrTxs_);
+  }
 }
 
 

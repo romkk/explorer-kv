@@ -112,7 +112,7 @@ void PreTx::threadConsumeAddr() {
       const int32_t tableIdx = HexToDecLast2Bytes(txhash) % 64;
       txs_.insert(tx);
       txIds_[tableIdx]++;
-      line = Strings::Format("%s,%lld", txhash.c_str(), txIds_[tableIdx]);
+      line = Strings::Format("%s,%lld,%lld", txhash.c_str(), txIds_[tableIdx]);
 
       fprintf(f_, "%s\n", line.c_str());
       cnt++;

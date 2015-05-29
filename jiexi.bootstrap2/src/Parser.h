@@ -80,7 +80,7 @@ struct AddrTx {
 struct AddrInfo {
   char addrStr_[36];
   int64_t addrId_;
-  int64_t txCount_;
+  int64_t idx_;
   int32_t beginTxYmd_;
   int32_t endTxYmd_;
   int64_t beginTxId_;
@@ -189,6 +189,7 @@ public:
                   map<string, int64_t> &addressBalance);
   void delOutput(const uint256 &hash, const int32_t n);
   void delOutput(TxInfo &txInfo, const int32_t n);
+  void delOutputAll(TxInfo &txInfo);
   class TxOutput *getOutput(const uint256 &hash, const int32_t n);
 
   void dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs,

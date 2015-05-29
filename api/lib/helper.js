@@ -17,5 +17,10 @@ module.exports ={
         addr = bs58.decode(addr);
         addr = new Buffer(addr).toString('hex');
         return addr.slice(2, addr.length - 8);
+    },
+    toBigEndian(str) {
+        var ret = [];
+        String(str).replace(/\w{2}/g, match => ret.push(match));
+        return ret.reverse().join('');
     }
 };

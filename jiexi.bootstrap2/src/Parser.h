@@ -51,6 +51,8 @@ inline int32_t tableIdx_BlockTxs(const int64_t blockId) {
   return (int32_t)(blockId % 100);
 }
 
+class FileWriter;
+
 class RawBlock {
 public:
   int64_t blockId_;
@@ -168,9 +170,10 @@ struct BlockInfo {
 class AddrHandler {
   vector<struct AddrInfo> addrInfo_;
   size_t addrCount_;
+  FileWriter *fwriter_;
 
 public:
-  AddrHandler(const size_t addrCount, const string &file);
+  AddrHandler(const size_t addrCount, const string &file, FileWriter *fwriter);
   vector<struct AddrInfo>::iterator find(const string &address);
   int64_t getAddressId(const string &address);
   void dumpTxs(map<int32_t, FILE *> &fAddrTxs);
@@ -180,9 +183,10 @@ public:
 class TxHandler {
   vector<struct TxInfo> txInfo_;
   size_t txCount_;
+  FileWriter *fwriter_;
 
 public:
-  TxHandler(const size_t txCount, const string &file);
+  TxHandler(const size_t txCount, const string &file, FileWriter *fwriter);
   vector<struct TxInfo>::iterator find(const uint256 &hash);
   vector<struct TxInfo>::iterator find(const string &hashStr);
 
@@ -200,6 +204,23 @@ public:
                                vector<FILE *> &fTxOutputs);
 };
 
+class FileWriter {
+  atomic<bool> running_;
+  atomic<bool> runningConsume_;
+  vector<std::pair<FILE *, string> > buffer_;
+  mutex lock_;
+
+  void threadConsume();
+
+public:
+  FileWriter();
+  ~FileWriter();
+
+  void stop();
+
+  void append(const string &s, FILE *f);
+};
+
 class PreParser {
   atomic<bool> running_;
   int32_t curHeight_;
@@ -209,6 +230,8 @@ class PreParser {
   AddrHandler *addrHandler_;
   TxHandler   *txHandler_;
 
+  FileWriter *fwriter_;
+
   FILE *fBlocks_;
   vector<FILE *>       fBlockTxs_;
   vector<FILE *>       fTxs_;
@@ -217,7 +240,6 @@ class PreParser {
   vector<FILE *>       fUnspentOutputs_;
   vector<FILE *>       fAddrs_;
   map<int32_t, FILE *> fAddrTxs_;   // <YMD, FILE*>
-
 
   string filePreTx_;
   string filePreAddr_;

@@ -28,6 +28,7 @@
 #include <pthread.h>
 
 #include <boost/filesystem.hpp>
+#include <boost/thread.hpp>
 
 #include "Parser.h"
 #include "Common.h"
@@ -182,9 +183,11 @@ void getRawBlockFromDisk(const int32_t height, string *rawHex,
 ////////////////////////////////////////////////////////////////////////////////
 //-------------------------------- AddrHandler ---------------------------------
 ////////////////////////////////////////////////////////////////////////////////
-AddrHandler::AddrHandler(const size_t addrCount, const string &filePreAddr) {
+AddrHandler::AddrHandler(const size_t addrCount, const string &filePreAddr,
+                         FileWriter *fwriter) {
   addrInfo_.resize(addrCount);
   addrCount_ = addrCount;
+  fwriter_ = fwriter;
 
   std::ifstream f(filePreAddr);
   std::string line;
@@ -236,7 +239,7 @@ void AddrHandler::dumpAddresses(vector<FILE *> &fAddrs_) {
                         it.beginTxId_, it.beginTxYmd_,
                         it.endTxId_, it.endTxYmd_,
                         now.c_str(), now.c_str());
-    fprintf(fAddrs_[tableIdx_Addr(it.addrId_)], "%s\n", s.c_str());
+    fwriter_->append(s, fAddrs_[tableIdx_Addr(it.addrId_)]);
   }
 }
 
@@ -244,9 +247,11 @@ void AddrHandler::dumpAddresses(vector<FILE *> &fAddrs_) {
 ////////////////////////////////////////////////////////////////////////////////
 //--------------------------------- TxHandler ----------------------------------
 ////////////////////////////////////////////////////////////////////////////////
-TxHandler::TxHandler(const size_t txCount, const string &file) {
+TxHandler::TxHandler(const size_t txCount, const string &file,
+                     FileWriter *fwriter) {
   txInfo_.resize(txCount);
   txCount_ = txCount;
+  fwriter_ = fwriter;
 
   std::ifstream f(file);
   std::string line;
@@ -388,7 +393,7 @@ class TxOutput *TxHandler::getOutput(const uint256 &hash, const int32_t n) {
   return *(it->outputs_ + n);
 }
 
-void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f) {
+void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f, FileWriter *fwriter) {
   // table.tx_outputs_xxxx
   //   `tx_id`,`position`,`address`,`address_ids`,`value`,`output_script_asm`,
   //   `output_script_hex`,`output_script_type`,
@@ -416,11 +421,12 @@ void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f) {
                       poutput->typeStr_.c_str(),
                       poutput->spentTxId_, poutput->spentPosition_,
                       now.c_str(), now.c_str());
-  fprintf(f, "%s\n", s.c_str());
+  fwriter->append(s, f);
 }
 
 void _saveUnspentOutput(TxInfo &txInfo, int32_t n,
-                        vector<FILE *> &fUnspentOutputs, FILE *fTxoutput) {
+                        vector<FILE *> &fUnspentOutputs,
+                        FILE *fTxoutput, FileWriter *fwriter) {
   string s;
   const string now = date("%F %T");
   TxOutput *out = *(txInfo.outputs_ + n);
@@ -435,8 +441,7 @@ void _saveUnspentOutput(TxInfo &txInfo, int32_t n,
                         out->addressIds_[i], txInfo.txId_, n, i,
                         txInfo.blockHeight_, out->value_,
                         out->typeStr_.c_str(), now.c_str());
-    fprintf(fUnspentOutputs[tableIdx_AddrUnspentOutput(out->addressIds_[i])],
-            "%s\n", s.c_str());
+    fwriter->append(s, fUnspentOutputs[tableIdx_AddrUnspentOutput(out->addressIds_[i])]);
   }
 
   // 也需要将未花费的，存入至table.tx_outputs_xxxx
@@ -466,6 +471,69 @@ int64_t TxHandler::getTxId(const uint256 &hash) {
 }
 
 
+
+////////////////////////////////////////////////////////////////////////////////
+//--------------------------------- FileWriter ---------------------------------
+////////////////////////////////////////////////////////////////////////////////
+FileWriter::FileWriter() {
+  running_ = true;
+  boost::thread t(boost::bind(&FileWriter::threadConsume, this));
+}
+
+FileWriter::~FileWriter() {
+  stop();
+  while (runningConsume_ == true) {
+    sleepMs(10);
+  }
+}
+
+void FileWriter::stop() {
+  if (running_) {
+    running_ = false;
+    LOG_INFO("stop FileWriter...");
+  }
+}
+
+void FileWriter::append(const string &s, FILE *f) {
+  // buffer大小有限制，防止占用过大内存
+  while (running_) {
+    lock_.lock();
+    if (buffer_.size() < 100 * 10000) {
+      buffer_.push_back(make_pair(f, s));
+      lock_.unlock();
+      break;
+    }
+    lock_.unlock();
+    sleepMs(100);
+  }
+}
+
+void FileWriter::threadConsume() {
+  LogScope ls("FileWriter::threadConsume");
+  runningConsume_ = true;
+  while (running_) {
+    vector<std::pair<FILE *, string> > cache;
+    {
+      ScopeLock sl(lock_);
+      while (buffer_.size() > 0) {
+        cache.push_back(*buffer_.rbegin());
+        buffer_.pop_back();
+      }
+    }
+
+    if (cache.size() == 0) {
+      sleepMs(50);
+      continue;
+    }
+    for (auto &it : cache) {
+      fprintf(it.first, "%s\n", it.second.c_str());
+    }
+  }
+  runningConsume_ = false;
+}
+
+
+
 ////////////////////////////////////////////////////////////////////////////////
 //--------------------------------- PreParser ----------------------------------
 ////////////////////////////////////////////////////////////////////////////////
@@ -478,11 +546,14 @@ PreParser::PreParser() {
   curHeight_  = 0;
   running_ = true;
 
+  fwriter_ = new FileWriter();
+
   memset(&blockInfo_, 0, sizeof(blockInfo_));
 }
 
 PreParser::~PreParser() {
   stop();
+  delete fwriter_;
   closeFiles();
 }
 
@@ -491,6 +562,7 @@ void PreParser::stop() {
     running_ = false;
     LOG_INFO("stop PreParser...");
   }
+  fwriter_->stop();
 }
 
 void PreParser::openFiles() {
@@ -573,18 +645,18 @@ void PreParser::init() {
   // init
   {
     LogScope ls("init address Handler");
-    addrHandler_ = new AddrHandler(addrCount_, filePreAddr_);
+    addrHandler_ = new AddrHandler(addrCount_, filePreAddr_, fwriter_);
   }
   {
     LogScope ls("init txs Handler");
-    txHandler_   = new TxHandler(txCount_, filePreTx_);
+    txHandler_   = new TxHandler(txCount_, filePreTx_, fwriter_);
   }
 
   // 初始化各类文件句柄
   openFiles();
 }
 
-void _saveBlock(BlockInfo &b, FILE *f) {
+void _saveBlock(BlockInfo &b, FILE *f, FileWriter *fwriter) {
   string line;
   // 保存当前Block, table.0_blocks, 字段顺序严格按照表顺序
   // `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`,
@@ -601,7 +673,7 @@ void _saveBlock(BlockInfo &b, FILE *f) {
                          b.nextBlockId_, b.nextBlockHash_.ToString().c_str(),
                          b.chainId_, b.size_, b.diff_, b.txCount_,
                          b.rewardBlock_, b.rewardFee_, date("%F %T").c_str());
-  fprintf(f, "%s\n", line.c_str());
+  fwriter->append(line, f);
 }
 
 void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
@@ -648,7 +720,7 @@ void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
   for (auto & it : blk.vtx) {
     string s = Strings::Format("%lld,%d,%lld,%s", blockId, i++,
                                txHandler_->getTxId(it.GetHash()), now.c_str());
-    fprintf(fBlockTxs_[tableIdx_BlockTxs(blockId)], "%s\n", s.c_str());
+    fwriter_->append(s, fBlockTxs_[tableIdx_BlockTxs(blockId)]);
   }
 }
 
@@ -722,7 +794,7 @@ void PreParser::parseTxInputs(const CTransaction &tx, const int64_t txId,
 
   // 保存inputs
   for (auto &it : values) {
-    fprintf(fTxInputs_[tableIdx_TxInput(txId)], "%s\n", it.c_str());
+    fwriter_->append(it, fTxInputs_[tableIdx_TxInput(txId)]);
   }
 }
 
@@ -755,10 +827,11 @@ void PreParser::parseTxSelf(const int32_t height, const int64_t txId, const uint
                       date("%F %T").c_str());
 
   // 写入s至磁盘
-  fprintf(fTxs_[tableIdx_Tx(txId)], "%s\n", s.c_str());
+  fwriter_->append(s, fTxs_[tableIdx_Tx(txId)]);
 }
 
-void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo, FILE *f) {
+void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo,
+                 FILE *f, FileWriter *fwriter) {
   string line;
   AddrTx &t = addrInfo->addrTx_;
 
@@ -772,7 +845,7 @@ void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo, FILE *f) {
                          t.balanceDiff_, t.balanceFinal_, t.prevYmd_, t.prevTxId_,
                          t.nextYmd_, t.nextTxId_,
                          date("%F %T").c_str());
-  fprintf(f, "%s\n", line.c_str());
+  fwriter->append(line, f);
 }
 
 void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,

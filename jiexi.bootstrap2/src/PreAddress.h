@@ -33,7 +33,7 @@ private:
   atomic<int32_t> runningConsumeThreads_;
 
   vector<string> addrBuf_;
-  unordered_set<string> addresses_;
+  set<string> addresses_;
   vector<int64_t> addressesIds_;
   FILE *f_;
   mutex lock_;

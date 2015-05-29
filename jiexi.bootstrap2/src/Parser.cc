@@ -227,6 +227,19 @@ void AddrHandler::dumpTxs(map<int32_t, FILE *> &fAddrTxs) {
   }
 }
 
+void AddrHandler::dumpAddresses(vector<FILE *> &fAddrs_) {
+  string s;
+  const string now = date("%F %T");
+  for (auto &it : addrInfo_) {
+    s = Strings::Format("%lld,%s,%lld,%lld,%lld,%lld,%d,%lld,%d,%s,%s",
+                        it.addrId_, it.addrStr_, it.idx_, it.totalReceived_, it.totalSent_,
+                        it.beginTxId_, it.beginTxYmd_,
+                        it.endTxId_, it.endTxYmd_,
+                        now.c_str(), now.c_str());
+    fprintf(fAddrs_[tableIdx_Addr(it.addrId_)], "%s\n", s.c_str());
+  }
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 //--------------------------------- TxHandler ----------------------------------
@@ -508,6 +521,11 @@ void PreParser::openFiles() {
     fUnspentOutputs_.push_back(openCSV("address_unspent_outputs_%04d.csv", i));
   }
 
+  // table.addresses_xxxx
+  for (int i = 0; i < 64; i++) {
+    fAddrs_.push_back(openCSV("addresses_%04d.csv", i));
+  }
+
   // table.address_txs_xxxx
   const uint32_t startTs = 1230963305u;  // block 0: 2009-01-03 18:15:05
   const uint32_t endTs   = (uint32_t)time(nullptr);
@@ -762,7 +780,6 @@ void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,
   for (auto &it : addressBalance) {
     const string &addrStr      = it.first;
     const int64_t &balanceDiff = it.second;
-    LOG_DEBUG("handleAddressTxs, address: %s, balanceDiff: %lld", addrStr.c_str(), balanceDiff);
     vector<struct AddrInfo>::iterator addrInfo = addrHandler_->find(addrStr);
 
     // 记录当前交易信息
@@ -872,6 +889,7 @@ void PreParser::run() {
     }
 
     // 处理块
+    LOG_INFO("parse block, height: %6d, txs: %5lld", curHeight_, blk.vtx.size());
     parseBlock(blk, blockId, curHeight_, (int32_t)blkRawHex.length()/2, chainId);
 
     // 处理交易
@@ -883,9 +901,16 @@ void PreParser::run() {
   }
 
   if (running_) {
-    // 最后清理数据：未花费的output, 地址最后关联的交易
+    // 清理数据：未花费的output
     txHandler_->dumpUnspentOutputToFile(fUnspentOutputs_, fTxOutputs_);
+  }
+  if (running_) {
+    // 清理数据：地址最后关联的交易
     addrHandler_->dumpTxs(fAddrTxs_);
+  }
+  if (running_) {
+    // 导入地址数据
+    addrHandler_->dumpAddresses(fAddrs_);
   }
 }
 

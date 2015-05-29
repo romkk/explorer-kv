@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
   if (IsDebug()) {
     Log::SetLevel(LOG_LEVEL_DEBUG);
   } else {
-    Log::SetLevel((LogLevel)Config::GConfig.getInt("log.level", LOG_LEVEL_WARN));
+    Log::SetLevel((LogLevel)Config::GConfig.getInt("log.level", LOG_LEVEL_INFO));
   }
 
   signal(SIGTERM, handler);

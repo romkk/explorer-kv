@@ -84,11 +84,10 @@ void PreAddress::run() {
 
 void PreAddress::threadConsumeAddr() {
   LogScope ls("consume thread");
-  vector<string> buf;
-  buf.reserve(1024*32);
   int64_t cnt = 0;
 
   while (running_) {
+    vector<string> buf;
     {
       ScopeLock sl(lock_);
       while (addrBuf_.size()) {
@@ -121,7 +120,6 @@ void PreAddress::threadConsumeAddr() {
         LOG_INFO("total address: %lld", cnt);
       }
     }
-    buf.clear();
   }
 
   LOG_INFO("total address: %lld", addresses_.size());

@@ -28,6 +28,9 @@
 void getRawBlockFromDisk(const int32_t height, string *rawHex,
                          int32_t *chainId, int64_t *blockId);
 
+inline int32_t tableIdx_Addr(const int64_t addrId) {
+  return (int32_t)(addrId / BILLION % 64);
+}
 inline int32_t tableIdx_AddrUnspentOutput(const int64_t addrId) {
   return (int32_t)(addrId % 10);
 }
@@ -171,6 +174,7 @@ public:
   vector<struct AddrInfo>::iterator find(const string &address);
   int64_t getAddressId(const string &address);
   void dumpTxs(map<int32_t, FILE *> &fAddrTxs);
+  void dumpAddresses(vector<FILE *> &fAddrs_);
 };
 
 class TxHandler {
@@ -211,7 +215,9 @@ class PreParser {
   vector<FILE *>       fTxInputs_;
   vector<FILE *>       fTxOutputs_;
   vector<FILE *>       fUnspentOutputs_;
+  vector<FILE *>       fAddrs_;
   map<int32_t, FILE *> fAddrTxs_;   // <YMD, FILE*>
+
 
   string filePreTx_;
   string filePreAddr_;

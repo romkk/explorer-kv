@@ -49,9 +49,11 @@ function format(array $detail) {
     $ret['rawBlocks'] = join(',', [$height + 1, $hash, $height, 0, $rawhex, $now]) . "\n";
 
     // txlogs
+    /*
     $ret['txlogs'] = array_map(function($t) use ($detail, $now) {
         return [$t['hash'], join(',', [100, 1, $detail['height'], $detail['time'], $t['hash'], $now, $now]) . "\n"];
     }, $tx);
+    */
 
     // rawtxs
     $ret['rawtxs'] = array_map(function($t) use ($detail, $now) {
@@ -82,9 +84,9 @@ $bitcoinClient = Bitcoin::make();
 
 // initialize counters and files
 $rawBlocksFile = fopen('0_raw_blocks', 'a');
-$txlogsTableIndex = 0;
-$txlogsFile = fopen('txlogs_0000', 'a');
-$txlogsCounter = 0;
+//$txlogsTableIndex = 0;
+//$txlogsFile = fopen('txlogs_0000', 'a');
+//$txlogsCounter = 0;
 $rawTxs = [];
 
 for ($i = 0; $i < 64; $i++) {
@@ -108,6 +110,7 @@ for ($i = $startIndex; $i <= $endIndex; $i++) {
     fwrite($rawBlocksFile, $lines['rawBlocks']);
 
     // txlogs
+    /*
     foreach ($lines['txlogs'] as $tx) {
         $hash = $tx[0];
         $line = $tx[1];
@@ -115,6 +118,7 @@ for ($i = $startIndex; $i <= $endIndex; $i++) {
         fwrite($txlogsFile, $line);
         $txlogsCounter++;
     }
+    */
 
     // rawtxs
     foreach ($lines['rawtxs'] as $tx) {
@@ -124,17 +128,19 @@ for ($i = $startIndex; $i <= $endIndex; $i++) {
     }
 
     // update txlogs table
+    /*
     if ($txlogsCounter >= 1000e4) {
         fclose($txlogsFile);
         $txlogsTableIndex++;
         $txlogsFile = fopen(sprintf('txlogs_%04d', $txlogsTableIndex), 'a');
         $txlogsCounter = 0;
     }
+    */
 }
 
 // close all file descriptor
 fclose($rawBlocksFile);
-fclose($txlogsFile);
+//fclose($txlogsFile);
 for ($i = 0; $i < 64; $i++) {
     fclose($rawTxs[$i]);
 }

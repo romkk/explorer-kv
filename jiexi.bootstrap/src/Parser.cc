@@ -838,13 +838,13 @@ void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo,
   AddrTx &t = addrInfo->addrTx_;
 
   // table.address_txs_<yyyymm>
-  // `address_id`, `tx_id`, `tx_height`, `total_received`, `balance_diff`, `idx`,
-  // `balance_final`, `prev_ymd`, `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`
+  // `address_id`, `tx_id`, `tx_height`, `total_received`, `balance_diff`,
+  // `balance_final`, `idx`, `prev_ymd`, `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`
   line = Strings::Format("%lld,%lld,%d,%lld,%lld,%lld,%lld,"
                          "%d,%lld,%d,%lld,%s",
-                         addrInfo->addrId_, t.txId_, t.txHeight_, addrInfo->idx_,
-                         addrInfo->totalReceived_,
-                         t.balanceDiff_, t.balanceFinal_, t.prevYmd_, t.prevTxId_,
+                         addrInfo->addrId_, t.txId_, t.txHeight_,
+                         addrInfo->totalReceived_, t.balanceDiff_, t.balanceFinal_,
+                         addrInfo->idx_, t.prevYmd_, t.prevTxId_,
                          t.nextYmd_, t.nextTxId_,
                          date("%F %T").c_str());
   fwriter->append(line, f);

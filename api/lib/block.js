@@ -40,12 +40,14 @@ class Block {
         };
     }
 
-    load(fulltx) {
+    load(offset = 0, limit = 50, fulltx = false) {
         var table = Block.getBlockTxTableByBlockId(this.attrs.block_id);
         var sql = `select tx_id
                    from ${table}
                    where block_id = ?
-                   order by position asc`;
+                   order by position asc
+                   limit ${offset}, ${limit}`;
+
         return mysql.list(sql, 'tx_id', [ this.attrs.block_id ])
             .then(txIndexes => {
                 if (fulltx) {

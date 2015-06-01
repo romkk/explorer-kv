@@ -50,7 +50,7 @@ class Tx {
             out: this.outputs,
             lock_time: this.attrs.lock_time,
             size: this.attrs.size,
-            time: null,
+            time: this.attrs.block_timestamp,
             tx_index: this.attrs.tx_id,
             hash: this.attrs.hash,
             vin_sz: this.attrs.inputs_count,
@@ -58,9 +58,11 @@ class Tx {
             is_coinbase: !!this.attrs.is_coinbase
         };
 
+        /*
         if (!this.attrs.is_coinbase) {
             ret.double_spend = null;
         }
+        */
 
         return ret;
     }
@@ -84,7 +86,7 @@ class Tx {
                     if (!this.attrs.is_coinbase) {
                         ret.prev_out = {        //omit `spent` and `script`
                             tx_index: r.prev_tx_id,
-                            type: null,     //tbd
+                            //type: null,     //tbd
                             addr: r.prev_address.split('|'),
                             value: r.prev_value,
                             n: r.prev_position
@@ -107,7 +109,7 @@ class Tx {
                     let ret = {};
                     ret.spent = r.spent_tx_id != 0;
                     ret.tx_index = r.tx_id;
-                    ret.type = null;
+                    //ret.type = null;
                     ret.addr = r.address.split('|');
                     ret.value = r.value;
                     ret.n = r.position;
@@ -130,7 +132,7 @@ class Tx {
     static make(id) {
         var idType = helper.paramType(id);
         var table = idType == helper.constant.HASH_IDENTIFIER ? Tx.getTableByHash(id) : Tx.getTableById(id);
-        var sql = `select tx_id, hash, height, is_coinbase, version, lock_time, size, fee, total_in_value, total_out_value, inputs_count, outputs_count, created_at
+        var sql = `select tx_id, hash, height, block_timestamp, is_coinbase, version, lock_time, size, fee, total_in_value, total_out_value, inputs_count, outputs_count, created_at
                    from ${table}
                    where ${idType == helper.constant.HASH_IDENTIFIER ? `hash = ?` : `tx_id = ?`}`;
         return mysql.selectOne(sql, [id])

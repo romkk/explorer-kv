@@ -64,7 +64,6 @@ TODO
    "time" : 1322131230,
    "size" : 9195,
    "hash" : "0000000000000bae09a7a393a8acded75aa67e46cb81f7acaa5ad94f9eacd103",
-   "tx" : [],
    "block_index" : 818044,
    "bits" : 437129626,
    "prev_block" : "00000000000007d0f98d9edca880a6c124e25095712df8952e0439ac7409738a",

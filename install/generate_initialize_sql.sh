@@ -148,7 +148,7 @@ CREATE TABLE `address_unspent_outputs_%04d` (
   `block_height` bigint(20) NOT NULL,
   `value` bigint(20) NOT NULL,
   `output_script_type` enum("NonStandard","PubKey","PubKeyHash","ScriptHash","MultiSig","NullData") NOT NULL,
-  `created_at` int(11) NOT NULL,
+  `created_at` datetime NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `address_id_tx_id_position_position2` (`address_id`,`tx_id`,`position`,`position2`),
   KEY `address_id_block_height` (`address_id`,`block_height`)

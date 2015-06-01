@@ -37,82 +37,24 @@ TEST(Util, split) {
   ASSERT_EQ(res[3], "Bb");
 }
 
-TEST(Util, GetAddressIds) {
-  const string uri = Config::GConfig.get("testdb.uri", "");
-  if (uri.empty()) {
-    LOG_WARN("skipped, test: [Util][GetAddressIds]");
-    return;
-  }
+TEST(Util, AddressTableIndex) {
+  // 3QzX5xzpwRgnRaB4ZRWH5rc95gC65K4JmW: ff9a4ed72c912d58fd11568b2108bb6d34b563b6
+  // 0xb6 = 182
+  string address = "3QzX5xzpwRgnRaB4ZRWH5rc95gC65K4JmW";
+  ASSERT_EQ(AddressTableIndex(address), 182);
 
-  string sql;
-  MySQLConnection db(uri);
-  {
-    // drop table
-    sql = "DROP TABLE IF EXISTS `addresses_0015`;";
-    db.update(sql);
-    sql = "DROP TABLE IF EXISTS `addresses_0022`;";
-    db.update(sql);
-  }
+  // 3BcPtPnLVY9TCWPhkQhoJCvHKxZjU1r3uU: 6cd18302962df6b7d05bb31425d2b1fc55a03d46
+  // 0x46 = 70
+  address = "3BcPtPnLVY9TCWPhkQhoJCvHKxZjU1r3uU";
+  ASSERT_EQ(AddressTableIndex(address), 70);
 
-  {
-    // create table
-    // 1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq -> addresses_0015
-    sql = "CREATE TABLE `addresses_0015` ("
-    "`id` bigint(20) NOT NULL AUTO_INCREMENT,"
-    "`address` varchar(35) NOT NULL,"
-    "`tx_count` int(11) NOT NULL DEFAULT '0',"
-    "`total_received` bigint(20) NOT NULL DEFAULT '0',"
-    "`total_sent` bigint(20) NOT NULL DEFAULT '0',"
-    "`begin_tx_id` bigint(20) NOT NULL DEFAULT '0',"
-    "`begin_tx_ymd` int(11) NOT NULL DEFAULT '0',"
-    "`end_tx_id` bigint(20) NOT NULL DEFAULT '0',"
-    "`end_tx_ymd` int(11) NOT NULL DEFAULT '0',"
-    "`created_at` datetime NOT NULL,"
-    "`updated_at` datetime NOT NULL,"
-    "PRIMARY KEY (`id`),"
-    "UNIQUE KEY `address` (`address`)"
-    ") AUTO_INCREMENT=15000000001 ENGINE=InnoDB DEFAULT CHARSET=utf8;";
-    db.update(sql);
+  // 1EQs14LB5sNg8rbADeZhHfe2B9B8Crvya4: 931cf0e7a87a6bf34552fa23413dc43a3a730849
+  // 0x49 = 73
+  address = "1EQs14LB5sNg8rbADeZhHfe2B9B8Crvya4";
+  ASSERT_EQ(AddressTableIndex(address), 73);
 
-    // 1LrM4bojLAKfuoFMXkDtVPMGydX1rkaMqH -> addresses_0022
-    sql = "CREATE TABLE `addresses_0022` ("
-    "`id` bigint(20) NOT NULL AUTO_INCREMENT,"
-    "`address` varchar(35) NOT NULL,"
-    "`tx_count` int(11) NOT NULL DEFAULT '0',"
-    "`total_received` bigint(20) NOT NULL DEFAULT '0',"
-    "`total_sent` bigint(20) NOT NULL DEFAULT '0',"
-    "`begin_tx_id` bigint(20) NOT NULL DEFAULT '0',"
-    "`begin_tx_ymd` int(11) NOT NULL DEFAULT '0',"
-    "`end_tx_id` bigint(20) NOT NULL DEFAULT '0',"
-    "`end_tx_ymd` int(11) NOT NULL DEFAULT '0',"
-    "`created_at` datetime NOT NULL,"
-    "`updated_at` datetime NOT NULL,"
-    "PRIMARY KEY (`id`),"
-    "UNIQUE KEY `address` (`address`)"
-    ") AUTO_INCREMENT=22000000001 ENGINE=InnoDB DEFAULT CHARSET=utf8;";
-    db.update(sql);
-  }
-
-  {
-    std::set<std::string> allAddresss;
-    map<string, int64_t> addrMap;
-    allAddresss.insert("1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq");
-    GetAddressIds(db, allAddresss, addrMap);
-    ASSERT_EQ(addrMap.size(), 1);
-    ASSERT_EQ(addrMap["1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq"], 15000000001);
-
-    allAddresss.insert("1LrM4bojLAKfuoFMXkDtVPMGydX1rkaMqH");
-    addrMap.clear();
-    GetAddressIds(db, allAddresss, addrMap);
-    ASSERT_EQ(addrMap.size(), 2);
-    ASSERT_EQ(addrMap["1LrM4bojLAKfuoFMXkDtVPMGydX1rkaMqH"], 22000000001);
-  }
-
-  {
-    // drop table
-    sql = "DROP TABLE IF EXISTS `addresses_0015`;";
-    db.update(sql);
-    sql = "DROP TABLE IF EXISTS `addresses_0022`;";
-    db.update(sql);
-  }
+  // 1Pbm1gD6SXNWdCu5XwmhXkQYusxM4fyeqn: f7e5a62669d0e1a99993ccd4978a082565405af2
+  // 0xf2 = 242
+  address = "1Pbm1gD6SXNWdCu5XwmhXkQYusxM4fyeqn";
+  ASSERT_EQ(AddressTableIndex(address), 242);
 }

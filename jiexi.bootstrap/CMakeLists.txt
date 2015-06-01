@@ -29,9 +29,17 @@ include_directories(src test ${OPENSSL_INCLUDE_DIR} ${Boost_INCLUDE_DIRS} ${MYSQ
 file(GLOB LIB_SOURCES src/*.cc src/bitcoin/*.cpp)
 add_library(explorer STATIC ${LIB_SOURCES})
 
-file(GLOB TPARSER_SOURCES src/tparser/*.cc)
-add_executable(tparser.bootstrap ${TPARSER_SOURCES})
-target_link_libraries(tparser.bootstrap explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES})
+file(GLOB PREADDR_SOURCES src/tparser/MainPreAddress.cc)
+add_executable(pre_addr ${PREADDR_SOURCES})
+target_link_libraries(pre_addr explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES})
+
+file(GLOB PRETX_SOURCES src/tparser/MainPreTx.cc)
+add_executable(pre_tx ${PRETX_SOURCES})
+target_link_libraries(pre_tx explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES})
+
+file(GLOB PREPARSER_SOURCES src/tparser/MainPreParser.cc)
+add_executable(pre_parser ${PREPARSER_SOURCES})
+target_link_libraries(pre_parser explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES})
 
 file(GLOB_RECURSE TEST_SOURCES test/*.cc)
 add_executable(unittest ${TEST_SOURCES})

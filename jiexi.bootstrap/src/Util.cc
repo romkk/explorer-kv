@@ -20,6 +20,8 @@
 #include "MySQLConnection.h"
 
 #include <string>
+#include <iostream>
+#include <fstream>
 #include <sstream>
 #include <vector>
 
@@ -39,6 +41,15 @@ std::vector<std::string> split(const std::string &s, char delim) {
   return elems;
 }
 
+size_t getNumberOfLines(const string &file) {
+  std::ifstream f(file);
+  std::size_t linesCount = 0;
+  std::string line;
+  while (std::getline(f , line))
+    ++linesCount;
+  return linesCount;
+}
+
 int32_t HexToDecLast2Bytes(const string &hex) {
   if (hex.length() < 2) {
     return 0;
@@ -48,11 +59,20 @@ int32_t HexToDecLast2Bytes(const string &hex) {
 }
 
 int32_t AddressTableIndex(const string &address) {
-  CKeyID key;
-  if (!CBitcoinAddress(address).GetKeyID(key)) {
-    return 0;
+  CTxDestination dest;
+  CBitcoinAddress addr(address);
+  string h;
+  if (!addr.IsValid()) {
+    THROW_EXCEPTION_DBEX("invalid address: %s", address.c_str());
   }
-  const string h = key.GetHex();
+  dest = addr.Get();
+
+  if (addr.IsScript()) {
+    h = boost::get<CScriptID>(dest).GetHex();
+  } else {
+    h = boost::get<CKeyID>(dest).GetHex();
+  }
+
   // 输出是反序的
   // 例如：1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq
   // 应该是：8b60195db4692837d7f61b7be8aa11ecdfaecdcf

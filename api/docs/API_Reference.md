@@ -13,30 +13,9 @@
 
     GET http://api.explorer.btc.com/v1/latestblock
 
-## 鉴权
-
-API 访问时需要验证用户身份，需要在请求中加入认证字符串，即 AccessKey。
-
-如果请求中没有 AccessKey 或者包含的 AccessKey 无效，访问将被拒绝。
-
-### 如何申请 / 获取 Access Key
-
-TODO
-
-### 鉴权方法
-
-1. 请求的 URI 中添加`__access_key__`字段：
-
-        GET /latestblock?__access_key__=${AccessKey}
-        
-2. 在 Request Header 中添加`X-Access-Key`字段：
-
-        GET /latestblock HTTP/1.1
-        X-Access-Key: ${AccessKey}
-
 ## 访问频率限制
 
-API 服务根据 AccessKey 限制访问频率。
+API 服务根据访问者 IP 限制访问频率。
 
 TODO
 

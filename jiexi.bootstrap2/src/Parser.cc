@@ -601,7 +601,7 @@ void PreParser::openFiles() {
 
   // table.address_txs_xxxx
   const uint32_t startTs = 1230963305u;  // block 0: 2009-01-03 18:15:05
-  const uint32_t endTs   = (uint32_t)time(nullptr);
+  const uint32_t endTs   = (uint32_t)time(nullptr) + 86400;  // 防止临界错误
   for (uint32_t ts = startTs; ts <= endTs; ts += 86400) {
     const int32_t ymd = atoi(date("%Y%m", ts));
     if (fAddrTxs_.find(ymd) != fAddrTxs_.end()) {

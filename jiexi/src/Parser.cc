@@ -40,13 +40,15 @@ RawBlock::RawBlock(const int64_t blockId, const int32_t height, const int32_t ch
 
 LastestAddressInfo::LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd,
                                        int64_t beginTxId, int64_t endTxId,
-                                       int64_t totalReceived, int64_t totalSent) {
+                                       int64_t totalReceived, int64_t totalSent,
+                                       int64_t txCount) {
   beginTxYmd_    = beginTxYmd;
   endTxYmd_      = endTxYmd;
   beginTxId_     = beginTxId;
   endTxId_       = endTxId;
   totalReceived_ = totalReceived;
   totalSent_     = totalSent;
+  txCount_       = txCount;
 }
 
 // 获取block raw hex/id/chainId...
@@ -675,15 +677,14 @@ void _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
                                          outputScriptAsm.c_str(),
                                          outputScriptHex.length() < 32*1024*1024 ? outputScriptHex.c_str() : "",
                                          GetTxnOutputType(type) ? GetTxnOutputType(type) : "",
-                                         // `is_spendable`,`spent_tx_id`,`spent_position`,`created_at`,`updated_at`
-                                         (type != TX_NONSTANDARD && type != TX_NULL_DATA) ? 1 : 0,
+                                         // `spent_tx_id`,`spent_position`,`created_at`,`updated_at`
                                          now.c_str(), now.c_str()));
   }
 
   // table.tx_outputs_xxxx
   const string tableNameTxOutputs = Strings::Format("tx_outputs_%04d", txId % 100);
   const string fieldsTxOutputs = "`tx_id`,`position`,`address`,`address_ids`,`value`,"
-  "`output_script_asm`,`output_script_hex`,`output_script_type`,`is_spendable`,"
+  "`output_script_asm`,`output_script_hex`,`output_script_type`,"
   "`spent_tx_id`,`spent_position`,`created_at`,`updated_at`";
   // multi insert outputs
   if (!multiInsert(db, tableNameTxOutputs, fieldsTxOutputs, itemValues)) {
@@ -711,7 +712,7 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
 
     // 获取地址信息
     int32_t beginTxYmd, prevTxYmd;
-    int64_t beginTxID, prevTxId, totalRecv, finalBalance;
+    int64_t beginTxID, prevTxId, totalRecv, finalBalance, txCount;
 
     it2 = gAddrTxCache.find(addrID);
     if (it2 != gAddrTxCache.end()) {
@@ -721,9 +722,10 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
       beginTxYmd   = it2->second->beginTxYmd_;
       totalRecv    = it2->second->totalReceived_;
       finalBalance = it2->second->totalReceived_ - it2->second->totalSent_;
+      txCount      = it2->second->txCount_;
     } else {
       sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id`,`total_received`,"
-                            " `total_sent`,`begin_tx_id`,`begin_tx_ymd` "
+                            " `total_sent`,`begin_tx_id`,`begin_tx_ymd`,`tx_count` "
                             " FROM `%s` WHERE `id`=%lld ",
                             addrTableName.c_str(), addrID);
       db.query(sql, res);
@@ -736,8 +738,11 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
       finalBalance = totalRecv - atoi64(row[3]);
       beginTxID   = atoi64(row[4]);
       beginTxYmd  = atoi(row[5]);
+      txCount     = atoi64(row[6]);
 
-      auto ptr = new LastestAddressInfo(beginTxYmd, prevTxYmd, beginTxID, prevTxId, atoi64(row[2]), atoi64(row[3]));
+      auto ptr = new LastestAddressInfo(beginTxYmd, prevTxYmd, beginTxID,
+                                        prevTxId, atoi64(row[2]), atoi64(row[3]),
+                                        txCount);
       gAddrTxCache[addrID] = ptr;
     }
     if ((it2 = gAddrTxCache.find(addrID)) == gAddrTxCache.end()) {
@@ -756,13 +761,14 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
 
     // 插入当前记录
     sql = Strings::Format("INSERT INTO `address_txs_%d` (`address_id`, `tx_id`, `tx_height`,"
-                          " `total_received`, `balance_diff`, `balance_final`, `prev_ymd`, "
-                          " `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`)"
+                          " `total_received`, `balance_diff`, `balance_final`, `idx`, "
+                          " `prev_ymd`, `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`)"
                           " VALUES (%lld, %lld, %d, %lld, %lld, %lld,"
                           "         %d, %lld, 0, 0, '%s') ",
                           ymd, addrID, txLog->txId_, txLog->blkHeight_,
                           totalRecv + (balanceDiff > 0 ? balanceDiff : 0),
                           balanceDiff, finalBalance + balanceDiff,
+                          txCount + 1,
                           prevTxYmd, prevTxId, date("%F %T").c_str());
     db.updateOrThrowEx(sql, 1);
 
@@ -791,6 +797,8 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
     it2->second->totalSent_     += (balanceDiff < 0 ? balanceDiff * -1 : 0);
     it2->second->endTxId_  = txLog->txId_;
     it2->second->endTxYmd_ = ymd;
+    it2->second->txCount_++;
+
   } /* /for */
 }
 

@@ -109,6 +109,9 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
 
     addrMap.insert(std::make_pair(a, atoi64(row[0])));
     if (isUseCache) {
+      if (addrMapCache.size() > 50 * 10000) {  // 最大缓存50万个地址，超过则清空
+        std::unordered_map<string, int64_t>().swap(addrMapCache);
+      }
       addrMapCache.insert(std::make_pair(a, atoi64(row[0])));
     }
   } /* /for */

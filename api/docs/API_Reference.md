@@ -33,21 +33,16 @@ TODO
 
         GET /block-height/${block_height}
 
-    |参数|描述|位置|必须|数据类型|
-    |---|---|---|---|---|
-    |block_height|块高度|Path|√|Int|
-    |fulltx|是否显示详细的交易信息，默认为`false`|Query|✗|Boolean|
-
-
 * Get Block By Hash
 
         GET /rawblock/${block_hash}
-
-    |参数|描述|位置|必须|数据类型|
-    |---|---|---|---|---|
-    |block_hash|块哈希|Query|√|String|
-    |fulltx|是否显示详细的交易信息，默认为`false`|Query|✗|Boolean|
-
+        
+|参数|描述|位置|必须|数据类型|
+|---|---|---|---|---|
+|block_height|块高度|Path|√|Int|
+|fulltx|是否显示详细的交易信息，默认为`false`|Query|✗|Boolean|
+|offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
+|limit|返回结果集个数，默认为`50`|Query|✗|Int|
 
 #### Response
 

@@ -57,6 +57,7 @@ TODO
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |block_height|块高度|Path|√|Int|
+    |fulltx|是否显示详细的交易信息，默认为`false`|Query|✗|Boolean|
 
 
 * Get Block By Hash
@@ -66,6 +67,7 @@ TODO
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |block_hash|块哈希|Query|√|String|
+    |fulltx|是否显示详细的交易信息，默认为`false`|Query|✗|Boolean|
 
 
 #### Response

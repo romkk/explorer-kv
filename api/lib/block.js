@@ -40,7 +40,7 @@ class Block {
         };
     }
 
-    load() {
+    load(fulltx) {
         var table = Block.getBlockTxTableByBlockId(this.attrs.block_id);
         var sql = `select tx_id
                    from ${table}
@@ -48,13 +48,17 @@ class Block {
                    order by position asc`;
         return mysql.list(sql, 'tx_id', [ this.attrs.block_id ])
             .then(txIndexes => {
-                var promises = txIndexes.map(id => {
-                    return Tx.make(id)
-                        .then((tx) => {
-                            return tx.load();
-                        });
-                });
-                return Promise.all(promises);
+                if (fulltx) {
+                    var promises = txIndexes.map(id => {
+                        return Tx.make(id)
+                            .then((tx) => {
+                                return tx.load();
+                            });
+                    });
+                    return Promise.all(promises);
+                } else {
+                    return txIndexes;
+                }
             })
             .then(txs => {
                 this.txs = txs;

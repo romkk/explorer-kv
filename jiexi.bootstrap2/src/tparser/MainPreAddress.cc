@@ -40,7 +40,7 @@ void handler(int sig) {
 }
 
 void usage() {
-  fprintf(stderr, "Usage:\n\tpre_addr -c \"tparser.bootstrap.conf\" -l \"tparser.bootstrap.log\"\n");
+  fprintf(stderr, "Usage:\n\tpre_addr -c \"tparser.bootstrap.conf\" -l \"pre_addr.log\"\n");
 }
 
 int main(int argc, char **argv) {

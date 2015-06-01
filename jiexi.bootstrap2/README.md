@@ -2,7 +2,6 @@
 
 ## 初始化时注意点
 
-1. 因并发需求，程序未使用数据事务，勿在程序允许中强制`kill -9`，使用`Ctrl + C`，或者`kill \`cat tparser.pid\``
 1. raw block/tx等原始数据中不允许出现孤块，无法处理
 1. 按照块为单位进行处理
 
@@ -39,4 +38,22 @@ cp ../test/unittest.conf .
 
 # run one test case
 ./unittest --gtest_filter=Common\*
+```
+
+## 运行
+
+第一步，需要初始化`address`和`transaction`，分别对应程序：`pre_addr`, `pre_tx`。这两个初始化程序可同时运行（内存必须64G以上）。
+
+```
+# 初始化地址
+./pre_addr -c tparser.bootstrap.conf -l pre_addr.log
+
+# 初始化交易
+./pre_tx -c tparser.bootstrap.conf -l pre_tx.log
+```
+
+第二步，生成CSV的DB导入文件
+
+```
+./pre_parser -c tparser.bootstrap.conf -l tparser.log
 ```

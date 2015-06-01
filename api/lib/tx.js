@@ -85,7 +85,7 @@ class Tx {
                         ret.prev_out = {        //omit `spent` and `script`
                             tx_index: r.prev_tx_id,
                             type: null,     //tbd
-                            addr: r.prev_address,
+                            addr: r.prev_address.split('|'),
                             value: r.prev_value,
                             n: r.prev_position
                         };
@@ -108,7 +108,7 @@ class Tx {
                     ret.spent = null;
                     ret.tx_index = r.tx_id;
                     ret.type = null;
-                    ret.addr = r.address;
+                    ret.addr = r.address.split('|');
                     ret.value = r.value;
                     ret.n = r.position;
                     ret.script = r.output_script_hex;

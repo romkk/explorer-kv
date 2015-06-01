@@ -49,100 +49,31 @@ LastestAddressInfo::LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd,
   totalSent_     = totalSent;
 }
 
-// 从磁盘读取 raw_block 批量文件
-void _loadRawBlockFromDisk(map<int32_t, RawBlock*> &blkCache, const int32_t height) {
-  string dir = Config::GConfig.get("cache.rawdata.dir", "");
-  // 尾部添加 '/'
-  if (dir.length() == 0) {
-    dir = "./";
-  }
-  else if (dir[dir.length()-1] != '/') {
-    dir += "/";
-  }
-
-  const int32_t height2 = (height / 10000) * 10000;
-  string path = Strings::Format("%d_%d", height2, height2 + 9999);
-
-  const string fname = Strings::Format("%s%s/0_raw_blocks",
-                                       dir.c_str(), path.c_str());
-  LOG_INFO("load raw block file: %s", fname.c_str());
-  std::ifstream input(fname);
-  std::string line;
-  while (std::getline(input, line)) {
-    auto arr = split(line, ',');
-    // line: blockId, hash, height, chain_id, hex
-    const uint256 blkHash(arr[1]);
-    const int32_t blkHeight  = atoi(arr[2].c_str());
-    const int32_t blkChainId = atoi(arr[3].c_str());
-
-    blkCache[blkHeight] = new RawBlock(atoi64(arr[0].c_str()), blkHeight, blkChainId, blkHash, arr[4]);
-  }
-}
-
-// 从文件读取raw block
-void _getRawBlockFromDisk(const int32_t height, string *rawHex,
-                          int32_t *chainId, int64_t *blockId) {
-  // 从磁盘直接读取文件，缓存起来，减少数据库交互
-  static map<int32_t, RawBlock*> blkCache;
-  static int32_t heightBegin = -1;
-
-  if (heightBegin != (height / 10000)) {
-    // 载入数据
-    LOG_INFO("try load raw block data from disk...");
-    for (auto &it : blkCache) {
-      delete it.second;
-    }
-    blkCache.clear();
-    heightBegin = height / 10000;
-    _loadRawBlockFromDisk(blkCache, height);
-  }
-
-  auto it = blkCache.find(height);
-  if (it == blkCache.end()) {
-    THROW_EXCEPTION_DBEX("can't find rawblock from disk cache, height: %d", height);
-  }
-
-  *rawHex  = it->second->hex_;
-  *chainId = it->second->chainId_;
-  *blockId = it->second->blockId_;
-}
-
 // 获取block raw hex/id/chainId...
 void _getBlockRawHex(const int32_t height,
                      MySQLConnection &db,
                      string *rawHex, int32_t *chainId, int64_t *blockId) {
-  // 是否使用磁盘raw缓存
-  const bool isUseDisk = Config::GConfig.getBool("cache.raw", false);
-  const int32_t maxCacheHeight = Config::GConfig.getInt("cache.raw.max.block.height", 0);
-
-  if (isUseDisk && maxCacheHeight >= height) {
-    // 从磁盘获取raw block
-    _getRawBlockFromDisk(height, rawHex, chainId, blockId);
+  // 从DB获取raw block
+  MySQLResult res;
+  string sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
+                               " WHERE `block_height` = %d AND `chain_id`=0 ",
+                               height);
+  char **row = nullptr;
+  db.query(sql, res);
+  if (res.numRows() == 0) {
+    THROW_EXCEPTION_DBEX("can't find block by height from DB: %d", height);
   }
-  else
-  {
-    // 从DB获取raw block
-    MySQLResult res;
-    string sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
-                                 " WHERE `block_height` = %d AND `chain_id`=0 ",
-                                 height);
-    char **row = nullptr;
-    db.query(sql, res);
-    if (res.numRows() == 0) {
-      THROW_EXCEPTION_DBEX("can't find block by height from DB: %d", height);
-    }
 
-    row = res.nextRow();
-    if (rawHex != nullptr) {
-      rawHex->assign(row[0]);
-      assert(rawHex->length() % 2 == 0);
-    }
-    if (chainId != nullptr) {
-      *chainId = atoi(row[1]);
-    }
-    if (blockId != nullptr) {
-      *blockId  = atoi64(row[2]);
-    }
+  row = res.nextRow();
+  if (rawHex != nullptr) {
+    rawHex->assign(row[0]);
+    assert(rawHex->length() % 2 == 0);
+  }
+  if (chainId != nullptr) {
+    *chainId = atoi(row[1]);
+  }
+  if (blockId != nullptr) {
+    *blockId  = atoi64(row[2]);
   }
 }
 
@@ -235,12 +166,6 @@ void Parser::run() {
       sleepMs(1000);
       continue;
     }
-
-//    if (txlog.logId_ >= 4571100LL) {
-//      // debug
-//      LOG_DEBUG("debug to stop, logId_: %lld", txlog.logId_);
-//      exit(EXIT_SUCCESS);
-//    }
 
     checkTableAddressTxs(txlog.blockTimestamp_);
 
@@ -1260,70 +1185,9 @@ void _getRawTxFromDB(MySQLConnection &db, class TxLog *txLog) {
   txLog->txId_  = atoi64(row[1]);
 }
 
-// 从磁盘读取 raw_tx 批量文件
-void _loadRawTxsFromDisk(map<uint256, std::pair<string, int64_t> > &txCache, const int32_t height) {
-  string dir = Config::GConfig.get("cache.rawdata.dir", "");
-  // 尾部添加 '/'
-  if (dir.length() == 0) {
-    dir = "./";
-  }
-  else if (dir[dir.length()-1] != '/') {
-    dir += "/";
-  }
-
-  // 遍历循环64个文件
-  const int32_t height2 = (height / 10000) * 10000;
-  string path = Strings::Format("%d_%d", height2, height2 + 9999);
-  for (int i = 0; i < 64; i++) {
-    const string fname = Strings::Format("%s%s/raw_txs_%04d",
-                                         dir.c_str(), path.c_str(), i);
-    LOG_INFO("load raw tx file: %s", fname.c_str());
-    std::ifstream input(fname);
-    std::string line;
-    while (std::getline(input, line)) {
-      auto arr = split(line, ',');
-      // line: raw_id,hash,hex,create_time
-      const uint256 hash(arr[1]);
-      const int64_t txId = atoi64(arr[0].c_str());
-      txCache[hash] = std::make_pair(arr[2], txId);
-    }
-  }
-}
-
-void _getRawTxFromDisk(class TxLog *txLog) {
-  // 从磁盘直接读取文件，缓存起来，减少数据库交互
-  static map<uint256, std::pair<string, int64_t> > txCache;
-  static int32_t heightBegin = -1;
-
-  if (heightBegin != (txLog->blkHeight_ / 10000)) {
-    // 载入数据
-    LOG_INFO("try load raw tx data from disk...");
-    txCache.clear();
-    heightBegin = txLog->blkHeight_ / 10000;
-    _loadRawTxsFromDisk(txCache, txLog->blkHeight_);
-  }
-
-  auto it = txCache.find(txLog->txHash_);
-  if (it == txCache.end()) {
-    THROW_EXCEPTION_DBEX("can't find rawtx from disk cache, txLogId: %lld",
-                         txLog->logId_);
-  }
-  txLog->txHex_ = it->second.first;
-  txLog->txId_  = it->second.second;
-}
-
-
 // 获取tx Hash/ID
 void _getTxHexId(MySQLConnection &db, class TxLog *txLog) {
-  // 是否使用磁盘raw 缓存
-  const bool isUseDisk = Config::GConfig.getBool("cache.raw", false);
-  const int32_t maxCacheHeight = Config::GConfig.getInt("cache.raw.max.block.height", 0);
-
-  if (isUseDisk && maxCacheHeight >= txLog->blkHeight_) {
-    _getRawTxFromDisk(txLog);
-  } else {
-    _getRawTxFromDB(db, txLog);
-  }
+  _getRawTxFromDB(db, txLog);
 
   // parse hex string from parameter
   vector<unsigned char> txData(ParseHex(txLog->txHex_));

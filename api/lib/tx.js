@@ -105,7 +105,7 @@ class Tx {
             .then((rows) => {
                 this.outputs = rows.map(r => {
                     let ret = {};
-                    ret.spent = null;
+                    ret.spent = r.spent_tx_id != 0;
                     ret.tx_index = r.tx_id;
                     ret.type = null;
                     ret.addr = r.address.split('|');

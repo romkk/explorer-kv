@@ -1,12 +1,19 @@
 #!/bin/bash
 
+set -e
+
+cd "$(dirname "$0")"
+
+if [[ ! -f '.env' ]]; then
+    echo '.env not found' >&2
+    exit 1
+fi
+
 db=`grep -Po '(?<=DATABASE_NAME\=).+$' .env`
 user=`grep -Po '(?<=DATABASE_USER\=).+$' .env`
 pass=`grep -Po '(?<=DATABASE_PASS\=).+$' .env`
 port=`grep -Po '(?<=DATABASE_PORT\=).+$' .env`
 host=`grep -Po '(?<=DATABASE_HOST\=).+$' .env`
-
-cd "$(dirname "$0")"
 
 if [[ $# != 1 ]]; then
 	printf '%s dir' $0
@@ -30,20 +37,6 @@ fields terminated by ','
 "
 
 echo "$raw_blocks" | $conn
-
-
-##### txlogs
-tx_logs="load data local infile '%s'
-into table %s
-fields terminated by ','
-(handle_status, handle_type, block_height, block_timestamp, tx_hash, created_at, updated_at)
-"
-
-for f in `find . -name 'txlogs_*'`; do
-	f=${f#./}
-	printf "create table if not exists %s like 0_tpl_txlogs" "$f" | $conn
-	printf "$tx_logs" "$f" "$f" | $conn
-done
 
 ##### raw_txs
 raw_txs="load data local infile '%s'

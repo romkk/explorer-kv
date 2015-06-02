@@ -27,7 +27,7 @@
 #include "bitcoin/base58.h"
 #include "bitcoin/util.h"
 
-std::unordered_map<int64_t, LastestAddressInfo *> gAddrTxCache;
+std::unordered_map<int64_t/*address ID*/, LastestAddressInfo *> gAddrTxCache;
 
 RawBlock::RawBlock(const int64_t blockId, const int32_t height, const int32_t chainId,
                    const uint256 hash, const string &hex) {
@@ -1131,6 +1131,10 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
                           end2TxYmd == 0 ? "`begin_tx_id`=0,`begin_tx_ymd`=0," : "",
                           date("%F %T").c_str(), addrID);
     db.updateOrThrowEx(sql, 1);
+
+    // 清理地址的缓存
+    gAddrTxCache.erase(addrID);
+
   } /* /for */
 }
 

@@ -42,7 +42,7 @@ TODO
 |block_height|块高度|Path|√|Int|
 |fulltx|是否显示详细的交易信息，默认为`false`|Query|✗|Boolean|
 |offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
-|limit|返回结果集个数，默认为`50`|Query|✗|Int|
+|limit|返回结果集个数，要求大于`1`小于`50`，默认为`50`|Query|✗|Int|
 
 #### Response
 
@@ -139,7 +139,7 @@ TODO
 |bitcoin_address|比特币地址|Path|√|String|
 |offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
 |timestamp|返回结果集开始的时间戳，默认为查询时间|Query|✗|Int|
-|limit|返回结果集个数，默认为`50`|Query|✗|Int|
+|limit|返回结果集个数，要求大于`1`小于`50`，默认为`50`|Query|✗|Int|
 |sort|排序方式，可选为`desc`和`asc`，默认为`desc`|Query|✗|String|
 
 **注意：`offset`与`timestamp`同时使用时，将忽略`timestamp`。**

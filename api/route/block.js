@@ -11,7 +11,7 @@ module.exports = (server) => {
         req.checkQuery('offset', 'should be a valid number').optional().isNumeric();
         req.sanitize('offset').toInt();
 
-        req.checkQuery('limit', 'should be between 10 and 50').optional().isNumeric().isInt({ max: 50, min: 1});
+        req.checkQuery('limit', 'should be between 10 and 50').optional().isNumeric().isInt({ max: 50, min: 10 });
         req.sanitize('limit').toInt();
 
         Block.make(req.params.blockIdentifier)

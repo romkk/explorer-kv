@@ -743,6 +743,10 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
       auto ptr = new LastestAddressInfo(beginTxYmd, prevTxYmd, beginTxID,
                                         prevTxId, atoi64(row[2]), atoi64(row[3]),
                                         txCount);
+      if (gAddrTxCache.size() > 100 * 10000) {
+        // clear, 数量限制，防止长时间运行后占用过多内存
+        std::unordered_map<int64_t, LastestAddressInfo *>().swap(gAddrTxCache);
+      }
       gAddrTxCache[addrID] = ptr;
     }
     if ((it2 = gAddrTxCache.find(addrID)) == gAddrTxCache.end()) {

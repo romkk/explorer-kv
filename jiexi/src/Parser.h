@@ -19,6 +19,7 @@
 #define Explorer_Parser_h
 
 #include "Common.h"
+#include "Util.h"
 #include "MySQLConnection.h"
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
@@ -28,6 +29,30 @@
 
 #define TXLOG_TYPE_ACCEPT   1
 #define TXLOG_TYPE_ROLLBACK 2
+
+inline int32_t tableIdx_Addr(const int64_t addrId) {
+  return (int32_t)(addrId / BILLION % 64);
+}
+inline int32_t tableIdx_AddrUnspentOutput(const int64_t addrId) {
+  return (int32_t)(addrId % 10);
+}
+inline int32_t tableIdx_TxOutput(const int64_t txId) {
+  return (int32_t)(txId % 100);
+}
+inline int32_t tableIdx_TxInput(const int64_t txId) {
+  return (int32_t)(txId % 100);
+}
+inline int32_t tableIdx_Tx(const int64_t txId) {
+  return (int32_t)(txId / BILLION % 64);
+}
+inline int32_t tableIdx_AddrTxs(const int32_t ymd) {
+  // 按月分表： 20150515 -> 201505
+  return ymd / 100;
+}
+inline int32_t tableIdx_BlockTxs(const int64_t blockId) {
+  return (int32_t)(blockId % 100);
+}
+
 
 class RawBlock {
 public:

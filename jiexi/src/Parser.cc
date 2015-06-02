@@ -217,7 +217,7 @@ void Parser::checkTableAddressTxs(const uint32_t timestamp) {
   }
 
   // show table like to check if exist
-  const string tName = Strings::Format("address_txs_%d", ymd);
+  const string tName = Strings::Format("address_txs_%d", tableIdx_AddrTxs(ymd));
   sql = Strings::Format("SHOW TABLES LIKE '%s'", tName.c_str());
   dbExplorer_.query(sql, res);
   if (res.numRows() > 0) {
@@ -669,7 +669,7 @@ void _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
     // http://tbtc.blockr.io/tx/info/c333a53f0174166236e341af9cad795d21578fb87ad7a1b6d2cf8aa9c722083c
     itemValues.push_back(Strings::Format("%lld,%d,'%s','%s',"
                                          "%lld,'%s','%s','%s',"
-                                         "%d,0,-1,'%s','%s'",
+                                         "0,-1,'%s','%s'",
                                          // `tx_id`,`position`,`address`,`address_ids`
                                          txId, n, addressStr.c_str(), addressIdsStr.c_str(),
                                          // `value`,`output_script_asm`,`output_script_hex`,`output_script_type`
@@ -754,7 +754,7 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
       // 更新前向记录
       sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d, `next_tx_id`=%lld "
                             " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                            prevTxYmd, ymd, txLog->txId_, addrID, prevTxId);
+                            tableIdx_AddrTxs(prevTxYmd), ymd, txLog->txId_, addrID, prevTxId);
       db.updateOrThrowEx(sql, 1);
     }
     assert(finalBalance + balanceDiff >= 0);
@@ -765,7 +765,7 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
                           " `prev_ymd`, `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`)"
                           " VALUES (%lld, %lld, %d, %lld, %lld, %lld,"
                           "         %d, %lld, 0, 0, '%s') ",
-                          ymd, addrID, txLog->txId_, txLog->blkHeight_,
+                          tableIdx_AddrTxs(ymd), addrID, txLog->txId_, txLog->blkHeight_,
                           totalRecv + (balanceDiff > 0 ? balanceDiff : 0),
                           balanceDiff, finalBalance + balanceDiff,
                           txCount + 1,
@@ -1073,7 +1073,7 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
     const int64_t balanceDiff = it.second;
 
     // 获取地址信息
-    string addrTableName = Strings::Format("addresses_%04d", addrID / BILLION);
+    string addrTableName = Strings::Format("addresses_%04d", tableIdx_Addr(addrID));
     sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id` FROM `%s` WHERE `id`=%lld ",
                           addrTableName.c_str(), addrID);
     db.query(sql, res);
@@ -1096,7 +1096,7 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
     int32_t end2TxYmd = 0;
     sql = Strings::Format("SELECT `total_received`,`balance_final`,`prev_ymd`, `prev_tx_id` "
                           " FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                          endTxYmd, addrID, endTxId);
+                          tableIdx_AddrTxs(endTxYmd), addrID, endTxId);
     db.query(sql, res);
     if (res.numRows() != 1) {
       row = res.nextRow();
@@ -1108,13 +1108,13 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
       // 设置倒数第二条记录 next 记录为空
       sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=0, `next_tx_id`=0 "
                             " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                            end2TxYmd, addrID, end2TxId);
+                            tableIdx_AddrTxs(end2TxYmd), addrID, end2TxId);
       db.updateOrThrowEx(sql, 1);
     }
 
     // 删除最后一条记录
     sql = Strings::Format("DELETE FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                          ymd, addrID, txLog->txId_);
+                          tableIdx_AddrTxs(ymd), addrID, txLog->txId_);
     db.updateOrThrowEx(sql, 1);
 
     // 更新地址信息

@@ -83,7 +83,7 @@ class Address {
 
                                 var sql = `select * from ${table}
                                     where address_id = ?
-                                    order by tx_height ${order}, id ${order}
+                                    order by idx ${order}
                                     limit ?, ?`;
 
                                 log(`单表 cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);

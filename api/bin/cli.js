@@ -1,7 +1,30 @@
 var restify = require('restify');
 var mysql = require('../lib/mysql');
 var sprintf = require('sprintf').sprintf;
-var log = require('debug')('api:server');
+var moment = require('moment');
+
+var debug = require('debug');
+debug.formatArgs = function () {
+    var args = arguments;
+    var useColors = this.useColors;
+    var name = this.namespace;
+
+    if (useColors) {
+        var c = this.color;
+
+        args[0] = '  \u001b[3' + c + ';1m' + name + ' '
+            + '\u001b[0m'
+            + args[0] + '\u001b[3' + c + 'm'
+            + ' +' + debug.humanize(this.diff) + '\u001b[0m';
+    } else {
+        args[0] = moment.utc().format('YYYYMMDD.HHmmss.SSS')
+            + ' ' + name + ' ' + args[0];
+    }
+    return args;
+};
+
+
+var log = debug('api:server');
 var bunyan = require('bunyan');
 var expressValidator = require('express-validator');
 var customValidators = require('../lib/custom_validators');

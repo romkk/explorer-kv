@@ -274,7 +274,7 @@ bool Parser::txsHash2ids(const std::set<uint256> &hashVec,
 }
 
 void Parser::updateLastTxlogId(const int64_t newId) {
-  string sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %lld,`updated_at`='%s' "
+  string sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = '%lld',`updated_at`='%s' "
                                " WHERE `key`='jiexi.last_txlog_offset'",
                                newId, date("%F %T").c_str());
   if (!dbExplorer_.execute(sql.c_str())) {
@@ -707,7 +707,7 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
   for (auto &it : addressBalance) {
     const int64_t addrID      = it.first;
     const int64_t balanceDiff = it.second;
-    const string addrTableName = Strings::Format("addresses_%04d", addrID / BILLION);
+    const string addrTableName = Strings::Format("addresses_%04d", tableIdx_Addr(addrID));
     std::unordered_map<int64_t, LastestAddressInfo *>::iterator it2;
 
     // 获取地址信息
@@ -729,7 +729,9 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
                             " FROM `%s` WHERE `id`=%lld ",
                             addrTableName.c_str(), addrID);
       db.query(sql, res);
-      assert(res.numRows() == 1);
+      if (res.numRows() != 1) {
+        THROW_EXCEPTION_DBEX("can't find address record, addrId: %lld", addrID);
+      }
       row = res.nextRow();
 
       prevTxYmd   = atoi(row[0]);
@@ -767,7 +769,7 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
     sql = Strings::Format("INSERT INTO `address_txs_%d` (`address_id`, `tx_id`, `tx_height`,"
                           " `total_received`, `balance_diff`, `balance_final`, `idx`, "
                           " `prev_ymd`, `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`)"
-                          " VALUES (%lld, %lld, %d, %lld, %lld, %lld,"
+                          " VALUES (%lld, %lld, %d, %lld, %lld, %lld, %lld,"
                           "         %d, %lld, 0, 0, '%s') ",
                           tableIdx_AddrTxs(ymd), addrID, txLog->txId_, txLog->blkHeight_,
                           totalRecv + (balanceDiff > 0 ? balanceDiff : 0),
@@ -1049,8 +1051,10 @@ void _rollbackTxOutputs(MySQLConnection &db, class TxLog *txLog,
 
       // 删除： address_unspent_outputs 记录
       sql = Strings::Format("DELETE FROM `address_unspent_outputs_%04d` "
-                            " WHERE `address_id`=%lld AND `position`=%d AND `position2`=%d ",
-                            addrId % 10, addrId, txId, n, i);
+                            " WHERE `address_id`=%lld AND `tx_id`=%lld "
+                            " AND `position`=%d AND `position2`=%d ",
+                            tableIdx_AddrUnspentOutput(addrId),
+                            addrId, txId, n, i);
       db.updateOrThrowEx(sql, 1);
     }
   }
@@ -1078,14 +1082,16 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
 
     // 获取地址信息
     string addrTableName = Strings::Format("addresses_%04d", tableIdx_Addr(addrID));
-    sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id` FROM `%s` WHERE `id`=%lld ",
+    sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id`,(`total_received`-`total_sent`) "
+                          " FROM `%s` WHERE `id`=%lld ",
                           addrTableName.c_str(), addrID);
     db.query(sql, res);
     assert(res.numRows() == 1);
     row = res.nextRow();
 
-    const int32_t endTxYmd = atoi(row[0]);
-    const int64_t endTxId  = atoi64(row[1]);
+    const int32_t endTxYmd   = atoi(row[0]);
+    const int64_t endTxId    = atoi64(row[1]);
+    const int64_t curBalance = atoi64(row[2]);
 
     // 当前要回滚的记录应该就是最后一条记录
     if (endTxYmd != ymd || endTxId != txLog->txId_) {
@@ -1095,17 +1101,16 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
                            addrID, endTxYmd, ymd, endTxId, txLog->txId_);
     }
 
-    // 获取最后一条记录的前向记录，倒数第二条记录，如果存在的话
-    int64_t totalRecv = 0, finalBalance = 0, end2TxId = 0;
+    // 获取最后一条记录，提取其前向记录，倒数第二条记录，如果存在的话
+    int64_t end2FinalBalance = 0, end2TxId = 0;
     int32_t end2TxYmd = 0;
-    sql = Strings::Format("SELECT `total_received`,`balance_final`,`prev_ymd`, `prev_tx_id` "
+    sql = Strings::Format("SELECT `balance_final`,`prev_ymd`, `prev_tx_id` "
                           " FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(endTxYmd), addrID, endTxId);
     db.query(sql, res);
-    if (res.numRows() != 1) {
+    if (res.numRows() == 1) {
       row = res.nextRow();
-      totalRecv    = atoi64(row[0]);
-      finalBalance = atoi64(row[1]);
+      end2FinalBalance = atoi64(row[1]);
       end2TxYmd = atoi(row[2]);
       end2TxId  = atoi64(row[3]);
 
@@ -1135,6 +1140,10 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
                           end2TxYmd == 0 ? "`begin_tx_id`=0,`begin_tx_ymd`=0," : "",
                           date("%F %T").c_str(), addrID);
     db.updateOrThrowEx(sql, 1);
+    if (end2FinalBalance != curBalance + balanceDiff * -1) {
+      THROW_EXCEPTION_DBEX("address's balance not match when rollback, "
+                           "addrID: %lld, txId: %lld", addrID, txLog->txId_);
+    }
 
     // 清理地址的缓存
     gAddrTxCache.erase(addrID);
@@ -1143,8 +1152,8 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
 }
 
 void _rollbackTx(MySQLConnection &db, class TxLog *txLog) {
-  string sql = Strings::Format("DELETE FROM `tx_%04d` WHERE `tx_id`=%lld ",
-                               txLog->txId_ / BILLION);
+  string sql = Strings::Format("DELETE FROM `txs_%04d` WHERE `tx_id`=%lld ",
+                               tableIdx_Tx(txLog->txId_), txLog->txId_);
   db.updateOrThrowEx(sql, 1);
 }
 

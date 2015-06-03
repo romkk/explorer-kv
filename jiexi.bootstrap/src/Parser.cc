@@ -482,6 +482,18 @@ FileWriter::FileWriter() {
 }
 
 FileWriter::~FileWriter() {
+  while (1) {
+    lock_.lock();
+    if (buffer_.size() > 0) {
+      lock_.unlock();
+      LOG_WARN("FileWriter::threadConsume is not finished yet, waiting...");
+      sleep(3);
+      continue;
+    }
+    lock_.unlock();
+    break;
+  }
+
   stop();
   while (runningConsume_ == true) {
     sleepMs(10);
@@ -496,8 +508,9 @@ void FileWriter::stop() {
 }
 
 void FileWriter::append(const string &s, FILE *f) {
+  // 使用循环提交，务必写入到 buffer_ 里
   // buffer大小有限制，防止占用过大内存
-  while (running_) {
+  while (1) {
     lock_.lock();
     if (buffer_.size() < 100 * 10000) {
       buffer_.push_back(make_pair(f, s));
@@ -512,7 +525,7 @@ void FileWriter::append(const string &s, FILE *f) {
 void FileWriter::threadConsume() {
   LogScope ls("FileWriter::threadConsume");
   runningConsume_ = true;
-  while (running_) {
+  while (1) {
     vector<std::pair<FILE *, string> > cache;
     {
       ScopeLock sl(lock_);
@@ -523,13 +536,18 @@ void FileWriter::threadConsume() {
     }
 
     if (cache.size() == 0) {
+      if (running_ == false) {
+        // FileWriter::append()由主线程调用，会阻塞直至写入 buffer_
+        // 如果buffer_为空，则表明消费掉全部数据了，且running_为FALSE的话，则退出
+        break;
+      }
       sleepMs(50);
       continue;
     }
     for (auto &it : cache) {
       fprintf(it.first, "%s\n", it.second.c_str());
     }
-  }
+  } /* /while */
   runningConsume_ = false;
 }
 

@@ -56,7 +56,7 @@ class BlockQueue {
 
     public function digest(Block $remote, &$newBlock, &$orphanBlocks, $backoff = 0) {
         $bitcoinClient = Bitcoin::make();
-        $rollbackOffset = $backoff;
+        $rollbackOffset = 0;
 
         if ($this->length() === 0) {        //第一次初始化，无块
             $this->push($newBlock = $remote);
@@ -65,17 +65,17 @@ class BlockQueue {
         }
 
         while ($rollbackOffset < $this->length()) {
-            $localPointer = $this->getBlock(-$rollbackOffset - 1);
+            $localPointer = $this->getBlock(-$rollbackOffset - $backoff - 1);
             $currentHeight = $remote->getHeight() -  $rollbackOffset;
             if ($rollbackOffset === 0) {
                 $newBlock = $remote;
-            }  else {
+            } else {
                 $detail = $bitcoinClient->getBlockByHeight($currentHeight);
                 $newBlock = Block::createFromBlockDetail($detail);
             }
 
             if ($localPointer->getHash() === $newBlock->getPrevHash()) {      //命中 block，计算出 orphan block
-                $orphanBlocks = $this->queue->splice($this->length() - $rollbackOffset, $rollbackOffset);
+                $orphanBlocks = $this->queue->splice($this->length() - $rollbackOffset - $backoff, $rollbackOffset + $backoff);
                 $this->push($newBlock);
                 return true;
             } else {        // miss

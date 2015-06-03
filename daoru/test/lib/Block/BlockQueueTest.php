@@ -77,6 +77,20 @@ class BlockQueueTest extends ExplorerDatabaseTestCase {
         $this->assertFalse($queue->digest($remote, $newBlock, $orphanBlocks));
     }
 
+    public function testDigestEqualHeight(){
+        $queue = new BlockQueue(new Collection([
+            new Block('fakehashh', 'fakehhhh', 300000, 1412899877),
+            new Block('fakehash', 'fakehashh', 300001, 1412900707),
+            new Block('fakehash2', 'fakehash', 300002, 1412900867),
+        ]));
+
+        $remote = new Block('fakehash3', 'fakehash', 300002, 1412900867);
+        $this->assertTrue($queue->digest($remote, $newBlock, $orphanBlocks, 1));
+        $this->assertEquals('fakehash3', $newBlock->getHash());
+        $this->assertEquals(1, count($orphanBlocks));
+    }
+
+
     public function testDiff() {
         $queue = new BlockQueue(new Collection([
             new Block('hash1', 'prevhash1', 0, 1),

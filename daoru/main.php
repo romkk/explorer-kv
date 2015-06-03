@@ -58,6 +58,9 @@ while (true) {
         Log::info(sprintf('当前高度 %d，目标高度 %d', $latestBlock->getHeight(), $detail['height']));
 
         $block = Block::createFromBlockDetail($detail);
+
+        Log::debug('开始执行 digest');
+
         $queue->digest($block, $newBlock, $orphanBlocks, intval($needBackof));
         Log::info(sprintf('digest 完成，孤块共计 %d 个', count($orphanBlocks)), [
             'newBlock' => $newBlock->toArray(),

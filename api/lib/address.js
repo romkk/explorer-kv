@@ -36,70 +36,77 @@ class Address {
         };
     }
 
-    load(order = 'desc', offset = 0, limit = 50) {
+    load(timestamp = null, order = 'desc', offset = 0, limit = 50) {
         order = order === 'desc' ? 'desc' : 'asc';
+        if (timestamp == null) {
+            timestamp = order === 'desc' ? moment.utc().unix() : 0;
+        }
+
         var addrMapTableProp = `${order === 'desc' ? 'prev' : 'next'}_ymd`;
 
-        return new Promise((resolve, reject) => {
-            var ret = [], table = this.getStartTable(order);
+        var ret = [];
 
-            if (this.attrs.tx_count <= offset) {
-                return resolve(ret);
-            }
+        return this.getStartTable(timestamp, order)
+            .then((table) => {
+                return new Promise(resolve => {
+                    if (this.attrs.tx_count <= offset) {
+                        return resolve(ret);
+                    }
 
-            var loop = () => {
+                    var loop = () => {
 
-                if (table == null) {    //没有更多了
-                    return resolve(ret);
-                }
+                        if (table == null) {    //没有更多了
+                            return resolve(ret);
+                        }
 
-                var sqlRowCnt = `select count(id) as cnt from ${table}
+                        var sqlRowCnt = `select count(id) as cnt from ${table}
                                  where address_id = ?`;
-                mysql.pluck(sqlRowCnt, 'cnt', [this.attrs.id])
-                    .then((cnt) => {
-                        if (cnt <= offset) {        //单表无法满足 offset，直接下一张表
-                            log(`单表无法满足offset, cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
-                            offset -= cnt;
+                        mysql.pluck(sqlRowCnt, 'cnt', [this.attrs.id])
+                            .then((cnt) => {
+                                if (cnt <= offset) {        //单表无法满足 offset，直接下一张表
+                                    log(`单表无法满足offset, cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
+                                    offset -= cnt;
 
-                            let tmpOrder = order === 'desc' ? 'asc' : 'desc';
+                                    let tmpOrder = order === 'desc' ? 'asc' : 'desc';
 
-                            var sqlNextTable = `select ${addrMapTableProp} as next from ${table}
+                                    var sqlNextTable = `select ${addrMapTableProp} as next from ${table}
                                     where address_id = ?
                                     order by tx_height ${tmpOrder}, id ${tmpOrder}
                                     limit 1`;
 
-                            return mysql.pluck(sqlNextTable, 'next', [this.attrs.id])
-                                .then(next => {
-                                    table = this.getAddressToTxTable(next);
-                                    return loop();
-                                });
-                        }
+                                    return mysql.pluck(sqlNextTable, 'next', [this.attrs.id])
+                                        .then(next => {
+                                            table = this.getAddressToTxTable(next);
+                                            return loop();
+                                        });
+                                }
 
-                        var sql = `select * from ${table}
+                                var sql = `select * from ${table}
                                     where address_id = ?
                                     order by tx_height ${order}, id ${order}
                                     limit ?, ?`;
 
-                        log(`单表 cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
-                        return mysql.query(sql, [this.attrs.id, offset, limit])
-                            .then(rows => {
+                                log(`单表 cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
+                                return mysql.query(sql, [this.attrs.id, offset, limit])
+                                    .then(rows => {
 
-                                ret.push.apply(ret, rows);
+                                        ret.push.apply(ret, rows);
 
-                                if (cnt >= offset + limit) {    //单表即满足要求
-                                    table = null;
-                                } else {    //单表不满足，需要继续下一张表
-                                    limit -= rows.length;
-                                    offset = 0;
-                                    table = this.getAddressToTxTable(rows[rows.length - 1][addrMapTableProp]);
-                                }
-                                return loop();
+                                        if (cnt >= offset + limit) {    //单表即满足要求
+                                            table = null;
+                                        } else {    //单表不满足，需要继续下一张表
+                                            limit -= rows.length;
+                                            offset = 0;
+                                            table = this.getAddressToTxTable(rows[rows.length - 1][addrMapTableProp]);
+                                        }
+                                        return loop();
+                                    });
                             });
-                    });
-            };
+                    };
 
-            loop();
-        })
+                    loop();
+                });
+            })
             .then(rows => {
                 return Promise.all(rows.map(r => {
                     return Tx.make(r.tx_id).then(tx => tx.load());
@@ -110,8 +117,47 @@ class Address {
             });
     }
 
-    getStartTable(order) {      //修改为异步获取，支持 offset 起点优化
-        return this.getAddressToTxTable(this.attrs[`${order === 'desc' ? 'end' : 'begin'}_tx_ymd`]);
+    getStartTable(timestamp, order) {
+        var date = +moment.utc(timestamp * 1000).format('YYYYMMDD');
+        var end = this.attrs.end_tx_ymd;
+        var start = this.attrs.begin_tx_ymd;
+        var table = this.getAddressToTxTable(order === 'desc' ? Math.min(end, date) : Math.max(start, date));
+
+        var sql = `select height from 0_blocks where \`timestamp\` ${order === 'desc' ? '<=' : '>='} ?
+                   order by block_id ${order} limit 1`;
+
+        return mysql.pluck(sql, 'height', [timestamp])
+            .then(height => {
+                return new Promise((resolve, reject) => {
+                    var loop = () => {
+                        var sql = `select id
+                               from ${table}
+                               where address_id = ? and tx_height ${order === 'desc' ? '<=' : '>='} ?
+                               order by tx_height ${order} limit 1`;
+                        mysql.pluck(sql, 'id', [this.attrs.id, height])
+                            .then(id => {
+                                if (id === null) {
+                                    let postfix = +table.slice(-6);
+                                    let newPostfix = moment.utc(postfix, 'YYYYMM');
+                                    newPostfix = (order === 'desc' ? newPostfix.subtract(1, 'months') : newPostfix.add(1, 'months')).format('YYYYMM');
+                                    table = table.slice(0, -6) + newPostfix;
+                                    return loop();
+                                }
+
+                                return resolve(table);
+                            }, err => {
+                                if (err.code === 'ER_NO_SUCH_TABLE') {
+                                    return resolve(null);
+                                } else {
+                                    return reject(err);
+                                }
+                            })
+
+                    };
+
+                    loop();
+                });
+            });
     }
 
     static make(addr) {
@@ -126,9 +172,12 @@ class Address {
     }
 
     getAddressToTxTable(date) {
+        date = +date;
+
         if (date === 0) {
             return null;
         }
+
         return sprintf('address_txs_%d', Math.floor(date / 100));
     }
 

@@ -19,11 +19,29 @@ API 服务根据访问者 IP 限制访问频率。
 
 TODO
 
+## 响应格式
+
+API 请求的响应结果均为`JSON`格式、`UTF8`编码，并开启了 Gzip 压缩。一个典型的响应如下：
+
+```
+HTTP/1.1 200 OK
+Content-Encoding: gzip
+Content-Type: application/json
+Date: Wed, 03 Jun 2015 07:04:20 GMT
+Connection: keep-alive;
+Transfer-Encoding: chunked
+```
+
 ## 异常
 
 TODO
 
 ## API List
+
+常见参数说明：
+
+1. 支持分页的接口使用`offset`和`limit`进行分页。如查询第 3 页，每页 20 条记录，则参数应为`?offset=40&limit=20`；
+1. 时间单位均为 UTC 时间；
 
 ### Single Block
 
@@ -142,7 +160,27 @@ TODO
 |limit|返回结果集个数，要求大于`1`小于`50`，默认为`50`|Query|✗|Int|
 |sort|排序方式，可选为`desc`和`asc`，默认为`desc`|Query|✗|String|
 
-**注意：`offset`与`timestamp`同时使用时，将忽略`timestamp`。**
+该 API 可用于查询单个地址某个时间范围内的交易列表。`timestamp`字段指定了查询时间点。
+
+如：
+
+1. 查询当前最新 10 条交易记录：
+
+        GET /address/2N66DDrmjDCMM3yMSYtAQyAqRtasSkFhbmX?limit=10
+
+1. 查询截至 6 月 1 日的 20 条交易记录：
+
+        GET /address/2N66DDrmjDCMM3yMSYtAQyAqRtasSkFhbmX?timestamp=1433116800&limit=20
+
+1. 查询 5 月 1 日至 6 月 4 日的交易记录：
+
+        GET /address/2N66DDrmjDCMM3yMSYtAQyAqRtasSkFhbmX?timestamp=1430438400&sort=asc
+
+   该请求将从 5 月 1 日 0 点起返回交易记录，默认返回 50 条；这里由客户端程序负责持续拼接数据，即，如果上述请求返回的最后一条记录是 5 月 3 日 3 点 0 分，则下一条请求应当是：
+
+        GET /address/2N66DDrmjDCMM3yMSYtAQyAqRtasSkFhbmX?timestamp=1430622000&sort=asc
+
+   直到接收到的数据达到 6 月 4 日 0 时停止。
 
 #### Response
 

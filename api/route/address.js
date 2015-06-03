@@ -5,6 +5,7 @@ var bitcore = require('bitcore');
 var helper = require('../lib/helper');
 var restify = require('restify');
 var _ = require('lodash');
+var moment = require('moment');
 var validators = require('../lib/custom_validators');
 
 module.exports = (server) => {
@@ -13,6 +14,9 @@ module.exports = (server) => {
 
         req.checkQuery('offset', 'should be a valid number').optional().isNumeric();
         req.sanitize('offset').toInt();
+
+        req.checkQuery('timestamp', 'should be a valid timestamp').optional().isNumeric({ min: 0, max: moment.utc().unix() + 3600 });    // +3600 以消除误差
+        req.sanitize('timestamp').toInt();
 
         req.checkQuery('limit', 'should be between 1 and 50').optional().isNumeric().isInt({ max: 50, min: 1});
         req.sanitize('limit').toInt();
@@ -33,6 +37,7 @@ module.exports = (server) => {
                     return new restify.ResourceNotFoundError('Address not found');
                 }
                 return address.load(
+                    req.params.timestamp,
                     req.params.sort,
                     req.params.offset,
                     req.params.limit

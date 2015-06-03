@@ -76,7 +76,7 @@ while (true) {
         $newBlock->insert();
 
     } else {
-        $tempTxList = $bitcoinClient->getrawmempool();
+        $tempTxList = $bitcoinClient->getblocktemplate()['transactions'];
         $newTxs = $pool->update(Collection::make($tempTxList));
         if (count($newTxs)) {
             Log::info(sprintf('检测到临时块新交易 %d 个', count($newTxs)));

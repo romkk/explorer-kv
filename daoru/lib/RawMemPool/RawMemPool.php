@@ -21,21 +21,22 @@ class RawMemPool {
         return $this->queue->count();
     }
 
-    public function update(Collection $txHashList) {
-        $diff = $txHashList->diff($this->queue->map(function(Tx $tx) {
+    public function update(Collection $txDataList) {
+        $hashList = $this->queue->map(function(Tx $tx) {
             return $tx->getHash();
-        }));
+        })->toArray();
 
-        $newTxs = $diff->map(function($thash) {
-            $detail = $this->client->getrawtransaction($thash, 1);
-            $tx = new Tx($this->fakeBlock, $thash);
-            $tx->setHex($detail['hex']);
+        $diff = $txDataList->filter(function($txData) use (&$hashList, &$diff) {
+            return !in_array($txData['hash'], $hashList);
+        })->map(function($txData) {
+            $tx = new Tx($this->fakeBlock, $txData['hash']);
+            $tx->setHex($txData['data']);
             return $tx;
         });
 
-        $this->queue = $this->queue->merge($newTxs);
+        $this->queue = $this->queue->merge($diff);
 
-        return $newTxs;
+        return $diff;
     }
 
     public function rollback() {

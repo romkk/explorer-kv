@@ -34,9 +34,15 @@ class RawMemPoolTest extends ExplorerDatabaseTestCase {
         $pool = new RawMemPool();
         $this->assertEquals(0, $pool->length());
 
-        $txList = Collection::make([        //block height = 3000002
-            '2e997db6507ca12ec7b2182d8af47e1424d3342f1f5c3532d3289d7c82b6adb0',     // 1
-            '22de62bd5f54f9ddf41b0e50e87f2638186548111ac3d4c3d5c3049373bfa7c3'      // 3
+        $txList = Collection::make([
+            [
+                'data' => 'data',
+                'hash' => '2e997db6507ca12ec7b2182d8af47e1424d3342f1f5c3532d3289d7c82b6adb0',
+            ],
+            [
+                'data' => 'data',
+                'hash' => '22de62bd5f54f9ddf41b0e50e87f2638186548111ac3d4c3d5c3049373bfa7c3'
+            ],
         ]);
         $newTxs = $pool->update($txList);
 
@@ -45,11 +51,26 @@ class RawMemPoolTest extends ExplorerDatabaseTestCase {
         $this->assertEquals('22de62bd5f54f9ddf41b0e50e87f2638186548111ac3d4c3d5c3049373bfa7c3', $newTxs[1]->getHash());
 
         $txList = Collection::make([
-            '2e997db6507ca12ec7b2182d8af47e1424d3342f1f5c3532d3289d7c82b6adb0',     //1
-            '929090a8c4ceb0822ab07f68d1e333a14cd9db8a354d31232cb939a5e391d89e',     //2
-            '22de62bd5f54f9ddf41b0e50e87f2638186548111ac3d4c3d5c3049373bfa7c3',        //3
-            '2b936954f8b25cb7da771af20acc8b609a3828f56ca6c6b2c776991464224e1b',        //4
-            '9779f87030e25eaa7516f8ee335de6764db54120f2c3797f90e64d21808ce37b',     //5
+            [
+                'hash' => '2e997db6507ca12ec7b2182d8af47e1424d3342f1f5c3532d3289d7c82b6adb0',     //1
+                'data' => 'data'
+            ],
+            [
+                'hash' => '929090a8c4ceb0822ab07f68d1e333a14cd9db8a354d31232cb939a5e391d89e',     //2
+                'data' => 'data'
+            ],
+            [
+                'hash' => '22de62bd5f54f9ddf41b0e50e87f2638186548111ac3d4c3d5c3049373bfa7c3',        //3
+                'data' => 'data'
+            ],
+            [
+                'hash' => '2b936954f8b25cb7da771af20acc8b609a3828f56ca6c6b2c776991464224e1b',        //4
+                'data' => 'data'
+            ],
+            [
+                'hash' => '9779f87030e25eaa7516f8ee335de6764db54120f2c3797f90e64d21808ce37b',     //5
+                'data' => 'data'
+            ],
         ]);
         $newTxs = $pool->update($txList);
 
@@ -59,12 +80,30 @@ class RawMemPoolTest extends ExplorerDatabaseTestCase {
         $this->assertEquals('9779f87030e25eaa7516f8ee335de6764db54120f2c3797f90e64d21808ce37b', $newTxs[2]->getHash());
 
         $txList = Collection::make([
-            '2e997db6507ca12ec7b2182d8af47e1424d3342f1f5c3532d3289d7c82b6adb0',     //1
-            '929090a8c4ceb0822ab07f68d1e333a14cd9db8a354d31232cb939a5e391d89e',     //2
-            '22de62bd5f54f9ddf41b0e50e87f2638186548111ac3d4c3d5c3049373bfa7c3',        //3
-            '2b936954f8b25cb7da771af20acc8b609a3828f56ca6c6b2c776991464224e1b',        //4
-            '9779f87030e25eaa7516f8ee335de6764db54120f2c3797f90e64d21808ce37b',     //5
-            'a7e8f29d37f2c46c2f81ddb880950d8b52c1b9f56e64956da1ea036109cc36d0',     //6
+            [
+                'hash' => '2e997db6507ca12ec7b2182d8af47e1424d3342f1f5c3532d3289d7c82b6adb0',     //1
+                'data' => 'data'
+            ],
+            [
+                'hash' => '929090a8c4ceb0822ab07f68d1e333a14cd9db8a354d31232cb939a5e391d89e',     //2
+                'data' => 'data'
+            ],
+            [
+                'hash' => '22de62bd5f54f9ddf41b0e50e87f2638186548111ac3d4c3d5c3049373bfa7c3',        //3
+                'data' => 'data'
+            ],
+            [
+                'hash' => '2b936954f8b25cb7da771af20acc8b609a3828f56ca6c6b2c776991464224e1b',        //4
+                'data' => 'data'
+            ],
+            [
+                'hash' => '9779f87030e25eaa7516f8ee335de6764db54120f2c3797f90e64d21808ce37b',     //5
+                'data' => 'data'
+            ],
+            [
+                'hash' => 'a7e8f29d37f2c46c2f81ddb880950d8b52c1b9f56e64956da1ea036109cc36d0',     //6
+                'data' => 'data'
+            ]
         ]);
         $newTxs = $pool->update($txList);
 
@@ -75,7 +114,14 @@ class RawMemPoolTest extends ExplorerDatabaseTestCase {
     public function testInsert() {
         $pool = new RawMemPool();
         $newTxs = $pool->update(Collection::make([
-            '2e997db6507ca12ec7b2182d8af47e1424d3342f1f5c3532d3289d7c82b6adb0', '929090a8c4ceb0822ab07f68d1e333a14cd9db8a354d31232cb939a5e391d89e'
+            [
+                'hash' => '2e997db6507ca12ec7b2182d8af47e1424d3342f1f5c3532d3289d7c82b6adb0',     //1
+                'data' => 'data'
+            ],
+            [
+                'hash' => '929090a8c4ceb0822ab07f68d1e333a14cd9db8a354d31232cb939a5e391d89e',     //2
+                'data' => 'data'
+            ],
         ]));
 
         $pool->insert($newTxs);
@@ -94,7 +140,14 @@ class RawMemPoolTest extends ExplorerDatabaseTestCase {
 
         $pool = new RawMemPool();
         $pool->update(Collection::make([
-            '2e997db6507ca12ec7b2182d8af47e1424d3342f1f5c3532d3289d7c82b6adb0', '929090a8c4ceb0822ab07f68d1e333a14cd9db8a354d31232cb939a5e391d89e'
+            [
+                'hash' => '2e997db6507ca12ec7b2182d8af47e1424d3342f1f5c3532d3289d7c82b6adb0',     //1
+                'data' => 'data'
+            ],
+            [
+                'hash' => '929090a8c4ceb0822ab07f68d1e333a14cd9db8a354d31232cb939a5e391d89e',     //2
+                'data' => 'data'
+            ],
         ]));
 
         $this->assertEquals(2, $pool->length());

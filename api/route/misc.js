@@ -65,6 +65,8 @@ module.exports = (server) => {
     });
 
     server.get('/unconfirmed-transactions', (req, res, next) => {
+        const PAGESIZE = 1000;
+
         var sql = `show tables like 'txlogs_%'`;
         mysql.query(sql)
             .then(rows => {
@@ -82,7 +84,7 @@ module.exports = (server) => {
                         var sql = `select id, tx_hash, handle_type, block_height
                                    from ${table}
                                    order by id desc
-                                   limit ${offset}, 100`;
+                                   limit ${offset}, ${PAGESIZE}`;
                         mysql.query(sql).then(rows => {
                             for (let r of rows) {
                                 if (r.handle_type == 1 && r.block_height == -1) {
@@ -92,7 +94,7 @@ module.exports = (server) => {
                                 }
                             }
 
-                            offset += 100;
+                            offset += PAGESIZE;
                             loop();
                         });
                     })();

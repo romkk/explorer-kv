@@ -3,6 +3,7 @@ var helper = require('./helper');
 var sprintf = require('sprintf').sprintf;
 var log = require('debug')('api:lib:tx');
 var moment = require('moment');
+var sb = require('./ssdb')();
 
 /**
  *
@@ -67,11 +68,11 @@ class Tx {
         return ret;
     }
 
-    load(withScripts = false) {    //加载全部数据
+    load() {    //加载全部数据
         var sql;
 
         // 获取 inputs
-        sql = `SELECT id, tx_id, position, ${withScripts ? 'input_script_hex, ' : ''}sequence,
+        sql = `SELECT id, tx_id, position, input_script_hex, sequence,
                         prev_tx_id, prev_position, prev_value, prev_address,
                         prev_address_ids, created_at
                 FROM \`${this.getInputTable()}\`
@@ -98,8 +99,7 @@ class Tx {
 
 
         // 获取 outputs
-        sql = `SELECT tx_id, position, address, address_ids, value, ${withScripts ? 'output_script_hex, ' : ''}
-                        spent_tx_id
+        sql = `SELECT tx_id, position, address, address_ids, value, output_script_hex, spent_tx_id
                 FROM \`${this.getOutputTable()}\`
                 WHERE \`tx_id\` = ?
                 ORDER BY position asc`;
@@ -125,6 +125,9 @@ class Tx {
 
         return Promise.all([inputPromise, outputPromise])
             .then(() => {
+                log(`set cache tx_${this.attrs.tx_id}`);
+                sb.set(`tx_${this.attrs.tx_id}`, JSON.stringify(this));
+
                 return this;
             });
     }
@@ -132,12 +135,99 @@ class Tx {
     static make(id) {
         var idType = helper.paramType(id);
         var table = idType == helper.constant.HASH_IDENTIFIER ? Tx.getTableByHash(id) : Tx.getTableById(id);
-        var sql = `select tx_id, hash, height, block_timestamp, is_coinbase, version, lock_time, size, fee, total_in_value, total_out_value, inputs_count, outputs_count, created_at
+        var sql = `select tx_id, hash, height, block_timestamp, is_coinbase,
+                   version, lock_time, size, fee, total_in_value,
+                   total_out_value, inputs_count, outputs_count, created_at
                    from ${table}
                    where ${idType == helper.constant.HASH_IDENTIFIER ? `hash = ?` : `tx_id = ?`}`;
         return mysql.selectOne(sql, [id])
             .then((txRow) => {
-                return txRow == null ? null : new Tx(txRow);
+                if (txRow == null) {
+                    return null;
+                }
+                return new Tx(txRow);
+            });
+    }
+
+    static grab(id, useCache = true) {
+        var idType = helper.paramType(id);
+        var p;
+
+        if (useCache && idType == helper.constant.ID_IDENTIFIER) {
+            p = sb.get(`tx_${id}`)
+                .then(v => {
+                    if (v == null) {
+                        log(`[cache miss] tx_id = ${id}`);
+                        return Promise.reject();
+                    }
+                    log(`[cache hit] tx_id = ${id}`);
+                    return JSON.parse(v);
+                });
+        } else {
+            p = Promise.reject();
+        }
+
+        return p.catch(() => {
+            return Tx.make(id)
+                .then(tx => {
+                    if (tx == null) {
+                        return Promise.reject();
+                    }
+                    return tx.load();
+                })
+                .then(tx => {
+                    return tx.toJSON();
+                });
+        });
+    }
+
+    static multiGrab(ids, useCache = true) {
+        if (!useCache) {
+            return Promise.settle(ids.map(id => Tx.grab(id, false)))
+                .then(ps => {
+                    return ps.map(p => {
+                        if (p.isFulfilled()) {
+                            return p.value();
+                        } else {
+                            return null;
+                        }
+                    });
+                });
+        }
+
+        var bag = {};
+        var omittedIds = [];
+
+        return sb.multi_get.apply(sb, ids.map(id => `tx_${id}`))
+            .then(result => {
+                for (let i = 0, l = result.length; i < l; i++) {
+                    bag[result[i].slice(3)] = result[i + 1];
+                }
+
+                var ps = [];
+
+                for (let id of ids) {
+                    if (bag[id] == null) {
+                        ps.push(Tx.grab(id, false));
+                        omittedIds.push(id);
+                    }
+                }
+
+                return Promise.settle(ps);
+            })
+            .then(txPromises => {
+                for (let i = 0, l = txPromises.length; i < l; i++) {
+                    let txp = txPromises[i];
+                    if (txp.isFulfilled()) {
+                        bag[omittedIds[i]] = txp.value();
+                    } else {
+                        bag[omittedIds[i]] = null;
+                    }
+                }
+
+                return ids.map(id => {
+                    return JSON.parse(bag[id]);
+                });
             });
     }
 

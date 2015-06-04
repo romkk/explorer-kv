@@ -4,6 +4,7 @@ var sprintf = require('sprintf').sprintf;
 var log = require('debug')('api:lib:block');
 var moment = require('moment');
 var Tx = require('./tx');
+var sb = require('./ssdb')();
 
 class Block {
     constructor(row) {
@@ -40,30 +41,20 @@ class Block {
         };
     }
 
-    load(offset = 0, limit = 50, fulltx = false) {      //合并后，limit 如果为 0 则全部拉取
+    load() {
         var table = Block.getBlockTxTableByBlockId(this.attrs.block_id);
         var sql = `select tx_id
                    from ${table}
                    where block_id = ?
-                   order by position asc
-                   limit ${offset}, ${limit}`;
+                   order by position asc`;
 
         return mysql.list(sql, 'tx_id', [ this.attrs.block_id ])
             .then(txIndexes => {
-                if (fulltx) {
-                    var promises = txIndexes.map(id => {
-                        return Tx.make(id)
-                            .then((tx) => {
-                                return tx.load();
-                            });
-                    });
-                    return Promise.all(promises);
-                } else {
-                    return txIndexes;
-                }
-            })
-            .then(txs => {
-                this.txs = txs;
+                this.txs = txIndexes;
+
+                log(`set cache blk_id = ${this.attrs.block_id}`);
+                sb.set(`blk_${this.attrs.height}`, JSON.stringify(this));
+
                 return this;
             });
     }
@@ -78,6 +69,48 @@ class Block {
             .then(blk => {
                 return blk == null ? null : new Block(blk);
             });
+    }
+
+    static grab(id, offset = 0, limit = 50, fulltx = false, useCache = true) {
+        var idType = helper.paramType(id);
+        var p;
+
+        if (useCache && idType == helper.constant.ID_IDENTIFIER) {
+            p = sb.get(`blk_${id}`)
+                .then(v => {
+                    if (v == null) {
+                        log(`[cache miss] blk_height = ${id}`);
+                        return Promise.reject();
+                    }
+                    log(`[cache hit] blk_height = ${id}`);
+                    return JSON.parse(v);
+                });
+        } else {
+            p = Promise.reject();
+        }
+
+        return p.catch(() => {
+            return Block.make(id)
+                .then(blk => {
+                    if (blk == null) {
+                        return Promise.reject();
+                    }
+                    return blk.load();
+                })
+                .then(blk => blk.toJSON());
+        }).then(blk => {
+            var txs = blk.tx.splice(offset, limit);
+            if (!fulltx) {
+                blk.tx = txs;
+                return blk;
+            }
+
+            return Tx.multiGrab(txs, useCache)
+                .then(items => {
+                    blk.tx = items;
+                    return blk;
+                });
+        });
     }
 
     static getBlockTxTableByBlockId(blockId) {

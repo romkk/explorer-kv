@@ -14,23 +14,12 @@ module.exports = (server) => {
         req.checkQuery('limit', 'should be between 1 and 50').optional().isNumeric().isInt({ max: 50, min: 1 });
         req.sanitize('limit').toInt();
 
-        var errors = req.validationErrors();
-
-        if (errors) {
-            return next(new restify.InvalidArgumentError({
-                message: errors
-            }));
-        }
-
-        Block.make(req.params.blockIdentifier)
-            .then(blk => {
-                if (blk == null) {
-                    return new restify.ResourceNotFoundError('Block not found');
-                }
-                return blk.load(req.params.offset, req.params.limit, req.params.fulltx);
-            })
+        Block.grab(req.params.blockIdentifier, req.params.offset, req.params.limit, req.params.fulltx, !req.params.skipcache)
             .then(blk => {
                 res.send(blk);
+                next();
+            }, () => {
+                res.send(new restify.ResourceNotFoundError('Block not found'));
                 next();
             });
     });

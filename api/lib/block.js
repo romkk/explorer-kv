@@ -76,7 +76,7 @@ class Block {
 
     static grab(id, offset = 0, limit = 50, fulltx = false, useCache = true) {
         var idType = helper.paramType(id);
-        var p;
+        var p = Promise.resolve(id);
 
         if (useCache) {
             if (idType === helper.constant.HASH_IDENTIFIER) {
@@ -115,7 +115,14 @@ class Block {
                 })
                 .then(blk => blk.toJSON());
         }).then(blk => {
-            var txs = blk.tx.splice(offset, limit);
+            var txs;
+
+            if (offset == 0 && limit == 0) {
+                txs = blk.tx;
+            } else {
+                txs = blk.tx.splice(offset, limit);
+            }
+
             if (!fulltx) {
                 blk.tx = txs;
                 return blk;
@@ -131,6 +138,34 @@ class Block {
 
     static getBlockTxTableByBlockId(blockId) {
         return sprintf('block_txs_%04d', parseInt(blockId, 10) % 100);
+    }
+
+    static getLatestHeight() {
+        const SSDB_KEY = 'blk_latest_height';
+
+        var update = () => {
+            var sql = `select height
+                   from 0_blocks
+                   where chain_id = 0 order by block_id desc limit 1`;
+            return mysql.pluck(sql, 'height')
+                .then(height => {
+                    sb.setx(SSDB_KEY, height, 30);
+                    return height;
+                });
+        };
+
+        return sb.get(SSDB_KEY)
+            .then(v => {
+                if (v == null) {
+                    log('blk_latest_height miss');
+                    return Promise.reject();
+                }
+
+                log(`[cache hit] blk_latest_height ${v}`);
+                update();
+                return v;
+            })
+            .catch(update);
     }
 }
 

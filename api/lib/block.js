@@ -53,7 +53,10 @@ class Block {
                 this.txs = txIndexes;
 
                 log(`set cache blk_id = ${this.attrs.block_id}`);
-                sb.set(`blk_${this.attrs.height}`, JSON.stringify(this));
+                sb.multi_set(
+                    `blk_${this.attrs.height}`, JSON.stringify(this),
+                    `blkhash_${this.attrs.hash}`, this.attrs.height
+                );
 
                 return this;
             });
@@ -75,14 +78,27 @@ class Block {
         var idType = helper.paramType(id);
         var p;
 
-        if (useCache && idType == helper.constant.ID_IDENTIFIER) {
-            p = sb.get(`blk_${id}`)
+        if (useCache) {
+            if (idType === helper.constant.HASH_IDENTIFIER) {
+                p = sb.get(`blkhash_${id}`)
+                    .then(v => {
+                        if (v == null) {
+                            log(`[cache miss] blk_query = ${id}`);
+                            return Promise.reject();
+                        }
+                        return v;
+                    });
+            }
+
+            p = p.then(realId => sb.get(`blk_${realId}`))
                 .then(v => {
                     if (v == null) {
                         log(`[cache miss] blk_height = ${id}`);
                         return Promise.reject();
                     }
+
                     log(`[cache hit] blk_height = ${id}`);
+
                     return JSON.parse(v);
                 });
         } else {

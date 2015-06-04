@@ -161,6 +161,7 @@ class Tx {
                 p = p.then(() => sb.get(`txhash_${id}`))
                     .then(v => {
                         if (v == null) {
+                            log(`[cache miss] tx_query = ${id}`);
                             return Promise.reject();    //查无此 hash，即缓存内不存在
                         }
                         return v;

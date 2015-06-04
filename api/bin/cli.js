@@ -48,6 +48,14 @@ server.on('after', restify.auditLogger({
     })
 }));
 
+server.use((req, res, next) => {
+    log(`URL: ${req.url}`);
+    req.checkParams('skipcache', 'should be boolean').optional().isBoolean();
+    req.sanitize('skipcache').toBoolean(true);
+
+    next();
+});
+
 require('../route')(server);
 
 server.listen(3000, ()=> {

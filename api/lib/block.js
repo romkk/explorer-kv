@@ -143,17 +143,6 @@ class Block {
     static getLatestHeight() {
         const SSDB_KEY = 'blk_latest_height';
 
-        var update = () => {
-            var sql = `select height
-                   from 0_blocks
-                   where chain_id = 0 order by block_id desc limit 1`;
-            return mysql.pluck(sql, 'height')
-                .then(height => {
-                    sb.setx(SSDB_KEY, height, 30);
-                    return height;
-                });
-        };
-
         return sb.get(SSDB_KEY)
             .then(v => {
                 if (v == null) {
@@ -162,10 +151,14 @@ class Block {
                 }
 
                 log(`[cache hit] blk_latest_height ${v}`);
-                update();
                 return v;
             })
-            .catch(update);
+            .catch(() => {
+                var sql = `select height
+                   from 0_blocks
+                   where chain_id = 0 order by block_id desc limit 1`;
+                return mysql.pluck(sql, 'height');
+            });
     }
 }
 

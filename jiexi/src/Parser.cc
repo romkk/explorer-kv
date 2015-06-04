@@ -1102,23 +1102,24 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
     }
 
     // 获取最后一条记录，提取其前向记录，倒数第二条记录，如果存在的话
-    int64_t end2FinalBalance = 0, end2TxId = 0;
+    int64_t end2TxId = 0;
     int32_t end2TxYmd = 0;
-    sql = Strings::Format("SELECT `balance_final`,`prev_ymd`, `prev_tx_id` "
+    sql = Strings::Format("SELECT `prev_ymd`, `prev_tx_id` "
                           " FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(endTxYmd), addrID, endTxId);
     db.query(sql, res);
     if (res.numRows() == 1) {
       row = res.nextRow();
-      end2FinalBalance = atoi64(row[1]);
-      end2TxYmd = atoi(row[2]);
-      end2TxId  = atoi64(row[3]);
-
-      // 设置倒数第二条记录 next 记录为空
-      sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=0, `next_tx_id`=0 "
-                            " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                            tableIdx_AddrTxs(end2TxYmd), addrID, end2TxId);
-      db.updateOrThrowEx(sql, 1);
+      end2TxYmd = atoi(row[0]);
+      end2TxId  = atoi64(row[1]);
+      if (end2TxYmd != 0) {
+        assert(end2TxId != 0);
+        // 设置倒数第二条记录 next 记录为空
+        sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=0, `next_tx_id`=0 "
+                              " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                              tableIdx_AddrTxs(end2TxYmd), addrID, end2TxId);
+        db.updateOrThrowEx(sql, 1);
+      }
     }
 
     // 删除最后一条记录
@@ -1140,10 +1141,6 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
                           end2TxYmd == 0 ? "`begin_tx_id`=0,`begin_tx_ymd`=0," : "",
                           date("%F %T").c_str(), addrID);
     db.updateOrThrowEx(sql, 1);
-    if (end2FinalBalance != curBalance + balanceDiff * -1) {
-      THROW_EXCEPTION_DBEX("address's balance not match when rollback, "
-                           "addrID: %lld, txId: %lld", addrID, txLog->txId_);
-    }
 
     // 清理地址的缓存
     gAddrTxCache.erase(addrID);

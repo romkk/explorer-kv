@@ -60,10 +60,10 @@ class Tx {
         };
 
         /*
-        if (!this.attrs.is_coinbase) {
-            ret.double_spend = null;
-        }
-        */
+         if (!this.attrs.is_coinbase) {
+         ret.double_spend = null;
+         }
+         */
 
         return ret;
     }
@@ -126,7 +126,10 @@ class Tx {
         return Promise.all([inputPromise, outputPromise])
             .then(() => {
                 log(`set cache tx_${this.attrs.tx_id}`);
-                sb.set(`tx_${this.attrs.tx_id}`, JSON.stringify(this));
+                sb.multi_set(
+                    `tx_${this.attrs.tx_id}`, JSON.stringify(this),
+                    `txhash_${this.attrs.hash}`, this.attrs.tx_id
+                );
 
                 return this;
             });
@@ -151,16 +154,26 @@ class Tx {
 
     static grab(id, useCache = true) {
         var idType = helper.paramType(id);
-        var p;
+        var p = Promise.resolve(id);
 
-        if (useCache && idType == helper.constant.ID_IDENTIFIER) {
-            p = sb.get(`tx_${id}`)
+        if (useCache) {
+            if (idType == helper.constant.HASH_IDENTIFIER) {
+                p = p.then(() => sb.get(`txhash_${id}`))
+                    .then(v => {
+                        if (v == null) {
+                            return Promise.reject();    //查无此 hash，即缓存内不存在
+                        }
+                        return v;
+                    });
+            }
+
+            p = p.then(realId => sb.get(`tx_${realId}`))
                 .then(v => {
                     if (v == null) {
-                        log(`[cache miss] tx_id = ${id}`);
+                        log(`[cache miss] tx_query = ${id}`);
                         return Promise.reject();
                     }
-                    log(`[cache hit] tx_id = ${id}`);
+                    log(`[cache hit] tx_query = ${id}`);
                     return JSON.parse(v);
                 });
         } else {

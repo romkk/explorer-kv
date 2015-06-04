@@ -25,6 +25,7 @@
     "mysql": "^2.6.2",
     "restify": "^3.0.3",
     "sprintf": "^0.1.5",
+    "ssdb": "^0.3.2",
     "validator": "^3.40.0"
   },
   "devDependencies": {

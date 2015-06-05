@@ -117,12 +117,39 @@ public:
   ~TxLog();
 };
 
+// 若SSDB宕机，则丢弃数据
+class CacheManager {
+  atomic<bool> running_;
+  atomic<bool> ssdbAlive_;
+
+  ssdb::Client *ssdb_;
+  string  SSDBHost_;
+  int32_t SSDBPort_;
+
+  mutex lock_;
+
+  // 待删除队列
+  vector<string> qkv_;
+  vector<std::pair<string, string> > qhashset_;
+
+  void threadConsumer();
+
+public:
+  CacheManager();
+  ~CacheManager();
+
+  bool tryOpen();
+
+  void insertKV(const string &key);
+  void insertHashSet(const string &address, const string &tableName);
+};
+
 
 class Parser {
 private:
   atomic<bool> running_;
   MySQLConnection dbExplorer_;
-  ssdb::Client *ssdb_;
+
 
   bool tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset);
   int64_t getLastTxLogOffset();

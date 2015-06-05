@@ -124,6 +124,149 @@ TxLog::TxLog():logId_(0), tableIdx_(-1), status_(0), type_(0), blkHeight_(-2), t
 TxLog::~TxLog() {}
 
 
+//// 若SSDB宕机，则丢弃数据
+//class CacheManager {
+//  ssdb::Client *ssdb_;
+//  mutex lock_;
+//
+//  // 待删除队列
+//  vector<string> qkv_;
+//  vector<string> qzset_;
+//  vector<std> qhashset_;
+//
+//  void threadConsumer();
+//
+//public:
+//  CacheManager();
+//  ~CacheManager();
+//
+//  bool tryOpen();
+//
+//  void insertKV(const string &key);
+//  void insertZSet(const string &key);
+//  void insertHashSet(const string &key);
+//};
+
+CacheManager::CacheManager(): ssdb_(nullptr) {
+  // create connection
+  SSDBHost_ = Config::GConfig.get("ssdb.host");
+  SSDBPort_ = (int32_t)Config::GConfig.getInt("ssdb.port");
+  ssdb_ = ssdb::Client::connect(SSDBHost_, SSDBPort_);
+  if (ssdb_ == nullptr) {
+    THROW_EXCEPTION_DBEX("fail to connect to ssdb server. host: %s, port: %d",
+                         SSDBHost_.c_str(), SSDBPort_);
+  }
+  running_   = true;
+  ssdbAlive_ = true;
+}
+
+CacheManager::~CacheManager() {
+  if (ssdb_ != nullptr) {
+    delete ssdb_;
+    ssdb_ = nullptr;
+  }
+}
+
+void CacheManager::insertKV(const string &key) {
+  ScopeLock sl(lock_);
+  if (ssdbAlive_) {
+    qkv_.push_back(key);
+  }
+}
+
+void CacheManager::insertHashSet(const string &address,
+                                 const string &tableName) {
+  ScopeLock sl(lock_);
+  if (ssdbAlive_) {
+    qhashset_.push_back(std::make_pair(address, tableName));
+  }
+}
+
+//
+// SSDB数据结构文档：http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
+//
+void CacheManager::threadConsumer() {
+  vector<string> buf;
+  vector<std::pair<string, string> > bufHashSet;
+  buf.reserve(512);
+  bufHashSet.reserve(512);
+  ssdb::Status s;
+  int64_t successCount, itemCount;
+
+  while (running_) {
+    assert(ssdbAlive_ == true);
+    assert(ssdb_ != nullptr);
+    itemCount = successCount = 0;
+
+    // Key - Value
+    {
+      ScopeLock sl(lock_);
+      buf = qkv_;
+      qkv_.clear();
+    }
+    if (buf.size()) {
+      itemCount += buf.size();
+      s = ssdb_->multi_del(buf);
+      LOG_DEBUG("ssdb multi del, count: %lld", buf.size());
+      if (s.error()) {
+        LOG_ERROR("ssdb KV del fail");
+      } else {
+        successCount += buf.size();
+      }
+      buf.clear();
+    }
+
+    // HashSet: 目前HashSet类型就一个: addr_table_{addr_id}
+    {
+      ScopeLock sl(lock_);
+      bufHashSet = qhashset_;
+      qhashset_.clear();
+    }
+    if (bufHashSet.size()) {
+      itemCount += bufHashSet.size();
+      for (auto &it : bufHashSet) {
+        const string name = "addr_table_" + it.first;
+        s = ssdb_->hdel(name, it.second);
+        if (s.error()) {
+          LOG_ERROR("ssdb HashSet del fail: %s, %s",
+                    name.c_str(), it.second.c_str());
+        } else {
+          successCount++;
+        }
+      }
+      bufHashSet.clear();
+    }
+
+    if (itemCount != successCount) {
+      LOG_ERROR("ssdb some items failure, total: %lld, success: %lld",
+                itemCount, successCount);
+    }
+
+    // 成功数量为零，说明SSDB server端出故障了，尝试重新连接
+    if (itemCount > 0 && successCount == 0) {
+      delete ssdb_;
+      ssdb_ = nullptr;
+      ssdbAlive_ = false;
+
+      while (running_) {
+        LOG_INFO("we lost ssdb server, try reconnect...");
+        sleep(1);
+
+        ssdb_ = ssdb::Client::connect(SSDBHost_, SSDBPort_);
+        if (ssdb_ != nullptr) {
+          ssdbAlive_ = true;
+          LOG_INFO("reconnect ssdb success");
+          break;
+        }
+        LOG_ERROR("reconnect to ssdb server fail. host: %s, port: %d",
+                  SSDBHost_.c_str(), SSDBPort_);
+      }
+    }
+  } /* /while */
+}
+
+
+
 Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
 running_(true) {
 }
@@ -141,16 +284,6 @@ void Parser::stop() {
 bool Parser::init() {
   if (!dbExplorer_.ping()) {
     LOG_FATAL("connect to explorer DB failure");
-    return false;
-  }
-
-  // SSDB
-  const string  SSDBHost = Config::GConfig.get("ssdb.host");
-  const int32_t SSDBPort = (int32_t)Config::GConfig.getInt("ssdb.port");
-  ssdb_ = ssdb::Client::connect(SSDBHost, SSDBPort);
-  if (ssdb_ == nullptr) {
-    LOG_FATAL("fail to connect to ssdb server. host: %s, port: %d",
-              SSDBHost.c_str(), SSDBPort);
     return false;
   }
 

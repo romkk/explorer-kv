@@ -13,7 +13,7 @@ function isValidAddressList(active) {
 
     var parts = active.trim().split('|');
 
-    if (parts.length > 128) {
+    if (parts.length > 256) {
         return new restify.InvalidArgumentError('Too many addresses');
     }
 
@@ -25,8 +25,10 @@ function isValidAddressList(active) {
         return new restify.InvalidArgumentError('Invalid address found');
     }
 
-    if (!parts.every(v => module.exports.isValidAddress(v))) {
-        return new restify.InvalidArgumentError('Invalid address found');
+    for (let p of parts) {
+        if (!module.exports.isValidAddress(p)) {
+            return new restify.InvalidArgumentError(`Invalid address found: ${p}`);
+        }
     }
 
     return null;

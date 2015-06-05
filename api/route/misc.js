@@ -17,7 +17,9 @@ module.exports = (server) => {
         }
 
         var parts = req.params.active.trim().split('|');
+        var ret = _.zipObject(parts);
 
+        //TODO：修改为get latest block
         var sql = `select height from 0_blocks
                    where chain_id = 0
                    order by block_id desc
@@ -25,38 +27,45 @@ module.exports = (server) => {
 
         mysql.pluck(sql, 'height')
             .then(height => {
-                return Promise.all(parts.map(p => {
-                    var ret = {};
+                return Promise.map(parts, function(p) {
+                    var unspentList = [];
                     return Address.make(p)
                         .then(addr => {
                             if (addr == null) {
-                                throw new restify.InvalidArgumentError(`Address not found: ${p}`);
+                                return [];
                             }
+
                             var table = sprintf('address_unspent_outputs_%04d', addr.attrs.id % 10);
                             var sql = `select tx_id, block_height, value
-                                 from ${table}
-                                 where address_id = ?`;
-                            return mysql.selectOne(sql, [addr.attrs.id]);
+                                       from ${table}
+                                       where address_id = ?
+                                       order by tx_id asc, position asc, position2 asc`;
+                            return mysql.query(sql, [addr.attrs.id]);
                         })
-                        .then(row => {
-                            assert(row !== null, 'row can not be null');
-                            ret.value = row.value;
-                            ret.value_hex = row.value.toString(16);
-                            ret.confirmations = height - row.block_height + 1;
+                        .then(rows => {
+                            if (rows.length == 0) {
+                                return [];
+                            }
 
-                            // get tx
-                            return Tx.make(row.tx_id);
+                            unspentList = rows.map(r => ({
+                                tx_index: r.tx_id,
+                                value: r.value,
+                                value_hex: r.value.toString(16),
+                                confirmations: height - r.block_height + 1
+                            }));
+
+                            return Promise.map(rows, r => Tx.make(r.tx_id));
                         })
-                        .then(tx => {
-                            assert(tx !== null, 'tx can not be null');
-                            ret.tx_hash = tx.attrs.hash;
-                            ret.tx_hash_big_endian = helper.toBigEndian(tx.attrs.hash);
-                            ret.tx_index = tx.attrs.tx_id;
-                            ret.tx_output_n = tx.attrs.outputs_count;
+                        .then(txs => {
+                            for (let i = 0, l = unspentList.length; i < l; i++) {
+                                unspentList[i].tx_hash = txs[i].attrs.hash;
+                                unspentList[i].tx_hash_big_endian = helper.toBigEndian(txs[i].attrs.hash);
+                                unspentList[i].tx_output_n = txs[i].attrs.output_count;
+                            }
 
-                            return ret;
+                            ret[p] = unspentList;
                         });
-                }));
+                }).return(ret);
             })
             .then(ret => {
                 res.send(ret);

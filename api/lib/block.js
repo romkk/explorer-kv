@@ -55,7 +55,7 @@ class Block {
                 log(`set cache blk_id = ${this.attrs.block_id}`);
 
                 // set cache，对于可能存在的边界情况全部忽略
-                sb.hset('blk', sprintf('%08d', this.attrs.height), JSON.stringify(this)); // height => block_data
+                sb.hset('blk', Block.getCacheId(this.attrs.height), JSON.stringify(this)); // height => block_data
                 sb.set(`blkhash_${this.attrs.hash}`, this.attrs.height); // hash => height
 
                 return this;
@@ -90,7 +90,7 @@ class Block {
                     });
             }
 
-            p = p.then(realId => sb.hget('blk', sprintf('%08d', +realId)))
+            p = p.then(realId => sb.hget('blk', Block.getCacheId(realId)))
                 .then(v => {
                     if (v == null) {
                         log(`[cache miss] blk_height = ${id}`);
@@ -134,6 +134,10 @@ class Block {
                     return blk;
                 });
         });
+    }
+
+    static getCacheId(height) {
+        return sprintf('%08d', +height);
     }
 
     static getBlockTxTableByBlockId(blockId) {

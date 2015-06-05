@@ -215,7 +215,7 @@ class Tx {
         return sb.multi_get.apply(sb, ids.map(id => `tx_${id}`))
             .then(result => {
                 for (let i = 0, l = result.length; i < l; i += 2) {
-                    bag[result[i].slice(3)] = result[i + 1];
+                    bag[result[i].slice(3)] = JSON.parse(result[i + 1]);        //parse JSON string
                 }
 
                 var ps = [];
@@ -239,9 +239,7 @@ class Tx {
                     }
                 }
 
-                return ids.map(id => {
-                    return JSON.parse(bag[id]);
-                });
+                return ids.map(id => bag[id]);
             });
     }
 

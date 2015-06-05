@@ -4,6 +4,7 @@ var sprintf = require('sprintf').sprintf;
 var log = require('debug')('api:lib:tx');
 var moment = require('moment');
 var sb = require('./ssdb')();
+var _ = require('lodash');
 
 /**
  *
@@ -125,10 +126,10 @@ class Tx {
 
         return Promise.all([inputPromise, outputPromise])
             .then(() => {
-                log(`set cache tx_${this.attrs.tx_id}`);
+                log(`set cache tx_id = ${this.attrs.tx_id}, tx_hash = ${this.attrs.hash}`);
                 sb.multi_set(
-                    `tx_${this.attrs.tx_id}`, JSON.stringify(this),
-                    `txhash_${this.attrs.hash}`, this.attrs.tx_id
+                    `txid_${this.attrs.tx_id}`, this.attrs.hash,
+                    `tx_${this.attrs.hash}`, JSON.stringify(this)
                 );
 
                 return this;
@@ -157,8 +158,8 @@ class Tx {
         var p = Promise.resolve(id);
 
         if (useCache) {
-            if (idType == helper.constant.HASH_IDENTIFIER) {
-                p = p.then(() => sb.get(`txhash_${id}`))
+            if (idType == helper.constant.ID_IDENTIFIER) {
+                p = p.then(() => sb.get(`txid_${id}`))
                     .then(v => {
                         if (v == null) {
                             log(`[cache miss] tx_query = ${id}`);
@@ -168,7 +169,7 @@ class Tx {
                     });
             }
 
-            p = p.then(realId => sb.get(`tx_${realId}`))
+            p = p.then(hash => sb.get(`tx_${hash}`))
                 .then(v => {
                     if (v == null) {
                         log(`[cache miss] tx_query = ${id}`);
@@ -196,6 +197,10 @@ class Tx {
     }
 
     static multiGrab(ids, useCache = true) {
+        if (!ids.length) {
+            return Promise.resolve([]);
+        }
+
         if (!useCache) {
             return Promise.settle(ids.map(id => Tx.grab(id, false)))
                 .then(ps => {
@@ -209,45 +214,63 @@ class Tx {
                 });
         }
 
-        var bag = {};
-        var omittedIds = [];
+        var bag = _.zipObject(ids);
 
-        return sb.multi_get.apply(sb, ids.map(id => `tx_${id}`))
-            .then(result => {
-                for (let i = 0, l = result.length; i < l; i += 2) {
-                    bag[result[i].slice(3)] = JSON.parse(result[i + 1]);        //parse JSON string
-                }
+        if (helper.paramType(ids[0]) == helper.constant.ID_IDENTIFIER) {        // 传入的是 ID list
+            return sb.multi_get.apply(sb, ids.map(id => `txid_${id}`))
+                .then(result => {       // 尝试获取 hash
+                    _.extend(bag, _.chain(result).chunk(2).zipObject().mapKeys((v, k) => k.slice(5)).value());
 
-                var ps = [];
+                    let idList = _.keys(bag).filter(k => bag[k] == null);
+                    let hashList = _.keys(bag).filter(k => bag[k] != null);
 
-                for (let id of ids) {
-                    if (bag[id] == null) {
-                        ps.push(Tx.grab(id, false));
-                        omittedIds.push(id);
-                    }
-                }
+                    let idListPromises = Promise.settle(idList.map(id => Tx.grab(id, false)))
+                        .then(idListPromisesResult => idListPromisesResult.map(p => p.isFulfilled() ? p.value() : null));
 
-                return Promise.settle(ps);
-            })
-            .then(txPromises => {
-                for (let i = 0, l = txPromises.length; i < l; i++) {
-                    let txp = txPromises[i];
-                    if (txp.isFulfilled()) {
-                        bag[omittedIds[i]] = txp.value();
-                    } else {
-                        bag[omittedIds[i]] = null;
-                    }
-                }
+                    return Promise.join(Tx.multiGrab(hashList.map(id => bag[id])), idListPromises, (hashListResult, idListResult) => {
 
-                return ids.map(id => bag[id]);
-            });
+                        for (let i = 0, l = hashList.length; i < l; i++) {
+                            bag[hashList[i]] = hashListResult[i];
+                        }
+
+                        for (let i = 0, l = idList.length; i < l; i++) {
+                            bag[idList[i]] = idListResult[i];
+                        }
+
+                        return ids.map(id => bag[id]);
+                    });
+                });
+        } else {        // 传入的是 hash list
+            return sb.multi_get.apply(sb, ids.map(hash => `tx_${hash}`))
+                .then(result => {
+                    _.extend(bag, _.chain(result).chunk(2).zipObject().mapKeys((v, k) => k.slice(3)).mapValues(JSON.parse).value());
+
+                    let hashList = _.keys(bag).filter(k => bag[k] == null);
+                    return Promise.map(hashList, v => Tx.grab(v, false).catch(() => null))
+                        .then(hashListResult => {
+                            for (let i = 0, l = hashList.length; i < l; i++) {
+                                bag[hashList[i]] = hashListResult[i];
+                            }
+
+                            return ids.map(id => bag[id]);
+                        });
+                });
+        }
     }
 
     static getTableByHash(hash) {
+        hash = String(hash);
+        if (hash.length < 2) {
+            return 'nonexists';
+        }
         return sprintf('txs_%04d', parseInt(String(hash).slice(-2), 16) % 64);
     }
 
     static getTableById(id) {
+        id = Number(id);
+        if (isNaN(id) || id < 0) {
+            return 'nonexists';
+        }
         return sprintf('txs_%04d', Math.floor(id / 10e8));
     }
 

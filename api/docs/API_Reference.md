@@ -5,13 +5,13 @@
 ## URI
 
 * 协议： `HTTP`
-* Host： `api.explorer.btc.com`
-* API 版本： `/{api_version}`，可选版本为 `v1`
+* Host： `api.chain.btc.com`
+* API 版本： `/{api_version}`，当前可选版本为 `v1`
 * 请求类型：`GET`
 
 以下如无特别说明，所有的 API 调用时均使用以上 URI 前缀，如获取最新区块信息：
 
-    GET http://api.explorer.btc.com/v1/latestblock
+    GET http://api.chain.btc.com/v1/latestblock
 
 ## 访问频率限制
 
@@ -41,23 +41,38 @@ TODO
 常见参数说明：
 
 1. 支持分页的接口使用`offset`和`limit`进行分页。如查询第 3 页，每页 20 条记录，则参数应为`?offset=40&limit=20`；
-1. 时间单位均为 UTC 时间；
+1. 时间单位均为 UTC 。
 
 ### Single Block
 
 #### Request
 
-* Get Block By Height
+* Get Block By Block Id
 
-        GET /block-height/${block_height}
+        GET /rawblock/${block_id}
+        
+    |参数|描述|位置|必须|数据类型|
+    |---|---|---|---|---|
+    |block_id|块内部 id|Path|√|Int|
 
 * Get Block By Hash
 
         GET /rawblock/${block_hash}
         
+    |参数|描述|位置|必须|数据类型|
+    |---|---|---|---|---|
+    |block_hash|块哈希|Path|√|Int|
+        
+* Get Block By Height
+
+        GET /block-height/${block_height}
+
+    |参数|描述|位置|必须|数据类型|
+    |---|---|---|---|---|
+    |block_height|块高度|Path|√|Int|
+           
 |参数|描述|位置|必须|数据类型|
 |---|---|---|---|---|
-|block_height|块高度|Path|√|Int|
 |fulltx|是否显示详细的交易信息，默认为`false`|Query|✗|Boolean|
 |offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
 |limit|返回结果集个数，要求大于`1`小于`50`，默认为`50`|Query|✗|Int|

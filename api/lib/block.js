@@ -53,10 +53,10 @@ class Block {
                 this.txs = txIndexes;
 
                 log(`set cache blk_id = ${this.attrs.block_id}`);
-                sb.multi_set(
-                    `blk_${this.attrs.height}`, JSON.stringify(this),
-                    `blkhash_${this.attrs.hash}`, this.attrs.height
-                );
+
+                // set cache，对于可能存在的边界情况全部忽略
+                sb.hset('blk', sprintf('%08d', this.attrs.height), JSON.stringify(this)); // height => block_data
+                sb.set(`blkhash_${this.attrs.hash}`, this.attrs.height); // hash => height
 
                 return this;
             });
@@ -90,7 +90,7 @@ class Block {
                     });
             }
 
-            p = p.then(realId => sb.get(`blk_${realId}`))
+            p = p.then(realId => sb.hget('blk', sprintf('%08d', +realId)))
                 .then(v => {
                     if (v == null) {
                         log(`[cache miss] blk_height = ${id}`);

@@ -54,6 +54,9 @@ TODO
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |block_id|块内部 id|Path|√|Int|
+    |fulltx|是否显示详细的交易信息，默认为`false`|Query|✗|Boolean|
+    |offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
+    |limit|返回结果集个数，要求大于`1`小于`50`，默认为`50`|Query|✗|Int|
 
 * Get Block By Hash
 
@@ -62,6 +65,9 @@ TODO
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |block_hash|块哈希|Path|√|Int|
+    |fulltx|是否显示详细的交易信息，默认为`false`|Query|✗|Boolean|
+    |offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
+    |limit|返回结果集个数，要求大于`1`小于`50`，默认为`50`|Query|✗|Int|
         
 * Get Block By Height
 
@@ -71,11 +77,6 @@ TODO
     |---|---|---|---|---|
     |block_height|块高度|Path|√|Int|
            
-|参数|描述|位置|必须|数据类型|
-|---|---|---|---|---|
-|fulltx|是否显示详细的交易信息，默认为`false`|Query|✗|Boolean|
-|offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
-|limit|返回结果集个数，要求大于`1`小于`50`，默认为`50`|Query|✗|Int|
 
 #### Response
 

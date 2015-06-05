@@ -55,8 +55,10 @@ class Block {
                 log(`set cache blk_id = ${this.attrs.block_id}`);
 
                 // set cache，对于可能存在的边界情况全部忽略
-                sb.hset('blk', Block.getCacheId(this.attrs.height), JSON.stringify(this)); // height => block_data
-                sb.set(`blkhash_${this.attrs.hash}`, this.attrs.height); // hash => height
+                sb.multi_set(
+                    `blkid_${this.attrs.block_id}`, this.attrs.hash,    //blkid_{id} => hash
+                    `blk_${this.attrs.hash}`, JSON.stringify(this)
+                );
 
                 return this;
             });
@@ -79,8 +81,8 @@ class Block {
         var p = Promise.resolve(id);
 
         if (useCache) {
-            if (idType === helper.constant.HASH_IDENTIFIER) {
-                p = sb.get(`blkhash_${id}`)
+            if (idType === helper.constant.ID_IDENTIFIER) {
+                p = sb.get(`blkid_${id}`)
                     .then(v => {
                         if (v == null) {
                             log(`[cache miss] blk_query = ${id}`);
@@ -90,14 +92,14 @@ class Block {
                     });
             }
 
-            p = p.then(realId => sb.hget('blk', Block.getCacheId(realId)))
+            p = p.then(hash => sb.get(`blk_${hash}`))
                 .then(v => {
                     if (v == null) {
-                        log(`[cache miss] blk_height = ${id}`);
+                        log(`[cache miss] blk_query = ${id}`);
                         return Promise.reject();
                     }
 
-                    log(`[cache hit] blk_height = ${id}`);
+                    log(`[cache hit] blk_query = ${id}`);
 
                     return JSON.parse(v);
                 });
@@ -136,8 +138,8 @@ class Block {
         });
     }
 
-    static getCacheId(height) {
-        return sprintf('%08d', +height);
+    static grabByHeight(h) {
+
     }
 
     static getBlockTxTableByBlockId(blockId) {

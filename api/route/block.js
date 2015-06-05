@@ -11,8 +11,16 @@ module.exports = (server) => {
         req.checkQuery('offset', 'should be a valid number').optional().isNumeric();
         req.sanitize('offset').toInt();
 
-        req.checkQuery('limit', 'should be between 1 and 50').optional().isNumeric().isInt({ max: 50, min: 1 });
+        req.checkQuery('limit', 'should be between 1 and 50').optional().isInt({ max: 50, min: 1 });
         req.sanitize('limit').toInt();
+
+        var errors = req.validationErrors();
+
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
 
         Block.grab(req.params.blockIdentifier, req.params.offset, req.params.limit, req.params.fulltx, !req.params.skipcache)
             .then(blk => {

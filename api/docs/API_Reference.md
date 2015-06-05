@@ -76,6 +76,8 @@ TODO
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |block_height|块高度|Path|√|Int|
+    
+    注意：该接口不支持`fulltx`、`offset`和`limit`。
            
 
 #### Response

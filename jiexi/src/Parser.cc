@@ -144,6 +144,16 @@ bool Parser::init() {
     return false;
   }
 
+  // SSDB
+  const string  SSDBHost = Config::GConfig.get("ssdb.host");
+  const int32_t SSDBPort = (int32_t)Config::GConfig.getInt("ssdb.port");
+  ssdb_ = ssdb::Client::connect(SSDBHost, SSDBPort);
+  if (ssdb_ == nullptr) {
+    LOG_FATAL("fail to connect to ssdb server. host: %s, port: %d",
+              SSDBHost.c_str(), SSDBPort);
+    return false;
+  }
+
   // 检测DB参数： max_allowed_packet
   const int32_t maxAllowed = atoi(dbExplorer_.getVariable("max_allowed_packet").c_str());
   const int32_t kMinAllowed = 64*1024*1024;

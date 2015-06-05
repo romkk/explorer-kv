@@ -24,6 +24,8 @@
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
 
+#include "SSDB_client.h"
+
 #define TXLOG_STATUS_INIT 100
 #define TXLOG_STATUS_DONE 1000
 
@@ -120,6 +122,7 @@ class Parser {
 private:
   atomic<bool> running_;
   MySQLConnection dbExplorer_;
+  ssdb::Client *ssdb_;
 
   bool tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset);
   int64_t getLastTxLogOffset();

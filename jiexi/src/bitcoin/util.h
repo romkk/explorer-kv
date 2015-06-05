@@ -35,7 +35,10 @@ static const int64_t CENT = 1000000;
 #define strprintf tfm::format
 #define LogPrintf(...) ((void)0)
 
-#define error(...) false;
+//#define error(...) false;
+inline bool error(const char *s) {
+  return false;
+}
 
 
 inline std::string i64tostr(int64_t n)

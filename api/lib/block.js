@@ -40,7 +40,7 @@ class Block {
         };
     }
 
-    load(offset = 0, limit = 50, fulltx = false) {
+    load(offset = 0, limit = 50, fulltx = false) {      //合并后，limit 如果为 0 则全部拉取
         var table = Block.getBlockTxTableByBlockId(this.attrs.block_id);
         var sql = `select tx_id
                    from ${table}
@@ -72,7 +72,8 @@ class Block {
         var idType = helper.paramType(id);
         var sql = `select *
                    from 0_blocks
-                   where ${idType == helper.constant.HASH_IDENTIFIER ? 'hash' : 'height'} = ? and chain_id = 0`;
+                   where ${idType == helper.constant.HASH_IDENTIFIER ? 'hash' : 'block_id'} = ?
+                   limit 1`;
         return mysql.selectOne(sql, [id])
             .then(blk => {
                 return blk == null ? null : new Block(blk);

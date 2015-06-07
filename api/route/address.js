@@ -9,7 +9,7 @@ var moment = require('moment');
 var validators = require('../lib/custom_validators');
 
 module.exports = (server) => {
-    server.get('/address/:addr', (req, res, next)=> {
+    server.get('/address/:addr', async (req, res, next)=> {
         req.checkParams('addr', 'Not a valid address').isValidAddress();
 
         req.checkQuery('offset', 'should be a valid number').optional().isNumeric();
@@ -31,22 +31,14 @@ module.exports = (server) => {
             }));
         }
 
-        Address.make(req.params.addr)
-            .then(address => {
-                if (address == null) {
-                    return new restify.ResourceNotFoundError('Address not found');
-                }
-                return address.load(
-                    req.params.timestamp,
-                    req.params.sort,
-                    req.params.offset,
-                    req.params.limit
-                );
-            })
-            .then(address => {
-                res.send(address);
-                next();
-            });
+        var addr = await Address.grab(req.params.addr, !req.params.skipcache);
+        if (addr == null) {
+            return new restify.ResourceNotFoundError('Address not found');
+        }
+        //TODO: 调用优化后的 load
+        addr = await addr.load(req.params.timestamp, req.params.sort, req.params.offset, req.params.limit);
+        res.send(addr);
+        next();
     });
 
     server.get('/multiaddr', async (req, res, next) => {

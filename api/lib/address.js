@@ -38,6 +38,7 @@ class Address {
         };
     }
 
+    //TODO： 使用 cache 优化
     load(timestamp = null, order = 'desc', offset = 0, limit = 50) {
         order = order === 'desc' ? 'desc' : 'asc';
         if (timestamp == null) {
@@ -125,6 +126,7 @@ class Address {
         var start = this.attrs.begin_tx_ymd;
         var table = this.getAddressToTxTable(order === 'desc' ? Math.min(end, date) : Math.max(start, date));
 
+        // 调用优化后的 height 获取方法
         var sql = `select height from 0_blocks where \`timestamp\` ${order === 'desc' ? '<=' : '>='} ?
                    order by block_id ${order} limit 1`;
 

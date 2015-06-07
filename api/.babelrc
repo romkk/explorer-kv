@@ -1,5 +1,5 @@
 {
 	"blacklist": [
-		"regenerator"
+		"es7.asyncFunctions"
 	]
 }

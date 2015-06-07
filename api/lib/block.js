@@ -5,6 +5,7 @@ var log = require('debug')('api:lib:block');
 var moment = require('moment');
 var Tx = require('./tx');
 var sb = require('./ssdb')();
+var _ = require('lodash');
 
 class Block {
     constructor(row) {
@@ -138,10 +139,6 @@ class Block {
         });
     }
 
-    static grabByHeight(h) {
-
-    }
-
     static getBlockTxTableByBlockId(blockId) {
         return sprintf('block_txs_%04d', parseInt(blockId, 10) % 100);
     }
@@ -152,5 +149,29 @@ class Block {
         return mysql.pluck(sql, 'height');
     }
 }
+
+Block.grabByHeight = async (h, useCache = true) => {
+    var getHashListFromDb = async () => {
+        let sql = `select hash from 0_blocks
+                   where height = ? order by chain_id asc`;
+        blockHashList = await mysql.list(sql, 'hash', [h]);
+        sb.set(`blkh_${h}`, JSON.stringify(blockHashList));
+
+        return blockHashList;
+    };
+
+    if (useCache) {
+        var blockHashList = await sb.get(`blkh_${h}`);
+        if (blockHashList == null) {
+            blockHashList = getHashListFromDb();
+        } else {
+            blockHashList = JSON.parse(blockHashList);
+        }
+    } else {
+        blockHashList = getHashListFromDb();
+    }
+
+    return await* blockHashList.map(hash => Block.grab(hash, 0, 0, false, useCache));
+};
 
 module.exports = Block;

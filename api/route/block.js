@@ -2,6 +2,7 @@ var mysql = require('../lib/mysql');
 var Block = require('../lib/block');
 var log = require('debug')('api:route:block');
 var restify = require('restify');
+var sb = require('../lib/ssdb')();
 
 module.exports = (server) => {
     server.get('/rawblock/:blockIdentifier', (req, res, next) => {
@@ -32,7 +33,7 @@ module.exports = (server) => {
             });
     });
 
-    server.get('/block-height/:height', (req, res, next) => {
+    server.get('/block-height/:height', async (req, res, next) => {
         req.checkParams('height', 'invalid height').optional().isInt({ min: 0 });
         req.sanitize('height').toInt();
 
@@ -44,18 +45,7 @@ module.exports = (server) => {
             }));
         }
 
-        var sql = `select block_id
-                   from 0_blocks
-                   where height = ?
-                   order by chain_id asc`;
-
-        mysql.list(sql, 'block_id',[ req.params.height ])
-            .then(ids => Promise.map(ids, id => {
-                return Block.make(id).then(blk => blk.load(0, 0, false));
-            }))
-            .then(blk => {
-                res.send(blk);
-                next();
-            });
+        res.send(await Block.grabByHeight(req.params.height, !req.params.skipcache));
+        next();
     });
 };

@@ -49,7 +49,7 @@ module.exports = (server) => {
             });
     });
 
-    server.get('/multiaddr', (req, res, next) => {
+    server.get('/multiaddr', async (req, res, next) => {
         var err = validators.isValidAddressList(req.query.active);
         if (err != null) {
             return next(err);
@@ -57,29 +57,28 @@ module.exports = (server) => {
 
         var parts = req.params.active.trim().split('|');
 
-        Promise.all(parts.map(p => {
-            return Address.make(p)
-                .then(addr => {
-                    if (addr == null) {
-                        throw new restify.InvalidArgumentError(`Address not found: ${p}`);
-                    }
-                    var a = addr.attrs;
-                    return {
-                        final_balance: a.total_received - a.total_sent,
-                        address: a.address,
-                        total_sent: a.total_sent,
-                        total_received: a.total_received,
-                        n_tx: a.tx_count,
-                        hash160: helper.addressToHash160(a.address)
-                    };
-                });
-        })).then((addrs) => {
-            res.send({
-                addresses: addrs
-            });
-            next();
-        }, err => {
-            next(err);
-        })
+        console.log('cache', req.params.skipcache);
+
+        var ret = await Address.multiGrab(parts, !req.params.skipcache);
+
+        ret = ret.map(addr => {
+            if (addr == null) {
+                return null;
+            }
+
+            var a = addr.attrs;
+
+            return {
+                final_balance: a.total_received - a.total_sent,
+                address: a.address,
+                total_sent: a.total_sent,
+                total_received: a.total_received,
+                n_tx: a.tx_count,
+                hash160: helper.addressToHash160(a.address)
+            };
+        });
+
+        res.send(ret);
+        next();
     });
 };

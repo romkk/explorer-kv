@@ -6,6 +6,8 @@ var moment = require('moment');
 var assert = require('assert');
 var BN = require('bn.js');
 var Tx = require('./tx');
+var sb = require('../lib/ssdb')();
+var _ = require('lodash');
 
 class Address {
     constructor(row) {
@@ -164,10 +166,16 @@ class Address {
         var table = Address.getTableByAddr(addr);
         var sql = `select *
                    from ${table}
-                   where address = ?`;
+                   where address = ? limit 1`;
         return mysql.selectOne(sql, [addr])
             .then(row => {
-                return row == null ? null : new Address(row);
+                if (row == null) {
+                    return null;
+                }
+
+                sb.set(`addr_${addr}`, JSON.stringify(row));
+
+                return new Address(row);
             });
     }
 
@@ -186,5 +194,32 @@ class Address {
     }
 
 }
+
+Address.grab = async (addr, useCache = true) => {
+    if (useCache) {
+        let def = await sb.get(`addr_${addr}`);
+        if (def == null) {
+            return await Address.make(addr);
+        }
+        return new Address(JSON.parse(def));
+    } else {
+        return await Address.make(addr);
+    }
+};
+
+Address.multiGrab = async (addrs, useCache = true) => {
+    if (!useCache) {
+        return await* addrs.map(addr => Address.grab(addr, false));
+    }
+
+    var bag = _.zipObject(addrs);
+    var defs = await sb.multi_get.apply(sb, addrs.map(addr => `addr_${addr}`));
+    _.extend(bag, _.chain(defs).chunk(2).zipObject().mapKeys((v, k) => k.slice(5)).mapValues(v => JSON.parse(v)).value());
+    var missedAddrs = addrs.filter(addr => bag[addr] == null);
+    var missedAddrDefs = await* missedAddrs.map(addr => Address.grab(addr));
+    _.extend(bag, _.zipObject(missedAddrs, missedAddrDefs));
+
+    return addrs.map(addr => bag[addr] == null ? null : new Address(bag[addr]));
+};
 
 module.exports = Address;

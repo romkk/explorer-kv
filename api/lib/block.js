@@ -155,7 +155,10 @@ Block.grabByHeight = async (h, useCache = true) => {
         let sql = `select hash from 0_blocks
                    where height = ? order by chain_id asc`;
         blockHashList = await mysql.list(sql, 'hash', [h]);
-        sb.set(`blkh_${h}`, JSON.stringify(blockHashList));
+
+        if (blockHashList.length) {
+            sb.set(`blkh_${h}`, JSON.stringify(blockHashList));
+        }
 
         return blockHashList;
     };

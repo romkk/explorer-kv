@@ -6,6 +6,8 @@ var moment = require('moment');
 var assert = require('assert');
 var BN = require('bn.js');
 var Tx = require('./tx');
+var sb = require('../lib/ssdb')();
+var _ = require('lodash');
 
 class Address {
     constructor(row) {
@@ -36,7 +38,7 @@ class Address {
         };
     }
 
-    load(timestamp = null, order = 'desc', offset = 0, limit = 50) {
+    async load(timestamp = null, order = 'desc', offset = 0, limit = 50) {
         order = order === 'desc' ? 'desc' : 'asc';
         if (timestamp == null) {
             timestamp = order === 'desc' ? moment.utc().unix() : 0;
@@ -45,129 +47,120 @@ class Address {
         var addrMapTableProp = `${order === 'desc' ? 'prev' : 'next'}_ymd`;
 
         var ret = [];
+        var table = await this.getStartTable(timestamp, order);
 
-        return this.getStartTable(timestamp, order)
-            .then((table) => {
-                return new Promise(resolve => {
-                    if (this.attrs.tx_count <= offset) {
-                        return resolve(ret);
-                    }
+        if (this.attrs.tx_count <= offset) {
+            return ret;
+        }
 
-                    var loop = () => {
+        // read table count cache from ssdb
+        var cache = await sb.hgetall(`addr_table_${this.attrs.address}`);
+        cache = _.zipObject(_.chunk(cache, 2));
 
-                        if (table == null) {    //没有更多了
-                            return resolve(ret);
-                        }
+        while (true) {
+            if (table == null) {
+                return ret;
+            }
 
-                        var sqlRowCnt = `select count(id) as cnt from ${table}
+            let cnt;
+
+            if (cache[table]) {
+                log(`[cache hit] addr_table_${this.attrs.address} ${table}`);
+                cnt = cache[table];
+            } else {
+                log(`[cache miss] addr_table_${this.attrs.address} ${table}`);
+                let sqlRowCnt = `select count(id) as cnt from ${table}
                                  where address_id = ?`;
-                        mysql.pluck(sqlRowCnt, 'cnt', [this.attrs.id])
-                            .then((cnt) => {
-                                if (cnt <= offset) {        //单表无法满足 offset，直接下一张表
-                                    log(`单表无法满足offset, cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
-                                    offset -= cnt;
+                cnt = await mysql.pluck(sqlRowCnt, 'cnt', [this.attrs.id]);
+                sb.hset(`addr_table_${this.attrs.address}`, table, cnt);
+            }
 
-                                    let tmpOrder = order === 'desc' ? 'asc' : 'desc';
+            if (Number(cnt) <= offset) {    //单表无法满足 offset，直接下一张表
+                log(`单表无法满足offset, cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
+                offset -= cnt;
 
-                                    var sqlNextTable = `select ${addrMapTableProp} as next from ${table}
+                let tmpOrder = order === 'desc' ? 'asc' : 'desc';
+
+                let sqlNextTable = `select ${addrMapTableProp} as next from ${table}
                                     where address_id = ?
                                     order by tx_height ${tmpOrder}, id ${tmpOrder}
                                     limit 1`;
 
-                                    return mysql.pluck(sqlNextTable, 'next', [this.attrs.id])
-                                        .then(next => {
-                                            table = this.getAddressToTxTable(next);
-                                            return loop();
-                                        });
-                                }
+                let next = await mysql.pluck(sqlNextTable, 'next', [this.attrs.id]);
+                table = this.getAddressToTxTable(next);
+                continue;
+            }
 
-                                var sql = `select * from ${table}
+            let sql = `select * from ${table}
                                     where address_id = ?
                                     order by idx ${order}
                                     limit ?, ?`;
 
-                                log(`单表 cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
-                                return mysql.query(sql, [this.attrs.id, offset, limit])
-                                    .then(rows => {
-
-                                        ret.push.apply(ret, rows);
-
-                                        if (cnt >= offset + limit) {    //单表即满足要求
-                                            table = null;
-                                        } else {    //单表不满足，需要继续下一张表
-                                            limit -= rows.length;
-                                            offset = 0;
-                                            table = this.getAddressToTxTable(rows[rows.length - 1][addrMapTableProp]);
-                                        }
-                                        return loop();
-                                    });
-                            });
-                    };
-
-                    loop();
-                });
-            })
-            .then(rows => {
-                return Promise.all(rows.map(r => {
-                    return Tx.make(r.tx_id).then(tx => tx.load());
-                }))
-            }).then(txs => {
-                this.txs = txs;
-                return this;
-            });
+            log(`单表 cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
+            let rows = await mysql.query(sql, [this.attrs.id, offset, limit]);
+            ret.push.apply(ret, rows);
+            if (cnt >= offset + limit) {    //单表即满足要求
+                table = null;
+            } else {    //单表不满足，需要继续下一张表
+                limit -= rows.length;
+                offset = 0;
+                table = this.getAddressToTxTable(rows[rows.length - 1][addrMapTableProp]);
+            }
+        }
     }
 
-    getStartTable(timestamp, order) {
+    async getStartTable(timestamp, order) {
         var date = +moment.utc(timestamp * 1000).format('YYYYMMDD');
         var end = this.attrs.end_tx_ymd;
         var start = this.attrs.begin_tx_ymd;
         var table = this.getAddressToTxTable(order === 'desc' ? Math.min(end, date) : Math.max(start, date));
+        var sql, id;
 
-        var sql = `select height from 0_blocks where \`timestamp\` ${order === 'desc' ? '<=' : '>='} ?
+        sql = `select height from 0_blocks where \`timestamp\` ${order === 'desc' ? '<=' : '>='} ?
                    order by block_id ${order} limit 1`;
 
-        return mysql.pluck(sql, 'height', [timestamp])
-            .then(height => {
-                return new Promise((resolve, reject) => {
-                    var loop = () => {
-                        var sql = `select id
-                               from ${table}
-                               where address_id = ? and tx_height ${order === 'desc' ? '<=' : '>='} ?
-                               order by tx_height ${order} limit 1`;
-                        mysql.pluck(sql, 'id', [this.attrs.id, height])
-                            .then(id => {
-                                if (id === null) {
-                                    let postfix = +table.slice(-6);
-                                    let newPostfix = moment.utc(postfix, 'YYYYMM');
-                                    newPostfix = (order === 'desc' ? newPostfix.subtract(1, 'months') : newPostfix.add(1, 'months')).format('YYYYMM');
-                                    table = table.slice(0, -6) + newPostfix;
-                                    return loop();
-                                }
+        var height = await mysql.pluck(sql, 'height', [timestamp]);
 
-                                return resolve(table);
-                            }, err => {
-                                if (err.code === 'ER_NO_SUCH_TABLE') {
-                                    return resolve(null);
-                                } else {
-                                    return reject(err);
-                                }
-                            })
+        while (true) {
+            sql = `select id
+                   from ${table}
+                   where address_id = ? and tx_height ${order === 'desc' ? '<=' : '>='} ?
+                   order by tx_height ${order} limit 1`;
 
-                    };
-
-                    loop();
-                });
-            });
+            try {
+                id = await mysql.pluck(sql, 'id', [this.attrs.id, height]);
+                if (id == null) {
+                    let postfix = +table.slice(-6);
+                    let newPostfix = moment.utc(postfix, 'YYYYMM');
+                    newPostfix = (order === 'desc' ? newPostfix.subtract(1, 'months') : newPostfix.add(1, 'months')).format('YYYYMM');
+                    table = table.slice(0, -6) + newPostfix;
+                    continue;
+                }
+                return table;
+            } catch (err) {
+                if (err.code === 'ER_NO_SUCH_TABLE') {
+                    return null;
+                } else {
+                    throw err;
+                }
+            }
+        }
     }
 
     static make(addr) {
         var table = Address.getTableByAddr(addr);
         var sql = `select *
                    from ${table}
-                   where address = ?`;
+                   where address = ? limit 1`;
         return mysql.selectOne(sql, [addr])
             .then(row => {
-                return row == null ? null : new Address(row);
+                if (row == null) {
+                    return null;
+                }
+
+                sb.set(`addr_${addr}`, JSON.stringify(row));
+
+                return new Address(row);
             });
     }
 
@@ -186,5 +179,32 @@ class Address {
     }
 
 }
+
+Address.grab = async (addr, useCache = true) => {
+    if (useCache) {
+        let def = await sb.get(`addr_${addr}`);
+        if (def == null) {
+            return await Address.make(addr);
+        }
+        return new Address(JSON.parse(def));
+    } else {
+        return await Address.make(addr);
+    }
+};
+
+Address.multiGrab = async (addrs, useCache = true) => {
+    if (!useCache) {
+        return await * addrs.map(addr => Address.grab(addr, false));
+    }
+
+    var bag = _.zipObject(addrs);
+    var defs = await sb.multi_get.apply(sb, addrs.map(addr => `addr_${addr}`));
+    _.extend(bag, _.chain(defs).chunk(2).zipObject().mapKeys((v, k) => k.slice(5)).mapValues(v => JSON.parse(v)).value());
+    var missedAddrs = addrs.filter(addr => bag[addr] == null);
+    var missedAddrDefs = await * missedAddrs.map(addr => Address.grab(addr));
+    _.extend(bag, _.zipObject(missedAddrs, missedAddrDefs));
+
+    return addrs.map(addr => bag[addr] == null ? null : new Address(bag[addr]));
+};
 
 module.exports = Address;

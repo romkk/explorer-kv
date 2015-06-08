@@ -1,16 +1,17 @@
 var mysql = require('../lib/mysql');
-var log = require('debug')('api:route:address');
+var log = require('debug')('api:route:misc');
+var sprintf = require('sprintf').sprintf;
 var helper = require('../lib/helper');
 var restify = require('restify');
 var _ = require('lodash');
 var Tx = require('../lib/tx');
 var Address = require('../lib/address');
+var Block = require('../lib/block');
 var validators = require('../lib/custom_validators');
-var sprintf = require('sprintf').sprintf;
-var assert = require('assert');
 
 module.exports = (server) => {
-    server.get('/unspent', (req, res, next) => {
+    /*
+    server.get('/unspent', async (req, res, next) => {
         var err = validators.isValidAddressList(req.query.active);
         if (err != null) {
             return next(err);
@@ -19,59 +20,38 @@ module.exports = (server) => {
         var parts = req.params.active.trim().split('|');
         var ret = _.zipObject(parts);
 
-        //TODO：修改为get latest block
-        var sql = `select height from 0_blocks
-                   where chain_id = 0
-                   order by block_id desc
-                   limit 1`;
+        var height = await Block.getLatestHeight();
 
-        mysql.pluck(sql, 'height')
-            .then(height => {
-                return Promise.map(parts, function(p) {
-                    var unspentList = [];
-                    return Address.make(p)
-                        .then(addr => {
-                            if (addr == null) {
-                                return [];
-                            }
+        await* parts.map(async p => {
+            var addr = await Address.grab(p, !req.params.skipcache);
+            if (addr == null) {
+                return [];
+            }
 
-                            var table = sprintf('address_unspent_outputs_%04d', addr.attrs.id % 10);
-                            var sql = `select tx_id, block_height, value
-                                       from ${table}
-                                       where address_id = ?
-                                       order by tx_id asc, position asc, position2 asc`;
-                            return mysql.query(sql, [addr.attrs.id]);
-                        })
-                        .then(rows => {
-                            if (rows.length == 0) {
-                                return [];
-                            }
+            var table = sprintf('address_unspent_outputs_%04d', addr.attrs.id % 10);
+            var sql = `select tx_id, block_height, value
+                       from ${table}
+                       where address_id = ?
+                       order by tx_id asc, position asc, position2 asc`;
 
-                            unspentList = rows.map(r => ({
-                                tx_index: r.tx_id,
-                                value: r.value,
-                                value_hex: r.value.toString(16),
-                                confirmations: height - r.block_height + 1
-                            }));
+            var rows = await mysql.query(sql, [addr.attrs.id]);
 
-                            return Promise.map(rows, r => Tx.make(r.tx_id));
-                        })
-                        .then(txs => {
-                            for (let i = 0, l = unspentList.length; i < l; i++) {
-                                unspentList[i].tx_hash = txs[i].attrs.hash;
-                                unspentList[i].tx_hash_big_endian = helper.toBigEndian(txs[i].attrs.hash);
-                                unspentList[i].tx_output_n = txs[i].attrs.output_count;
-                            }
+            if (rows.length === 0) {
+                return [];
+            }
 
-                            ret[p] = unspentList;
-                        });
-                }).return(ret);
-            })
-            .then(ret => {
-                res.send(ret);
-                next();
-            }, next);
+            ret[p] = rows.map(r => ({
+                tx_index: r.tx_id,
+                value: r.value,
+                value_hex: r.value.toString(16),
+                confirmations: height - r.block_height + 1
+            }));
+        });
+
+        res.send(ret);
+        next();
     });
+    */
 
     server.get('/unconfirmed-transactions', (req, res, next) => {
         const PAGESIZE = 1000;

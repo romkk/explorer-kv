@@ -9,7 +9,7 @@ var moment = require('moment');
 var validators = require('../lib/custom_validators');
 
 module.exports = (server) => {
-    server.get('/address/:addr', (req, res, next)=> {
+    server.get('/address/:addr', async (req, res, next)=> {
         req.checkParams('addr', 'Not a valid address').isValidAddress();
 
         req.checkQuery('offset', 'should be a valid number').optional().isNumeric();
@@ -31,25 +31,17 @@ module.exports = (server) => {
             }));
         }
 
-        Address.make(req.params.addr)
-            .then(address => {
-                if (address == null) {
-                    return new restify.ResourceNotFoundError('Address not found');
-                }
-                return address.load(
-                    req.params.timestamp,
-                    req.params.sort,
-                    req.params.offset,
-                    req.params.limit
-                );
-            })
-            .then(address => {
-                res.send(address);
-                next();
-            });
+        var addr = await Address.grab(req.params.addr, !req.params.skipcache);
+        if (addr == null) {
+            return new restify.ResourceNotFoundError('Address not found');
+        }
+
+        addr = await addr.load(req.params.timestamp, req.params.sort, req.params.offset, req.params.limit);
+        res.send(addr);
+        next();
     });
 
-    server.get('/multiaddr', (req, res, next) => {
+    server.get('/multiaddr', async (req, res, next) => {
         var err = validators.isValidAddressList(req.query.active);
         if (err != null) {
             return next(err);
@@ -57,29 +49,26 @@ module.exports = (server) => {
 
         var parts = req.params.active.trim().split('|');
 
-        Promise.all(parts.map(p => {
-            return Address.make(p)
-                .then(addr => {
-                    if (addr == null) {
-                        throw new restify.InvalidArgumentError(`Address not found: ${p}`);
-                    }
-                    var a = addr.attrs;
-                    return {
-                        final_balance: a.total_received - a.total_sent,
-                        address: a.address,
-                        total_sent: a.total_sent,
-                        total_received: a.total_received,
-                        n_tx: a.tx_count,
-                        hash160: helper.addressToHash160(a.address)
-                    };
-                });
-        })).then((addrs) => {
-            res.send({
-                addresses: addrs
-            });
-            next();
-        }, err => {
-            next(err);
-        })
+        var ret = await Address.multiGrab(parts, !req.params.skipcache);
+
+        ret = ret.map(addr => {
+            if (addr == null) {
+                return null;
+            }
+
+            var a = addr.attrs;
+
+            return {
+                final_balance: a.total_received - a.total_sent,
+                address: a.address,
+                total_sent: a.total_sent,
+                total_received: a.total_received,
+                n_tx: a.tx_count,
+                hash160: helper.addressToHash160(a.address)
+            };
+        });
+
+        res.send(ret);
+        next();
     });
 };

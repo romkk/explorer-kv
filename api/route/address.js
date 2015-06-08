@@ -35,7 +35,7 @@ module.exports = (server) => {
         if (addr == null) {
             return new restify.ResourceNotFoundError('Address not found');
         }
-        //TODO: 调用优化后的 load
+
         addr = await addr.load(req.params.timestamp, req.params.sort, req.params.offset, req.params.limit);
         res.send(addr);
         next();

@@ -1,5 +1,4 @@
 var restify = require('restify');
-var mysql = require('../lib/mysql');
 var sprintf = require('sprintf').sprintf;
 var moment = require('moment');
 
@@ -24,10 +23,9 @@ debug.formatArgs = function () {
 };
 
 
-var log = debug('api:server');
+var log = debug('wallet:server');
 var bunyan = require('bunyan');
 var expressValidator = require('express-validator');
-var customValidators = require('../lib/custom_validators');
 
 var server = restify.createServer();
 
@@ -38,7 +36,7 @@ server.use(restify.acceptParser(server.acceptable));
 server.use(restify.queryParser());
 server.use(restify.jsonp());
 server.use(restify.bodyParser());
-server.use(expressValidator({ customValidators: customValidators }));
+server.use(expressValidator());
 server.use(restify.gzipResponse());
 
 server.on('after', restify.auditLogger({
@@ -58,8 +56,8 @@ server.use((req, res, next) => {
 
 require('../route')(server);
 
-server.listen(process.env.BLOCKCHAIN_API_PORT || 3000, ()=> {
-    log(`listen on ${process.env.BLOCKCHAIN_API_PORT || 3000}`);
+server.listen(process.env.WALLET_API_PORT || 3001, ()=> {
+    log(`listen on ${process.env.WALLET_API_PORT || 3001}`);
 });
 
 server.on('uncaughtException', function(req, res, route, err) {

@@ -2,10 +2,10 @@
   "name": "wallet.api",
   "version": "1.0.0",
   "description": "API Service for Wallet",
-  "main": "index.js",
+  "main": "bin/cli.js",
   "scripts": {
-    "dev": "DEBUG=api:* nodemon --exec npm run babel-node | bunyan",
-    "babel-node": "babel-node index.js",
+    "dev": "DEBUG=wallet:* nodemon --exec npm run babel-node | bunyan",
+    "babel-node": "babel-node bin/cli.js",
     "test": "NODE_ENV=test mocha -r test/bootstrap.js --compilers js:babel/register --recursive test",
     "clean": "rm -rf npm-debug.log"
   },

@@ -20,6 +20,8 @@
 #include <iostream>
 #include <fstream>
 
+#include <boost/thread.hpp>
+
 #include "Parser.h"
 #include "Common.h"
 #include "Util.h"
@@ -55,11 +57,14 @@ LastestAddressInfo::LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd,
 void _getBlockRawHex(const int32_t height,
                      MySQLConnection &db,
                      string *rawHex, int32_t *chainId, int64_t *blockId) {
+  string sql;
+
   // 从DB获取raw block
   MySQLResult res;
-  string sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
-                               " WHERE `block_height` = %d AND `chain_id`=0 ",
-                               height);
+  sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
+                        " WHERE `block_height` = %d AND `chain_id`=0 ",
+                        height);
+
   char **row = nullptr;
   db.query(sql, res);
   if (res.numRows() == 0) {
@@ -78,6 +83,51 @@ void _getBlockRawHex(const int32_t height,
     *blockId  = atoi64(row[2]);
   }
 }
+
+// 获取block raw hex/id/chainId...
+// Rollback时用该函数
+void _getBlockRawHexRollback(const int32_t height,
+                             MySQLConnection &db,
+                             string *rawHex, int32_t *chainId, int64_t *blockId) {
+  string sql;
+  MySQLResult res;
+  char **row = nullptr;
+  string hash;
+
+  // 0_blocks 获取此高度的hash，不可从 0_row_blocks 中获取，因为此时分叉了
+  // 0_row_blocks 可能拿到的该高度另一个分支的块
+  sql = Strings::Format("SELECT `hash` FROM `0_blocks` WHERE "
+                        " `height` = %d AND `chain_id`=0 ", height);
+  db.query(sql, res);
+  if (res.numRows() == 0) {
+    THROW_EXCEPTION_DBEX("can't find block by height from DB when rollback: %d",
+                         height);
+  }
+  row = res.nextRow();
+  hash = string(row[0]);
+
+  // 根据 hash 从 0_row_blocks 中获取
+  sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
+                        " WHERE `block_hash` = '%s' ", hash.c_str());
+  db.query(sql, res);
+  if (res.numRows() == 0) {
+    THROW_EXCEPTION_DBEX("can't find block from DB when rollback: %s",
+                         hash.c_str());
+  }
+  row = res.nextRow();
+  if (rawHex != nullptr) {
+    rawHex->assign(row[0]);
+    assert(rawHex->length() % 2 == 0);
+  }
+  if (chainId != nullptr) {
+    *chainId = atoi(row[1]);
+  }
+  if (blockId != nullptr) {
+    *blockId  = atoi64(row[2]);
+  }
+}
+
+
 
 // 批量插入函数
 bool multiInsert(MySQLConnection &db, const string &table,
@@ -158,9 +208,19 @@ CacheManager::CacheManager(): ssdb_(nullptr) {
   }
   running_   = true;
   ssdbAlive_ = true;
+
+  // setup consumer thread
+  boost::thread t(boost::bind(&CacheManager::threadConsumer, this));
+  runningThreadConsumer_ = true;
 }
 
 CacheManager::~CacheManager() {
+  running_ = false;
+
+  while (runningThreadConsumer_) {
+    sleepMs(10);
+  }
+
   if (ssdb_ != nullptr) {
     delete ssdb_;
     ssdb_ = nullptr;
@@ -263,6 +323,8 @@ void CacheManager::threadConsumer() {
       }
     }
   } /* /while */
+
+  runningThreadConsumer_ = false;
 }
 
 
@@ -1034,10 +1096,10 @@ void Parser::rollbackBlock(const int32_t height) {
   int32_t chainId;
   int64_t blockId;
 
-  _getBlockRawHex(height, dbExplorer_, &blkRawHex, &chainId, &blockId);
+  _getBlockRawHexRollback(height, dbExplorer_, &blkRawHex, &chainId, &blockId);
   assert(chainId == 0);
 
-  // 解码Raw Hex
+  // 解码Raw Block
   vector<unsigned char> blockData(ParseHex(blkRawHex));
   CDataStream ssBlock(blockData, SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
   CBlock blk;
@@ -1063,7 +1125,7 @@ void Parser::rollbackBlock(const int32_t height) {
 
   // table.block_txs_xxxx
   sql = Strings::Format("DELETE FROM `block_txs_%04d` WHERE `block_id`=%lld",
-                        blockId % 100, blockId);
+                        tableIdx_BlockTxs(blockId), blockId);
   dbExplorer_.updateOrThrowEx(sql, (int32_t)blk.vtx.size());
 }
 

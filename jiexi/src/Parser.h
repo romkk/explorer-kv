@@ -120,6 +120,7 @@ public:
 // 若SSDB宕机，则丢弃数据
 class CacheManager {
   atomic<bool> running_;
+  atomic<bool> runningThreadConsumer_;
   atomic<bool> ssdbAlive_;
 
   ssdb::Client *ssdb_;
@@ -137,8 +138,6 @@ class CacheManager {
 public:
   CacheManager();
   ~CacheManager();
-
-  bool tryOpen();
 
   void insertKV(const string &key);
   void insertHashSet(const string &address, const string &tableName);

@@ -1,5 +1,5 @@
 {
-  "name": "api",
+  "name": "blockchain.api",
   "version": "1.0.0",
   "description": "API Service for Explorer",
   "main": "index.js",

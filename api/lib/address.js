@@ -53,16 +53,29 @@ class Address {
             return ret;
         }
 
+        // read table count cache from ssdb
+        var cache = await sb.hgetall(`addr_table_${this.attrs.address}`);
+        cache = _.zipObject(_.chunk(cache, 2));
+
         while (true) {
             if (table == null) {
                 return ret;
             }
 
-            let sqlRowCnt = `select count(id) as cnt from ${table}
-                                 where address_id = ?`;
+            let cnt;
 
-            let cnt = await mysql.pluck(sqlRowCnt, 'cnt', [this.attrs.id]);
-            if (cnt <= offset) {    //单表无法满足 offset，直接下一张表
+            if (cache[table]) {
+                log(`[cache hit] addr_table_${this.attrs.address}`);
+                cnt = cache[table];
+            } else {
+                log(`[cache miss] addr_table_${this.attrs.address}`);
+                let sqlRowCnt = `select count(id) as cnt from ${table}
+                                 where address_id = ?`;
+                cnt = await mysql.pluck(sqlRowCnt, 'cnt', [this.attrs.id]);
+                sb.hset(`addr_table_${this.attrs.address}`, table, cnt);
+            }
+
+            if (Number(cnt) <= offset) {    //单表无法满足 offset，直接下一张表
                 log(`单表无法满足offset, cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
                 offset -= cnt;
 
@@ -94,72 +107,6 @@ class Address {
                 table = this.getAddressToTxTable(rows[rows.length - 1][addrMapTableProp]);
             }
         }
-
-        return new Promise(resolve => {
-            if (this.attrs.tx_count <= offset) {
-                return resolve(ret);
-            }
-
-            var loop = () => {
-
-                if (table == null) {    //没有更多了
-                    return resolve(ret);
-                }
-
-                //get count list
-                //var fields = await sb.hgetall(`addr_table_${this.attrs.address}`);
-
-
-                mysql.pluck(sqlRowCnt, 'cnt', [this.attrs.id])
-                    .then((cnt) => {
-                        if (cnt <= offset) {        //单表无法满足 offset，直接下一张表
-                            log(`单表无法满足offset, cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
-                            offset -= cnt;
-
-                            let tmpOrder = order === 'desc' ? 'asc' : 'desc';
-
-                            var sqlNextTable = `select ${addrMapTableProp} as next from ${table}
-                                    where address_id = ?
-                                    order by tx_height ${tmpOrder}, id ${tmpOrder}
-                                    limit 1`;
-
-                            return mysql.pluck(sqlNextTable, 'next', [this.attrs.id])
-                                .then(next => {
-                                    table = this.getAddressToTxTable(next);
-                                    return loop();
-                                });
-                        }
-
-                        var sql = `select * from ${table}
-                                    where address_id = ?
-                                    order by idx ${order}
-                                    limit ?, ?`;
-
-                        log(`单表 cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
-                        return mysql.query(sql, [this.attrs.id, offset, limit])
-                            .then(rows => {
-
-                                ret.push.apply(ret, rows);
-
-                                if (cnt >= offset + limit) {    //单表即满足要求
-                                    table = null;
-                                } else {    //单表不满足，需要继续下一张表
-                                    limit -= rows.length;
-                                    offset = 0;
-                                    table = this.getAddressToTxTable(rows[rows.length - 1][addrMapTableProp]);
-                                }
-                                return loop();
-                            });
-                    });
-            };
-
-            loop();
-        })
-            .then(rows => Tx.multiGrab(rows.map(r => r.tx_id)))
-            .then(txs => {
-                this.txs = txs;
-                return this;
-            });
     }
 
     async getStartTable(timestamp, order) {

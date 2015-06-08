@@ -129,18 +129,24 @@ class CacheManager {
 
   mutex lock_;
 
-  // 待删除队列
+  // 待删除队列，临时
+  set<string> qkvTemp_;
+  vector<std::pair<string, string> > qhashsetTemp_;
+  // 待删除队列，正式
   vector<string> qkv_;
   vector<std::pair<string, string> > qhashset_;
 
   void threadConsumer();
 
 public:
-  CacheManager();
+  CacheManager(const string  SSDBHost, const int32_t SSDBPort);
   ~CacheManager();
 
+  // non-thread safe
   void insertKV(const string &key);
   void insertHashSet(const string &address, const string &tableName);
+
+  void commit();
 };
 
 
@@ -149,6 +155,8 @@ private:
   atomic<bool> running_;
   MySQLConnection dbExplorer_;
 
+  CacheManager *cache_;
+  bool cacheEnable_;
 
   bool tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset);
   int64_t getLastTxLogOffset();

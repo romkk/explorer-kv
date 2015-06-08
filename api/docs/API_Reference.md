@@ -248,34 +248,6 @@ TODO
 
 ```
 
-### Unspent outputs
-
-#### Request
-
-    GET /unspent
-    
-|参数|描述|位置|必须|数据类型|
-|---|---|---|---|---|
-|active|多个比特币地址，使用 <code>&#124;</code> 分隔，最多 128 个地址|Query|√|string|
-
-#### Response
-
-```JSON
-{
-    "unspent_outputs": [
-        {
-            "tx_hash": "d93fa00752e4d8acb16a8508349be7ff5c00ce3c9fae275dde00e4f92f8f6168",
-            "tx_hash_big_endian": "68618f2ff9e400de5d27ae9f3cce005cffe79b3408856ab1acd8e45207a03fd9",
-            "tx_index": 88309954,
-            "tx_output_n": 0,
-            "value": 309299180,
-            "value_hex": "126f87ec",
-            "confirmations": 6
-        }
-    ]
-}
-```
-
 ### Latest Block
 
 #### Request

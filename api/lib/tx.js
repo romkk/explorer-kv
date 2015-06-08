@@ -217,9 +217,11 @@ class Tx {
         var bag = _.zipObject(ids);
 
         if (helper.paramType(ids[0]) == helper.constant.ID_IDENTIFIER) {        // 传入的是 ID list
-            return sb.multi_get.apply(sb, ids.map(id => `txid_${id}`))
-                .then(result => {       // 尝试获取 hash
-                    _.extend(bag, _.chain(result).chunk(2).zipObject().mapKeys((v, k) => k.slice(5)).value());
+            return Promise.all(_.chunk(ids, 30000).map(args => sb.multi_get.apply(sb, args.map(id => `txid_${id}`))))
+                .then(results => {       // 尝试获取 hash
+                    results.forEach(result => {
+                        _.extend(bag, _.chain(result).chunk(2).zipObject().mapKeys((v, k) => k.slice(5)).value());
+                    });
 
                     let idList = _.keys(bag).filter(k => bag[k] == null);
                     let hashList = _.keys(bag).filter(k => bag[k] != null);

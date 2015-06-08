@@ -10,6 +10,7 @@ var Block = require('../lib/block');
 var validators = require('../lib/custom_validators');
 
 module.exports = (server) => {
+    /*
     server.get('/unspent', async (req, res, next) => {
         var err = validators.isValidAddressList(req.query.active);
         if (err != null) {
@@ -29,38 +30,28 @@ module.exports = (server) => {
 
             var table = sprintf('address_unspent_outputs_%04d', addr.attrs.id % 10);
             var sql = `select tx_id, block_height, value
-                                       from ${table}
-                                       where address_id = ?
-                                       order by tx_id asc, position asc, position2 asc`;
+                       from ${table}
+                       where address_id = ?
+                       order by tx_id asc, position asc, position2 asc`;
 
             var rows = await mysql.query(sql, [addr.attrs.id]);
+
             if (rows.length === 0) {
                 return [];
             }
 
-            var unspentList = rows.map(r => ({
+            ret[p] = rows.map(r => ({
                 tx_index: r.tx_id,
                 value: r.value,
                 value_hex: r.value.toString(16),
                 confirmations: height - r.block_height + 1
             }));
-
-            log('txs grab start');
-            var txs = await Tx.multiGrab(rows.map(r => r.tx_id), !req.params.skipcache);
-            log('txs grab done');
-
-            for (let i = 0, l = unspentList.length; i < l; i++) {
-                unspentList[i].tx_hash = txs[i].hash;
-                unspentList[i].tx_hash_big_endian = helper.toBigEndian(txs[i].hash);
-                unspentList[i].tx_output_n = txs[i].output_count;
-            }
-
-            ret[p] = unspentList;
         });
 
         res.send(ret);
         next();
     });
+    */
 
     server.get('/unconfirmed-transactions', (req, res, next) => {
         const PAGESIZE = 1000;

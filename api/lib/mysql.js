@@ -51,11 +51,13 @@ class Mysql {
 
     query(sql, vars = []) {
         log(`SQL: ${sql}, bindings: ${vars}`);
+        let start = Date.now();
         return new Promise((resolve, reject) => {
             this.pool.query(sql, vars, (err, rows) => {
                 if (err) {
                     return reject(this.handleError(err));
                 }
+                log(`SQL: total ms: ${Date.now() - start}ms`);
                 resolve(rows);
             });
         });

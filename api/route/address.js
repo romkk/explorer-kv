@@ -49,8 +49,6 @@ module.exports = (server) => {
 
         var parts = req.params.active.trim().split('|');
 
-        console.log('cache', req.params.skipcache);
-
         var ret = await Address.multiGrab(parts, !req.params.skipcache);
 
         ret = ret.map(addr => {

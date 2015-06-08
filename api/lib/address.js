@@ -65,10 +65,10 @@ class Address {
             let cnt;
 
             if (cache[table]) {
-                log(`[cache hit] addr_table_${this.attrs.address}`);
+                log(`[cache hit] addr_table_${this.attrs.address} ${table}`);
                 cnt = cache[table];
             } else {
-                log(`[cache miss] addr_table_${this.attrs.address}`);
+                log(`[cache miss] addr_table_${this.attrs.address} ${table}`);
                 let sqlRowCnt = `select count(id) as cnt from ${table}
                                  where address_id = ?`;
                 cnt = await mysql.pluck(sqlRowCnt, 'cnt', [this.attrs.id]);
@@ -116,7 +116,6 @@ class Address {
         var table = this.getAddressToTxTable(order === 'desc' ? Math.min(end, date) : Math.max(start, date));
         var sql, id;
 
-        // 调用优化后的 height 获取方法
         sql = `select height from 0_blocks where \`timestamp\` ${order === 'desc' ? '<=' : '>='} ?
                    order by block_id ${order} limit 1`;
 

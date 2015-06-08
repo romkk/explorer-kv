@@ -29,18 +29,18 @@
 #include "../bitcoin/chainparams.h"
 
 #include "Common.h"
-#include "PreTx.h"
+#include "PreAddress.h"
 
-PreTx *gPreTx = nullptr;
+PreAddress *gPreAddress = nullptr;
 
 void handler(int sig) {
-  if (gPreTx) {
-    gPreTx->stop();
+  if (gPreAddress) {
+    gPreAddress->stop();
   }
 }
 
 void usage() {
-  fprintf(stderr, "Usage:\n\tpre_tx -c \"tparser.bootstrap.conf\" -l \"tparser.bootstrap.log\"\n");
+  fprintf(stderr, "Usage:\n\tpre_addr -c \"tparser.bootstrap.conf\" -l \"pre_addr.log\"\n");
 }
 
 int main(int argc, char **argv) {
@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
   }
 
   // write pid to file
-  writePid2FileOrExit("pre_tx.pid");
+  writePid2FileOrExit("pre_addr.pid");
 
   fdLog = fopen(optLog, "a");
   if (!fdLog) {
@@ -103,12 +103,12 @@ int main(int argc, char **argv) {
   signal(SIGINT,  handler);
 
   try {
-    gPreTx = new PreTx();
-    gPreTx->run();
-    delete gPreTx;
-    gPreTx = nullptr;
+    gPreAddress = new PreAddress();
+    gPreAddress->run();
+    delete gPreAddress;
+    gPreAddress = nullptr;
   } catch (std::exception & e) {
-    LOG_FATAL("pre_ex exception: %s", e.what());
+    LOG_FATAL("pre_addr exception: %s", e.what());
     return 1;
   }
   return 0;

@@ -70,6 +70,7 @@ using std::mutex;
 using std::lock_guard;
 using std::unique_lock;
 using std::condition_variable;
+using std::unordered_set;
 
 typedef int8_t int8;
 typedef uint8_t uint8;

@@ -48,11 +48,20 @@ int32_t HexToDecLast2Bytes(const string &hex) {
 }
 
 int32_t AddressTableIndex(const string &address) {
-  CKeyID key;
-  if (!CBitcoinAddress(address).GetKeyID(key)) {
-    return 0;
+  CTxDestination dest;
+  CBitcoinAddress addr(address);
+  string h;
+  if (!addr.IsValid()) {
+    THROW_EXCEPTION_DBEX("invalid address: %s", address.c_str());
   }
-  const string h = key.GetHex();
+  dest = addr.Get();
+
+  if (addr.IsScript()) {
+    h = boost::get<CScriptID>(dest).GetHex();
+  } else {
+    h = boost::get<CKeyID>(dest).GetHex();
+  }
+
   // 输出是反序的
   // 例如：1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq
   // 应该是：8b60195db4692837d7f61b7be8aa11ecdfaecdcf
@@ -109,6 +118,9 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
 
     addrMap.insert(std::make_pair(a, atoi64(row[0])));
     if (isUseCache) {
+      if (addrMapCache.size() > 50 * 10000) {  // 最大缓存50万个地址，超过则清空
+        std::unordered_map<string, int64_t>().swap(addrMapCache);
+      }
       addrMapCache.insert(std::make_pair(a, atoi64(row[0])));
     }
   } /* /for */

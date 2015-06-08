@@ -18,16 +18,40 @@
 #ifndef Explorer_Parser_h
 #define Explorer_Parser_h
 
+#include <string.h>
+
 #include "Common.h"
-#include "MySQLConnection.h"
+#include "Util.h"
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
 
-#define TXLOG_STATUS_INIT 100
-#define TXLOG_STATUS_DONE 1000
+void getRawBlockFromDisk(const int32_t height, string *rawHex,
+                         int32_t *chainId, int64_t *blockId);
 
-#define TXLOG_TYPE_ACCEPT   1
-#define TXLOG_TYPE_ROLLBACK 2
+inline int32_t tableIdx_Addr(const int64_t addrId) {
+  return (int32_t)(addrId / BILLION % 64);
+}
+inline int32_t tableIdx_AddrUnspentOutput(const int64_t addrId) {
+  return (int32_t)(addrId % 10);
+}
+inline int32_t tableIdx_TxOutput(const int64_t txId) {
+  return (int32_t)(txId % 100);
+}
+inline int32_t tableIdx_TxInput(const int64_t txId) {
+  return (int32_t)(txId % 100);
+}
+inline int32_t tableIdx_Tx(const int64_t txId) {
+  return (int32_t)(txId / BILLION % 64);
+}
+inline int32_t tableIdx_AddrTxs(const int32_t ymd) {
+  // 按月分表： 20150515 -> 201505
+  return ymd / 100;
+}
+inline int32_t tableIdx_BlockTxs(const int64_t blockId) {
+  return (int32_t)(blockId % 100);
+}
+
+class FileWriter;
 
 class RawBlock {
 public:
@@ -35,14 +59,33 @@ public:
   int32_t height_;
   int32_t chainId_;
   uint256 hash_;
-  string  hex_;
+  char *hex_;
 
   RawBlock(const int64_t blockId, const int32_t height, const int32_t chainId,
-           const uint256 hash, const string &hex);
+           const uint256 hash, const char *hex);
+  ~RawBlock();
 };
 
-class LastestAddressInfo {
-public:
+struct AddrTx {
+  int64_t txId_;
+  int64_t balanceDiff_;
+  int64_t balanceFinal_;
+  int32_t prevYmd_;
+  int32_t nextYmd_;
+  int64_t prevTxId_;
+  int64_t nextTxId_;
+  int32_t txHeight_;
+  int32_t ymd_;
+
+  AddrTx() {
+    memset((char *)&txId_, 0, sizeof(struct AddrTx));
+  }
+};
+
+struct AddrInfo {
+  char addrStr_[36];
+  int64_t addrId_;
+  int64_t idx_;
   int32_t beginTxYmd_;
   int32_t endTxYmd_;
   int64_t beginTxId_;
@@ -50,87 +93,185 @@ public:
   int64_t totalReceived_;
   int64_t totalSent_;
 
-  LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd, int64_t beginTxId,
-                     int64_t endTxId, int64_t totalReceived, int64_t totalSent);
-};
+  struct AddrTx addrTx_;
 
-class DBTxOutput {
-public:
-  int64_t txId;
-  int32_t position;
-  int64_t value;
-  int64_t spentTxId;
-  int32_t spentPosition;
-  string  address;
-  string  addressIds;
-
-  DBTxOutput(): txId(0), position(-1), value(-1), spentTxId(0), spentPosition(-1) {
+  AddrInfo() {
+    memset((char *)&addrStr_, 0, sizeof(struct AddrInfo));
+  }
+  bool operator<(const AddrInfo &val) const {
+    int r = strncmp(addrStr_, val.addrStr_, 35);
+    if (r < 0) {
+      return true;
+    }
+    return false;
   }
 };
 
-class AddrTxCache {
-  pthread_mutex_t lock_;
-  std::unordered_map<int64_t, bool> using_;
-  std::unordered_map<int64_t, LastestAddressInfo *> cache_;
+class TxOutput {
+public:
+  vector<string> address_;
+  vector<int64_t> addressIds_;
+  int64_t value_;
+  string  scriptHex_;
+  string  scriptAsm_;
+  string  typeStr_;
+  int64_t spentTxId_;
+  int32_t spentPosition_;
 
 public:
-  AddrTxCache();
-  ~AddrTxCache();
-
-  std::unordered_map<int64_t, LastestAddressInfo *>::const_iterator end() const;
-  std::unordered_map<int64_t, LastestAddressInfo *>::iterator find(const int64_t addrId);
-  void insert(const int64_t addrId, LastestAddressInfo *ptr);
-
-  bool lockAddr(const int64_t addrId);
-  void unlockAddr(const int64_t addrId);
+  TxOutput(): value_(0), spentTxId_(0), spentPosition_(-1) {}
+  void operator=(const TxOutput &val) {
+    address_    = val.address_;
+    addressIds_ = val.addressIds_;
+    value_      = val.value_;
+    scriptHex_  = val.scriptHex_;
+    scriptAsm_  = val.scriptAsm_;
+    typeStr_    = val.typeStr_;
+    spentTxId_  = val.spentTxId_;
+    spentPosition_  = val.spentPosition_;
+  }
 };
 
-class BlockTx {
-public:
+struct TxInfo {
+  uint256 hash256_;
   int64_t txId_;
-  int32_t height_;
-  uint32_t nTime_;  // block timestamp
-  uint256 txHash_;
-  CTransaction tx_;
-  int32_t txSize_;
 
-  BlockTx(int64_t txId, int32_t height, uint32_t nTime, const uint256 &txHash, const CTransaction &tx, int32_t size);
+  int32_t blockHeight_;
+  int32_t outputsCount_;
+  TxOutput **outputs_;
+
+  TxInfo(): hash256_(), txId_(0), blockHeight_(-1), outputsCount_(0), outputs_(nullptr) {
+  }
+  bool operator<(const TxInfo &val) const {
+    return hash256_ < val.hash256_;
+  }
 };
 
-class Parser {
-private:
-  atomic<bool> running_;
-  string dbUri_;
-  MySQLConnection dbExplorer_;
+struct BlockInfo {
+  int64_t blockId_;
+  uint256 blockHash_;
+  CBlockHeader header_;
+  int32_t height_;
+  int64_t prevBlockId_;
+  int64_t nextBlockId_;
+  uint256 nextBlockHash_;
+  int32_t chainId_;
+  int32_t size_;
+  uint64_t diff_;
+  int32_t txCount_;
+  int64_t rewardBlock_;
+  int64_t rewardFee_;
 
-  vector<MySQLConnection *>  poolDB_;
-  vector<vector<BlockTx *> > poolBlockTx_;
-  int32_t threadsNumber_;
+  BlockInfo() {
+    memset((char *)&blockId_, 0, sizeof(struct BlockInfo));
+  }
+};
 
-  vector<atomic<int32_t> > runThreads_;
-
-  map<string, int64_t> curBlockAddrMap_;
-
-  int32_t getLastHeight();
-  void updateLastHeight(const int32_t newHeight);
-
-  void checkTableAddressTxs(const uint32_t timestamp);
-
-  void acceptBlock(const int32_t height);
-
-  void acceptTxThread(const int32_t i);
-  void acceptTx(MySQLConnection *db, const BlockTx *blkTx);
+class AddrHandler {
+  vector<struct AddrInfo> addrInfo_;
+  size_t addrCount_;
+  FileWriter *fwriter_;
 
 public:
-  Parser();
-  ~Parser();
+  AddrHandler(const size_t addrCount, const string &file, FileWriter *fwriter);
+  vector<struct AddrInfo>::iterator find(const string &address);
+  int64_t getAddressId(const string &address);
+  void dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs, vector<FILE *> &fAddrs_);
+};
 
-  bool init();
+class TxHandler {
+  vector<struct TxInfo> txInfo_;
+  size_t txCount_;
+  FileWriter *fwriter_;
+
+public:
+  TxHandler(const size_t txCount, const string &file, FileWriter *fwriter);
+  vector<struct TxInfo>::iterator find(const uint256 &hash);
+  vector<struct TxInfo>::iterator find(const string &hashStr);
+
+  int64_t getTxId(const uint256 &hash);
+
+  void addOutputs(const CTransaction &tx,
+                  AddrHandler *addrHandler, const int32_t height,
+                  map<string, int64_t> &addressBalance);
+  void delOutput(const uint256 &hash, const int32_t n);
+  void delOutput(TxInfo &txInfo, const int32_t n);
+  void delOutputAll(TxInfo &txInfo);
+  class TxOutput *getOutput(const uint256 &hash, const int32_t n);
+
+  void dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs,
+                               vector<FILE *> &fTxOutputs);
+};
+
+class FileWriter {
+  atomic<bool> running_;
+  atomic<bool> runningConsume_;
+  vector<std::pair<FILE *, string> > buffer_;
+  mutex lock_;
+
+  void threadConsume();
+
+public:
+  FileWriter();
+  ~FileWriter();
+
+  void stop();
+
+  void append(const string &s, FILE *f);
+};
+
+class PreParser {
+  atomic<bool> running_;
+  int32_t curHeight_;
+
+  BlockInfo blockInfo_;
+
+  AddrHandler *addrHandler_;
+  TxHandler   *txHandler_;
+
+  FileWriter *fwriter_;
+
+  FILE *fBlocks_;
+  vector<FILE *>       fBlockTxs_;
+  vector<FILE *>       fTxs_;
+  vector<FILE *>       fTxInputs_;
+  vector<FILE *>       fTxOutputs_;
+  vector<FILE *>       fUnspentOutputs_;
+  vector<FILE *>       fAddrs_;
+  map<int32_t, FILE *> fAddrTxs_;   // <YMD, FILE*>
+
+  string filePreTx_;
+  string filePreAddr_;
+  size_t addrCount_;
+  size_t txCount_;
+
+  int32_t stopHeight_;
+
+  // parse block
+  void parseBlock(const CBlock &blk, const int64_t blockId,
+                  const int32_t height, const int32_t blockBytes,
+                  const int32_t chainId);
+
+  // parse TX
+  void parseTx(const int32_t height, const CTransaction &tx, const uint32_t nTime);
+  void parseTxInputs(const CTransaction &tx, const int64_t txId,
+                     int64_t &valueIn, map<string, int64_t> &addressBalance);
+  void parseTxSelf(const int32_t height, const int64_t txId, const uint256 &txHash,
+                   const CTransaction &tx, const int64_t valueIn,
+                   const uint32_t ntime);
+  void handleAddressTxs(const map<string, int64_t> &addressBalance,
+                        const int64_t txId, const int32_t ymd, const int32_t height);
+
+  void openFiles();
+  void closeFiles();
+
+public:
+  PreParser();
+  ~PreParser();
+
+  void init();
   void run();
   void stop();
 };
-
-bool multiInsert(MySQLConnection &db, const string &table,
-                 const string &fields, const vector<string> &values);
 
 #endif

@@ -20,6 +20,8 @@
 #include <iostream>
 #include <fstream>
 
+#include <boost/thread.hpp>
+
 #include "Parser.h"
 #include "Common.h"
 #include "Util.h"
@@ -27,7 +29,7 @@
 #include "bitcoin/base58.h"
 #include "bitcoin/util.h"
 
-std::unordered_map<int64_t, LastestAddressInfo *> gAddrTxCache;
+std::unordered_map<int64_t/*address ID*/, LastestAddressInfo *> gAddrTxCache;
 
 RawBlock::RawBlock(const int64_t blockId, const int32_t height, const int32_t chainId,
                    const uint256 hash, const string &hex) {
@@ -40,111 +42,92 @@ RawBlock::RawBlock(const int64_t blockId, const int32_t height, const int32_t ch
 
 LastestAddressInfo::LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd,
                                        int64_t beginTxId, int64_t endTxId,
-                                       int64_t totalReceived, int64_t totalSent) {
+                                       int64_t totalReceived, int64_t totalSent,
+                                       int64_t txCount) {
   beginTxYmd_    = beginTxYmd;
   endTxYmd_      = endTxYmd;
   beginTxId_     = beginTxId;
   endTxId_       = endTxId;
   totalReceived_ = totalReceived;
   totalSent_     = totalSent;
-}
-
-// 从磁盘读取 raw_block 批量文件
-void _loadRawBlockFromDisk(map<int32_t, RawBlock*> &blkCache, const int32_t height) {
-  string dir = Config::GConfig.get("cache.rawdata.dir", "");
-  // 尾部添加 '/'
-  if (dir.length() == 0) {
-    dir = "./";
-  }
-  else if (dir[dir.length()-1] != '/') {
-    dir += "/";
-  }
-
-  const int32_t height2 = (height / 10000) * 10000;
-  string path = Strings::Format("%d_%d", height2, height2 + 9999);
-
-  const string fname = Strings::Format("%s%s/0_raw_blocks",
-                                       dir.c_str(), path.c_str());
-  LOG_INFO("load raw block file: %s", fname.c_str());
-  std::ifstream input(fname);
-  std::string line;
-  while (std::getline(input, line)) {
-    auto arr = split(line, ',');
-    // line: blockId, hash, height, chain_id, hex
-    const uint256 blkHash(arr[1]);
-    const int32_t blkHeight  = atoi(arr[2].c_str());
-    const int32_t blkChainId = atoi(arr[3].c_str());
-
-    blkCache[blkHeight] = new RawBlock(atoi64(arr[0].c_str()), blkHeight, blkChainId, blkHash, arr[4]);
-  }
-}
-
-// 从文件读取raw block
-void _getRawBlockFromDisk(const int32_t height, string *rawHex,
-                          int32_t *chainId, int64_t *blockId) {
-  // 从磁盘直接读取文件，缓存起来，减少数据库交互
-  static map<int32_t, RawBlock*> blkCache;
-  static int32_t heightBegin = -1;
-
-  if (heightBegin != (height / 10000)) {
-    // 载入数据
-    LOG_INFO("try load raw block data from disk...");
-    for (auto &it : blkCache) {
-      delete it.second;
-    }
-    blkCache.clear();
-    heightBegin = height / 10000;
-    _loadRawBlockFromDisk(blkCache, height);
-  }
-
-  auto it = blkCache.find(height);
-  if (it == blkCache.end()) {
-    THROW_EXCEPTION_DBEX("can't find rawblock from disk cache, height: %d", height);
-  }
-
-  *rawHex  = it->second->hex_;
-  *chainId = it->second->chainId_;
-  *blockId = it->second->blockId_;
+  txCount_       = txCount;
 }
 
 // 获取block raw hex/id/chainId...
 void _getBlockRawHex(const int32_t height,
                      MySQLConnection &db,
                      string *rawHex, int32_t *chainId, int64_t *blockId) {
-  // 是否使用磁盘raw缓存
-  const bool isUseDisk = Config::GConfig.getBool("cache.raw", false);
-  const int32_t maxCacheHeight = Config::GConfig.getInt("cache.raw.max.block.height", 0);
+  string sql;
 
-  if (isUseDisk && maxCacheHeight >= height) {
-    // 从磁盘获取raw block
-    _getRawBlockFromDisk(height, rawHex, chainId, blockId);
+  // 从DB获取raw block
+  MySQLResult res;
+  sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
+                        " WHERE `block_height` = %d AND `chain_id`=0 ",
+                        height);
+
+  char **row = nullptr;
+  db.query(sql, res);
+  if (res.numRows() == 0) {
+    THROW_EXCEPTION_DBEX("can't find block by height from DB: %d", height);
   }
-  else
-  {
-    // 从DB获取raw block
-    MySQLResult res;
-    string sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
-                                 " WHERE `block_height` = %d AND `chain_id`=0 ",
-                                 height);
-    char **row = nullptr;
-    db.query(sql, res);
-    if (res.numRows() == 0) {
-      THROW_EXCEPTION_DBEX("can't find block by height from DB: %d", height);
-    }
 
-    row = res.nextRow();
-    if (rawHex != nullptr) {
-      rawHex->assign(row[0]);
-      assert(rawHex->length() % 2 == 0);
-    }
-    if (chainId != nullptr) {
-      *chainId = atoi(row[1]);
-    }
-    if (blockId != nullptr) {
-      *blockId  = atoi64(row[2]);
-    }
+  row = res.nextRow();
+  if (rawHex != nullptr) {
+    rawHex->assign(row[0]);
+    assert(rawHex->length() % 2 == 0);
+  }
+  if (chainId != nullptr) {
+    *chainId = atoi(row[1]);
+  }
+  if (blockId != nullptr) {
+    *blockId  = atoi64(row[2]);
   }
 }
+
+// 获取block raw hex/id/chainId...
+// Rollback时用该函数
+void _getBlockRawHexRollback(const int32_t height,
+                             MySQLConnection &db,
+                             string *rawHex, int32_t *chainId, int64_t *blockId) {
+  string sql;
+  MySQLResult res;
+  char **row = nullptr;
+  string hash;
+
+  // 0_blocks 获取此高度的hash，不可从 0_row_blocks 中获取，因为此时分叉了
+  // 0_row_blocks 可能拿到的该高度另一个分支的块
+  sql = Strings::Format("SELECT `hash` FROM `0_blocks` WHERE "
+                        " `height` = %d AND `chain_id`=0 ", height);
+  db.query(sql, res);
+  if (res.numRows() == 0) {
+    THROW_EXCEPTION_DBEX("can't find block by height from DB when rollback: %d",
+                         height);
+  }
+  row = res.nextRow();
+  hash = string(row[0]);
+
+  // 根据 hash 从 0_row_blocks 中获取
+  sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
+                        " WHERE `block_hash` = '%s' ", hash.c_str());
+  db.query(sql, res);
+  if (res.numRows() == 0) {
+    THROW_EXCEPTION_DBEX("can't find block from DB when rollback: %s",
+                         hash.c_str());
+  }
+  row = res.nextRow();
+  if (rawHex != nullptr) {
+    rawHex->assign(row[0]);
+    assert(rawHex->length() % 2 == 0);
+  }
+  if (chainId != nullptr) {
+    *chainId = atoi(row[1]);
+  }
+  if (blockId != nullptr) {
+    *blockId  = atoi64(row[2]);
+  }
+}
+
+
 
 // 批量插入函数
 bool multiInsert(MySQLConnection &db, const string &table,
@@ -191,11 +174,220 @@ TxLog::TxLog():logId_(0), tableIdx_(-1), status_(0), type_(0), blkHeight_(-2), t
 TxLog::~TxLog() {}
 
 
-Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
-running_(true) {
+//// 若SSDB宕机，则丢弃数据
+//class CacheManager {
+//  ssdb::Client *ssdb_;
+//  mutex lock_;
+//
+//  // 待删除队列
+//  vector<string> qkv_;
+//  vector<string> qzset_;
+//  vector<std> qhashset_;
+//
+//  void threadConsumer();
+//
+//public:
+//  CacheManager();
+//  ~CacheManager();
+//
+//  bool tryOpen();
+//
+//  void insertKV(const string &key);
+//  void insertZSet(const string &key);
+//  void insertHashSet(const string &key);
+//};
+
+CacheManager::CacheManager(const string  SSDBHost, const int32_t SSDBPort):
+  ssdb_(nullptr), SSDBHost_(SSDBHost), SSDBPort_(SSDBPort)
+{
+  // create connection
+  ssdb_ = ssdb::Client::connect(SSDBHost_, SSDBPort_);
+  if (ssdb_ == nullptr) {
+    THROW_EXCEPTION_DBEX("fail to connect to ssdb server. host: %s, port: %d",
+                         SSDBHost_.c_str(), SSDBPort_);
+  }
+  running_   = true;
+  ssdbAlive_ = true;
+
+  // setup consumer thread
+  boost::thread t(boost::bind(&CacheManager::threadConsumer, this));
+  runningThreadConsumer_ = true;
 }
+
+CacheManager::~CacheManager() {
+  // 等待数据消费完，最大等待N秒
+  for (int i = 59; i >= 0; i--) {
+    lock_.lock();
+    if (qkv_.size() == 0 && qhashset_.size() == 0) {
+      lock_.unlock();
+      break;
+    }
+    lock_.unlock();
+
+    sleep(2);
+    LOG_WARN("waiting for CacheManager to finish(%d),"
+             " qkv_.size(): %lld, qhashset_.size(): %lld",
+             i, qkv_.size(), qhashset_.size());
+    if (i == 0) {
+      LOG_WARN("reach max try times, focus to stop");
+    }
+  }
+
+  running_ = false;
+
+  while (runningThreadConsumer_) {  // 等待消费线程退出
+    sleepMs(50);
+  }
+
+  if (ssdb_ != nullptr) {
+    delete ssdb_;
+    ssdb_ = nullptr;
+  }
+}
+
+void CacheManager::insertKV(const string &key) {
+  qkvTemp_.insert(key);
+  LOG_DEBUG("[CacheManager::insertKV] key: %s", key.c_str());
+}
+
+void CacheManager::insertHashSet(const string &address,
+                                 const string &tableName) {
+  qhashsetTemp_.push_back(std::make_pair(address, tableName));
+  LOG_DEBUG("[CacheManager::insertHashSet] address:%s, tableName: %d",
+            address.c_str(), tableName.c_str());
+}
+
+void CacheManager::commit() {
+  ScopeLock sl(lock_);
+
+  // 超过500万，丢弃数据，防止撑爆内存
+  if (qkv_.size() > 500 * 10000) {
+    vector<string>().swap(qkv_);
+  }
+  for (auto &it : qkvTemp_) {
+    qkv_.push_back(it);
+  }
+  qkvTemp_.clear();
+
+  // 超过500万，丢弃数据，防止撑爆内存
+  if (qhashset_.size() > 500 * 10000) {
+    vector<std::pair<string, string> >().swap(qhashset_);
+  }
+  for (auto &it : qhashsetTemp_) {
+    qhashset_.push_back(std::make_pair(it.first, it.second));
+  }
+  qhashsetTemp_.clear();
+}
+
+//
+// SSDB数据结构文档：http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
+//
+void CacheManager::threadConsumer() {
+  vector<string> buf;
+  vector<std::pair<string, string> > bufHashSet;
+  buf.reserve(512);
+  bufHashSet.reserve(512);
+  ssdb::Status s;
+  int64_t successCount, itemCount;
+
+  while (running_) {
+    assert(ssdbAlive_ == true);
+    assert(ssdb_ != nullptr);
+    itemCount = successCount = 0;
+
+    // Key - Value
+    {
+      ScopeLock sl(lock_);
+      buf = qkv_;
+      qkv_.clear();
+    }
+    if (buf.size()) {
+      itemCount += buf.size();
+      s = ssdb_->multi_del(buf);
+      LOG_DEBUG("ssdb multi del, count: %lld", buf.size());
+      if (s.error()) {
+        LOG_ERROR("ssdb KV del fail");
+      } else {
+        successCount += buf.size();
+      }
+      buf.clear();
+    }
+
+    // HashSet: 目前HashSet类型就一个: addr_table_{addr_id}
+    {
+      ScopeLock sl(lock_);
+      bufHashSet = qhashset_;
+      qhashset_.clear();
+    }
+    if (bufHashSet.size()) {
+      itemCount += bufHashSet.size();
+      for (auto &it : bufHashSet) {
+        const string name = "addr_table_" + it.first;
+        s = ssdb_->hdel(name, it.second);
+        if (s.error()) {
+          LOG_ERROR("ssdb HashSet del fail: %s, %s",
+                    name.c_str(), it.second.c_str());
+        } else {
+          successCount++;
+        }
+      }
+      bufHashSet.clear();
+    }
+
+    if (itemCount != successCount) {
+      LOG_ERROR("ssdb some items failure, total: %lld, success: %lld",
+                itemCount, successCount);
+    }
+
+    if (itemCount == 0) {
+      sleepMs(200);  // 暂无数据
+    }
+
+    // 成功数量为零，说明SSDB server端出故障了，尝试重新连接
+    if (itemCount > 0 && successCount == 0) {
+      delete ssdb_;
+      ssdb_      = nullptr;
+      ssdbAlive_ = false;
+
+      while (running_) {
+        LOG_INFO("we lost ssdb server, try reconnect...");
+        sleep(1);
+
+        ssdb_ = ssdb::Client::connect(SSDBHost_, SSDBPort_);
+        if (ssdb_ != nullptr) {
+          ssdbAlive_ = true;
+          LOG_INFO("reconnect ssdb success");
+          break;
+        }
+        LOG_ERROR("reconnect to ssdb server fail. host: %s, port: %d",
+                  SSDBHost_.c_str(), SSDBPort_);
+      }
+    }
+  } /* /while */
+
+  runningThreadConsumer_ = false;
+}
+
+
+
+Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
+running_(true), cache_(nullptr)
+{
+  // setup cache manager: SSDB
+  cacheEnable_ = Config::GConfig.getBool("ssdb.enable", false);
+  if (cacheEnable_) {
+    cache_ = new CacheManager(Config::GConfig.get("ssdb.host"),
+                              (int32_t)Config::GConfig.getInt("ssdb.port"));
+  }
+}
+
 Parser::~Parser() {
   stop();
+
+  if (cache_ != nullptr) {
+    delete cache_;
+    cache_ = nullptr;
+  }
 }
 
 void Parser::stop() {
@@ -236,12 +428,6 @@ void Parser::run() {
       continue;
     }
 
-//    if (txlog.logId_ >= 4571100LL) {
-//      // debug
-//      LOG_DEBUG("debug to stop, logId_: %lld", txlog.logId_);
-//      exit(EXIT_SUCCESS);
-//    }
-
     checkTableAddressTxs(txlog.blockTimestamp_);
 
     if (!dbExplorer_.execute("START TRANSACTION")) {
@@ -270,6 +456,10 @@ void Parser::run() {
     if (!dbExplorer_.execute("COMMIT")) {
       goto error;
     }
+
+    if (cache_ != nullptr) {
+      cache_->commit();
+    }
   } /* /while */
   return;
 
@@ -290,7 +480,7 @@ void Parser::checkTableAddressTxs(const uint32_t timestamp) {
   }
 
   // show table like to check if exist
-  const string tName = Strings::Format("address_txs_%d", ymd);
+  const string tName = Strings::Format("address_txs_%d", tableIdx_AddrTxs(ymd));
   sql = Strings::Format("SHOW TABLES LIKE '%s'", tName.c_str());
   dbExplorer_.query(sql, res);
   if (res.numRows() > 0) {
@@ -347,7 +537,7 @@ bool Parser::txsHash2ids(const std::set<uint256> &hashVec,
 }
 
 void Parser::updateLastTxlogId(const int64_t newId) {
-  string sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %lld,`updated_at`='%s' "
+  string sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = '%lld',`updated_at`='%s' "
                                " WHERE `key`='jiexi.last_txlog_offset'",
                                newId, date("%F %T").c_str());
   if (!dbExplorer_.execute(sql.c_str())) {
@@ -536,7 +726,7 @@ void _removeUnspentOutputs(MySQLConnection &db,
   // 获取地址
   const string s = string(row[0]);
   const int64_t value = atoi64(row[1]);
-  vector<string> addressIdsStrVec = split(s, ',');
+  vector<string> addressIdsStrVec = split(s, '|');
   n = -1;
   for (auto &addrIdStr : addressIdsStrVec) {
     n++;
@@ -582,7 +772,8 @@ DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t po
   return o;
 }
 
-void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
+void _insertTxInputs(MySQLConnection &db, CacheManager *cache,
+                     const CTransaction &tx,
                      const int64_t txId, map<int64_t, int64_t> &addressBalance,
                      int64_t &valueIn) {
   int n;
@@ -650,6 +841,21 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
                                        dbTxOutput.addressIds.c_str(),
                                        now.c_str()));
       valueIn += dbTxOutput.value;
+
+      if (cache != nullptr) {
+        // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
+        // 遍历inputs所关联tx，全部删除： txid_{id}, tx_{hash}
+        cache->insertKV(Strings::Format("txid_%lld", prevTxId));
+        cache->insertKV(Strings::Format("tx_%s",     prevHash.ToString().c_str()));
+
+        // 清理所有输入地址
+        if (dbTxOutput.address.length()) {
+          auto addrStrVec = split(dbTxOutput.address, '|');
+          for (auto &singleAddrStr : addrStrVec) {
+            cache->insertKV(Strings::Format("addr_%s", singleAddrStr.c_str()));
+          }
+        }
+      }
     }
   } /* /for */
 
@@ -661,7 +867,8 @@ void _insertTxInputs(MySQLConnection &db, const CTransaction &tx,
 }
 
 
-void _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
+void _insertTxOutputs(MySQLConnection &db, CacheManager *cache,
+                      const CTransaction &tx,
                       const int64_t txId, const int64_t blockHeight,
                       map<int64_t, int64_t> &addressBalance) {
   int n;
@@ -679,12 +886,17 @@ void _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
       continue;
     }
     for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
+      const string addrStr = CBitcoinAddress(addr).ToString();
       allAddresss.insert(CBitcoinAddress(addr).ToString());
     }
   }
   // 拿到所有地址的id
   map<string, int64_t> addrMap;
   GetAddressIds(db, allAddresss, addrMap);
+
+  for (auto &singleAddrStr : allAddresss) {
+    cache->insertKV(Strings::Format("addr_%s", singleAddrStr.c_str()));
+  }
 
   // 处理输出
   // (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)
@@ -742,7 +954,7 @@ void _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
     // http://tbtc.blockr.io/tx/info/c333a53f0174166236e341af9cad795d21578fb87ad7a1b6d2cf8aa9c722083c
     itemValues.push_back(Strings::Format("%lld,%d,'%s','%s',"
                                          "%lld,'%s','%s','%s',"
-                                         "%d,0,-1,'%s','%s'",
+                                         "0,-1,'%s','%s'",
                                          // `tx_id`,`position`,`address`,`address_ids`
                                          txId, n, addressStr.c_str(), addressIdsStr.c_str(),
                                          // `value`,`output_script_asm`,`output_script_hex`,`output_script_type`
@@ -750,15 +962,14 @@ void _insertTxOutputs(MySQLConnection &db, const CTransaction &tx,
                                          outputScriptAsm.c_str(),
                                          outputScriptHex.length() < 32*1024*1024 ? outputScriptHex.c_str() : "",
                                          GetTxnOutputType(type) ? GetTxnOutputType(type) : "",
-                                         // `is_spendable`,`spent_tx_id`,`spent_position`,`created_at`,`updated_at`
-                                         (type != TX_NONSTANDARD && type != TX_NULL_DATA) ? 1 : 0,
+                                         // `spent_tx_id`,`spent_position`,`created_at`,`updated_at`
                                          now.c_str(), now.c_str()));
   }
 
   // table.tx_outputs_xxxx
   const string tableNameTxOutputs = Strings::Format("tx_outputs_%04d", txId % 100);
   const string fieldsTxOutputs = "`tx_id`,`position`,`address`,`address_ids`,`value`,"
-  "`output_script_asm`,`output_script_hex`,`output_script_type`,`is_spendable`,"
+  "`output_script_asm`,`output_script_hex`,`output_script_type`,"
   "`spent_tx_id`,`spent_position`,`created_at`,`updated_at`";
   // multi insert outputs
   if (!multiInsert(db, tableNameTxOutputs, fieldsTxOutputs, itemValues)) {
@@ -781,12 +992,12 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
   for (auto &it : addressBalance) {
     const int64_t addrID      = it.first;
     const int64_t balanceDiff = it.second;
-    const string addrTableName = Strings::Format("addresses_%04d", addrID / BILLION);
+    const string addrTableName = Strings::Format("addresses_%04d", tableIdx_Addr(addrID));
     std::unordered_map<int64_t, LastestAddressInfo *>::iterator it2;
 
     // 获取地址信息
     int32_t beginTxYmd, prevTxYmd;
-    int64_t beginTxID, prevTxId, totalRecv, finalBalance;
+    int64_t beginTxID, prevTxId, totalRecv, finalBalance, txCount;
 
     it2 = gAddrTxCache.find(addrID);
     if (it2 != gAddrTxCache.end()) {
@@ -796,13 +1007,16 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
       beginTxYmd   = it2->second->beginTxYmd_;
       totalRecv    = it2->second->totalReceived_;
       finalBalance = it2->second->totalReceived_ - it2->second->totalSent_;
+      txCount      = it2->second->txCount_;
     } else {
       sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id`,`total_received`,"
-                            " `total_sent`,`begin_tx_id`,`begin_tx_ymd` "
+                            " `total_sent`,`begin_tx_id`,`begin_tx_ymd`,`tx_count` "
                             " FROM `%s` WHERE `id`=%lld ",
                             addrTableName.c_str(), addrID);
       db.query(sql, res);
-      assert(res.numRows() == 1);
+      if (res.numRows() != 1) {
+        THROW_EXCEPTION_DBEX("can't find address record, addrId: %lld", addrID);
+      }
       row = res.nextRow();
 
       prevTxYmd   = atoi(row[0]);
@@ -811,8 +1025,15 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
       finalBalance = totalRecv - atoi64(row[3]);
       beginTxID   = atoi64(row[4]);
       beginTxYmd  = atoi(row[5]);
+      txCount     = atoi64(row[6]);
 
-      auto ptr = new LastestAddressInfo(beginTxYmd, prevTxYmd, beginTxID, prevTxId, atoi64(row[2]), atoi64(row[3]));
+      auto ptr = new LastestAddressInfo(beginTxYmd, prevTxYmd, beginTxID,
+                                        prevTxId, atoi64(row[2]), atoi64(row[3]),
+                                        txCount);
+      if (gAddrTxCache.size() > 100 * 10000) {
+        // clear, 数量限制，防止长时间运行后占用过多内存
+        std::unordered_map<int64_t, LastestAddressInfo *>().swap(gAddrTxCache);
+      }
       gAddrTxCache[addrID] = ptr;
     }
     if ((it2 = gAddrTxCache.find(addrID)) == gAddrTxCache.end()) {
@@ -824,20 +1045,21 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
       // 更新前向记录
       sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d, `next_tx_id`=%lld "
                             " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                            prevTxYmd, ymd, txLog->txId_, addrID, prevTxId);
+                            tableIdx_AddrTxs(prevTxYmd), ymd, txLog->txId_, addrID, prevTxId);
       db.updateOrThrowEx(sql, 1);
     }
     assert(finalBalance + balanceDiff >= 0);
 
     // 插入当前记录
     sql = Strings::Format("INSERT INTO `address_txs_%d` (`address_id`, `tx_id`, `tx_height`,"
-                          " `total_received`, `balance_diff`, `balance_final`, `prev_ymd`, "
-                          " `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`)"
-                          " VALUES (%lld, %lld, %d, %lld, %lld, %lld,"
+                          " `total_received`, `balance_diff`, `balance_final`, `idx`, "
+                          " `prev_ymd`, `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`)"
+                          " VALUES (%lld, %lld, %d, %lld, %lld, %lld, %lld,"
                           "         %d, %lld, 0, 0, '%s') ",
-                          ymd, addrID, txLog->txId_, txLog->blkHeight_,
+                          tableIdx_AddrTxs(ymd), addrID, txLog->txId_, txLog->blkHeight_,
                           totalRecv + (balanceDiff > 0 ? balanceDiff : 0),
                           balanceDiff, finalBalance + balanceDiff,
+                          txCount + 1,
                           prevTxYmd, prevTxId, date("%F %T").c_str());
     db.updateOrThrowEx(sql, 1);
 
@@ -866,6 +1088,8 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
     it2->second->totalSent_     += (balanceDiff < 0 ? balanceDiff * -1 : 0);
     it2->second->endTxId_  = txLog->txId_;
     it2->second->endTxYmd_ = ymd;
+    it2->second->txCount_++;
+
   } /* /for */
 }
 
@@ -926,13 +1150,15 @@ void Parser::acceptTx(class TxLog *txLog) {
   int64_t valueIn = 0;
 
   // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
-  map<int64_t, int64_t> addressBalance;
+  map<int64_t/* addrID */, int64_t/*  balance diff */> addressBalance;
 
   // 处理inputs
-  _insertTxInputs(dbExplorer_, txLog->tx_, txLog->txId_, addressBalance, valueIn);
+  _insertTxInputs(dbExplorer_, cache_, txLog->tx_, txLog->txId_,
+                  addressBalance, valueIn);
 
   // 处理outputs
-  _insertTxOutputs(dbExplorer_, txLog->tx_, txLog->txId_, txLog->blkHeight_, addressBalance);
+  _insertTxOutputs(dbExplorer_, cache_, txLog->tx_, txLog->txId_,
+                   txLog->blkHeight_, addressBalance);
 
   // 变更地址相关信息
   _insertAddressTxs(dbExplorer_, txLog, addressBalance);
@@ -952,10 +1178,10 @@ void Parser::rollbackBlock(const int32_t height) {
   int32_t chainId;
   int64_t blockId;
 
-  _getBlockRawHex(height, dbExplorer_, &blkRawHex, &chainId, &blockId);
+  _getBlockRawHexRollback(height, dbExplorer_, &blkRawHex, &chainId, &blockId);
   assert(chainId == 0);
 
-  // 解码Raw Hex
+  // 解码Raw Block
   vector<unsigned char> blockData(ParseHex(blkRawHex));
   CDataStream ssBlock(blockData, SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
   CBlock blk;
@@ -981,12 +1207,18 @@ void Parser::rollbackBlock(const int32_t height) {
 
   // table.block_txs_xxxx
   sql = Strings::Format("DELETE FROM `block_txs_%04d` WHERE `block_id`=%lld",
-                        blockId % 100, blockId);
+                        tableIdx_BlockTxs(blockId), blockId);
   dbExplorer_.updateOrThrowEx(sql, (int32_t)blk.vtx.size());
+
+  if (cacheEnable_) {
+    // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
+    cache_->insertKV(Strings::Format("blkh_%d", height));
+  }
 }
 
 // 回滚，重新插入未花费记录
-void _unremoveUnspentOutputs(MySQLConnection &db, const int64_t blockHeight,
+void _unremoveUnspentOutputs(MySQLConnection &db, CacheManager *cache,
+                             const int64_t blockHeight,
                              const int64_t txId, const int32_t position,
                              map<int64_t, int64_t> &addressBalance) {
   MySQLResult res;
@@ -997,7 +1229,8 @@ void _unremoveUnspentOutputs(MySQLConnection &db, const int64_t blockHeight,
 
   // 获取相关output信息
   tableName = Strings::Format("tx_outputs_%04d", txId % 100);
-  sql = Strings::Format("SELECT `address_ids`,`value` FROM `%s` WHERE `tx_id`=%lld AND `position`=%d",
+  sql = Strings::Format("SELECT `address_ids`,`value`,`address` FROM `%s` "
+                        " WHERE `tx_id`=%lld AND `position`=%d",
                         tableName.c_str(), txId, position);
   db.query(sql, res);
   row = res.nextRow();
@@ -1006,7 +1239,9 @@ void _unremoveUnspentOutputs(MySQLConnection &db, const int64_t blockHeight,
   // 获取地址
   const string s = string(row[0]);
   const int64_t value = atoi64(row[1]);
-  vector<string> addressIdsStrVec = split(s, ',');
+  const string ids = string(row[2]);
+
+  vector<string> addressIdsStrVec = split(s, '|');
   n = -1;
   for (auto &addrIdStr : addressIdsStrVec) {
     n++;
@@ -1021,10 +1256,19 @@ void _unremoveUnspentOutputs(MySQLConnection &db, const int64_t blockHeight,
                           value, date("%F %T").c_str());
     db.updateOrThrowEx(sql, 1);
   }
+
+  // 缓存
+  if (cache) {
+    auto addrStrVec = split(ids, '|');
+    for (auto &singleAddrStr : addrStrVec) {
+      cache->insertKV(Strings::Format("addr_%s", singleAddrStr.c_str()));
+    }
+  }
 }
 
 // 回滚交易 inputs
-void _rollbackTxInputs(MySQLConnection &db, class TxLog *txLog,
+void _rollbackTxInputs(MySQLConnection &db, CacheManager *cache,
+                       class TxLog *txLog,
                        map<int64_t, int64_t> &addressBalance) {
   const CTransaction &tx = txLog->tx_;
   const int32_t blockHeight = txLog->blkHeight_;
@@ -1051,7 +1295,14 @@ void _rollbackTxInputs(MySQLConnection &db, class TxLog *txLog,
     db.updateOrThrowEx(sql, 1);
 
     // 重新插入 address_unspent_outputs_xxxx 相关记录
-    _unremoveUnspentOutputs(db, blockHeight, prevTxId, prevPos, addressBalance);
+    _unremoveUnspentOutputs(db, cache, blockHeight, prevTxId, prevPos, addressBalance);
+
+    if (cache != nullptr) {
+      // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
+      // 遍历inputs所关联tx，全部删除： txid_{id}, tx_{hash}
+      cache->insertKV(Strings::Format("txid_%lld", prevTxId));
+      cache->insertKV(Strings::Format("tx_%s",     prevHash));
+    }
   } /* /for */
 
   // 删除 table.tx_inputs_xxxx 记录
@@ -1061,7 +1312,8 @@ void _rollbackTxInputs(MySQLConnection &db, class TxLog *txLog,
 }
 
 // 回滚交易 outputs
-void _rollbackTxOutputs(MySQLConnection &db, class TxLog *txLog,
+void _rollbackTxOutputs(MySQLConnection &db, CacheManager *cache,
+                        class TxLog *txLog,
                         map<int64_t, int64_t> &addressBalance) {
   const CTransaction &tx = txLog->tx_;
   const int64_t txId = txLog->txId_;
@@ -1112,9 +1364,15 @@ void _rollbackTxOutputs(MySQLConnection &db, class TxLog *txLog,
 
       // 删除： address_unspent_outputs 记录
       sql = Strings::Format("DELETE FROM `address_unspent_outputs_%04d` "
-                            " WHERE `address_id`=%lld AND `position`=%d AND `position2`=%d ",
-                            addrId % 10, addrId, txId, n, i);
+                            " WHERE `address_id`=%lld AND `tx_id`=%lld "
+                            " AND `position`=%d AND `position2`=%d ",
+                            tableIdx_AddrUnspentOutput(addrId),
+                            addrId, txId, n, i);
       db.updateOrThrowEx(sql, 1);
+
+      if (cache) {
+        cache->insertKV(Strings::Format("addr_%s", addrStr.c_str()));
+      }
     }
   }
 
@@ -1140,15 +1398,17 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
     const int64_t balanceDiff = it.second;
 
     // 获取地址信息
-    string addrTableName = Strings::Format("addresses_%04d", addrID / BILLION);
-    sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id` FROM `%s` WHERE `id`=%lld ",
+    string addrTableName = Strings::Format("addresses_%04d", tableIdx_Addr(addrID));
+    sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id`,(`total_received`-`total_sent`) "
+                          " FROM `%s` WHERE `id`=%lld ",
                           addrTableName.c_str(), addrID);
     db.query(sql, res);
     assert(res.numRows() == 1);
     row = res.nextRow();
 
-    const int32_t endTxYmd = atoi(row[0]);
-    const int64_t endTxId  = atoi64(row[1]);
+    const int32_t endTxYmd   = atoi(row[0]);
+    const int64_t endTxId    = atoi64(row[1]);
+    const int64_t curBalance = atoi64(row[2]);
 
     // 当前要回滚的记录应该就是最后一条记录
     if (endTxYmd != ymd || endTxId != txLog->txId_) {
@@ -1158,30 +1418,30 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
                            addrID, endTxYmd, ymd, endTxId, txLog->txId_);
     }
 
-    // 获取最后一条记录的前向记录，倒数第二条记录，如果存在的话
-    int64_t totalRecv = 0, finalBalance = 0, end2TxId = 0;
+    // 获取最后一条记录，提取其前向记录，倒数第二条记录，如果存在的话
+    int64_t end2TxId = 0;
     int32_t end2TxYmd = 0;
-    sql = Strings::Format("SELECT `total_received`,`balance_final`,`prev_ymd`, `prev_tx_id` "
+    sql = Strings::Format("SELECT `prev_ymd`, `prev_tx_id` "
                           " FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                          endTxYmd, addrID, endTxId);
+                          tableIdx_AddrTxs(endTxYmd), addrID, endTxId);
     db.query(sql, res);
-    if (res.numRows() != 1) {
+    if (res.numRows() == 1) {
       row = res.nextRow();
-      totalRecv    = atoi64(row[0]);
-      finalBalance = atoi64(row[1]);
-      end2TxYmd = atoi(row[2]);
-      end2TxId  = atoi64(row[3]);
-
-      // 设置倒数第二条记录 next 记录为空
-      sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=0, `next_tx_id`=0 "
-                            " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                            end2TxYmd, addrID, end2TxId);
-      db.updateOrThrowEx(sql, 1);
+      end2TxYmd = atoi(row[0]);
+      end2TxId  = atoi64(row[1]);
+      if (end2TxYmd != 0) {
+        assert(end2TxId != 0);
+        // 设置倒数第二条记录 next 记录为空
+        sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=0, `next_tx_id`=0 "
+                              " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                              tableIdx_AddrTxs(end2TxYmd), addrID, end2TxId);
+        db.updateOrThrowEx(sql, 1);
+      }
     }
 
     // 删除最后一条记录
     sql = Strings::Format("DELETE FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                          ymd, addrID, txLog->txId_);
+                          tableIdx_AddrTxs(ymd), addrID, txLog->txId_);
     db.updateOrThrowEx(sql, 1);
 
     // 更新地址信息
@@ -1198,13 +1458,24 @@ void _rollbackAddressTxs(MySQLConnection &db, class TxLog *txLog,
                           end2TxYmd == 0 ? "`begin_tx_id`=0,`begin_tx_ymd`=0," : "",
                           date("%F %T").c_str(), addrID);
     db.updateOrThrowEx(sql, 1);
+
+    // 清理地址的缓存
+    gAddrTxCache.erase(addrID);
+
   } /* /for */
 }
 
-void _rollbackTx(MySQLConnection &db, class TxLog *txLog) {
-  string sql = Strings::Format("DELETE FROM `tx_%04d` WHERE `tx_id`=%lld ",
-                               txLog->txId_ / BILLION);
+void _rollbackTx(MySQLConnection &db, CacheManager *cache, class TxLog *txLog) {
+  string sql = Strings::Format("DELETE FROM `txs_%04d` WHERE `tx_id`=%lld ",
+                               tableIdx_Tx(txLog->txId_), txLog->txId_);
   db.updateOrThrowEx(sql, 1);
+
+  if (cache != nullptr) {
+    // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
+    // 删除自身: txid_{id}, tx_{hash}
+    cache->insertKV(Strings::Format("txid_%lld", txLog->txId_));
+    cache->insertKV(Strings::Format("tx_%s",     txLog->txHash_.ToString().c_str()));
+  }
 }
 
 // 回滚一个交易
@@ -1212,10 +1483,10 @@ void Parser::rollbackTx(class TxLog *txLog) {
   // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
   map<int64_t, int64_t> addressBalance;
 
-  _rollbackTxInputs  (dbExplorer_, txLog, addressBalance);
-  _rollbackTxOutputs (dbExplorer_, txLog, addressBalance);
+  _rollbackTxInputs  (dbExplorer_, cache_, txLog, addressBalance);
+  _rollbackTxOutputs (dbExplorer_, cache_, txLog, addressBalance);
   _rollbackAddressTxs(dbExplorer_, txLog, addressBalance);
-  _rollbackTx        (dbExplorer_, txLog);
+  _rollbackTx        (dbExplorer_, cache_, txLog);
 }
 
 // 获取上次txlog的进度偏移量
@@ -1260,70 +1531,9 @@ void _getRawTxFromDB(MySQLConnection &db, class TxLog *txLog) {
   txLog->txId_  = atoi64(row[1]);
 }
 
-// 从磁盘读取 raw_tx 批量文件
-void _loadRawTxsFromDisk(map<uint256, std::pair<string, int64_t> > &txCache, const int32_t height) {
-  string dir = Config::GConfig.get("cache.rawdata.dir", "");
-  // 尾部添加 '/'
-  if (dir.length() == 0) {
-    dir = "./";
-  }
-  else if (dir[dir.length()-1] != '/') {
-    dir += "/";
-  }
-
-  // 遍历循环64个文件
-  const int32_t height2 = (height / 10000) * 10000;
-  string path = Strings::Format("%d_%d", height2, height2 + 9999);
-  for (int i = 0; i < 64; i++) {
-    const string fname = Strings::Format("%s%s/raw_txs_%04d",
-                                         dir.c_str(), path.c_str(), i);
-    LOG_INFO("load raw tx file: %s", fname.c_str());
-    std::ifstream input(fname);
-    std::string line;
-    while (std::getline(input, line)) {
-      auto arr = split(line, ',');
-      // line: raw_id,hash,hex,create_time
-      const uint256 hash(arr[1]);
-      const int64_t txId = atoi64(arr[0].c_str());
-      txCache[hash] = std::make_pair(arr[2], txId);
-    }
-  }
-}
-
-void _getRawTxFromDisk(class TxLog *txLog) {
-  // 从磁盘直接读取文件，缓存起来，减少数据库交互
-  static map<uint256, std::pair<string, int64_t> > txCache;
-  static int32_t heightBegin = -1;
-
-  if (heightBegin != (txLog->blkHeight_ / 10000)) {
-    // 载入数据
-    LOG_INFO("try load raw tx data from disk...");
-    txCache.clear();
-    heightBegin = txLog->blkHeight_ / 10000;
-    _loadRawTxsFromDisk(txCache, txLog->blkHeight_);
-  }
-
-  auto it = txCache.find(txLog->txHash_);
-  if (it == txCache.end()) {
-    THROW_EXCEPTION_DBEX("can't find rawtx from disk cache, txLogId: %lld",
-                         txLog->logId_);
-  }
-  txLog->txHex_ = it->second.first;
-  txLog->txId_  = it->second.second;
-}
-
-
 // 获取tx Hash/ID
 void _getTxHexId(MySQLConnection &db, class TxLog *txLog) {
-  // 是否使用磁盘raw 缓存
-  const bool isUseDisk = Config::GConfig.getBool("cache.raw", false);
-  const int32_t maxCacheHeight = Config::GConfig.getInt("cache.raw.max.block.height", 0);
-
-  if (isUseDisk && maxCacheHeight >= txLog->blkHeight_) {
-    _getRawTxFromDisk(txLog);
-  } else {
-    _getRawTxFromDB(db, txLog);
-  }
+  _getRawTxFromDB(db, txLog);
 
   // parse hex string from parameter
   vector<unsigned char> txData(ParseHex(txLog->txHex_));

@@ -19,15 +19,42 @@
 #define Explorer_Parser_h
 
 #include "Common.h"
+#include "Util.h"
 #include "MySQLConnection.h"
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
+
+#include "SSDB_client.h"
 
 #define TXLOG_STATUS_INIT 100
 #define TXLOG_STATUS_DONE 1000
 
 #define TXLOG_TYPE_ACCEPT   1
 #define TXLOG_TYPE_ROLLBACK 2
+
+inline int32_t tableIdx_Addr(const int64_t addrId) {
+  return (int32_t)(addrId / BILLION % 64);
+}
+inline int32_t tableIdx_AddrUnspentOutput(const int64_t addrId) {
+  return (int32_t)(addrId % 10);
+}
+inline int32_t tableIdx_TxOutput(const int64_t txId) {
+  return (int32_t)(txId % 100);
+}
+inline int32_t tableIdx_TxInput(const int64_t txId) {
+  return (int32_t)(txId % 100);
+}
+inline int32_t tableIdx_Tx(const int64_t txId) {
+  return (int32_t)(txId / BILLION % 64);
+}
+inline int32_t tableIdx_AddrTxs(const int32_t ymd) {
+  // 按月分表： 20150515 -> 201505
+  return ymd / 100;
+}
+inline int32_t tableIdx_BlockTxs(const int64_t blockId) {
+  return (int32_t)(blockId % 100);
+}
+
 
 class RawBlock {
 public:
@@ -49,9 +76,11 @@ public:
   int64_t endTxId_;
   int64_t totalReceived_;
   int64_t totalSent_;
+  int64_t txCount_;
 
   LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd, int64_t beginTxId,
-                     int64_t endTxId, int64_t totalReceived, int64_t totalSent);
+                     int64_t endTxId, int64_t totalReceived, int64_t totalSent,
+                     int64_t txCount);
 };
 
 class DBTxOutput {
@@ -88,11 +117,46 @@ public:
   ~TxLog();
 };
 
+// 若SSDB宕机，则丢弃数据
+class CacheManager {
+  atomic<bool> running_;
+  atomic<bool> runningThreadConsumer_;
+  atomic<bool> ssdbAlive_;
+
+  ssdb::Client *ssdb_;
+  string  SSDBHost_;
+  int32_t SSDBPort_;
+
+  mutex lock_;
+
+  // 待删除队列，临时
+  set<string> qkvTemp_;
+  vector<std::pair<string, string> > qhashsetTemp_;
+  // 待删除队列，正式
+  vector<string> qkv_;
+  vector<std::pair<string, string> > qhashset_;
+
+  void threadConsumer();
+
+public:
+  CacheManager(const string  SSDBHost, const int32_t SSDBPort);
+  ~CacheManager();
+
+  // non-thread safe
+  void insertKV(const string &key);
+  void insertHashSet(const string &address, const string &tableName);
+
+  void commit();
+};
+
 
 class Parser {
 private:
   atomic<bool> running_;
   MySQLConnection dbExplorer_;
+
+  CacheManager *cache_;
+  bool cacheEnable_;
 
   bool tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset);
   int64_t getLastTxLogOffset();

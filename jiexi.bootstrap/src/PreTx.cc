@@ -64,11 +64,11 @@ void PreTx::stop() {
 }
 
 void PreTx::run() {
-  const int32_t threads = (int32_t)Config::GConfig.getInt("pre.tx.threads", 2);
+  const int32_t kThreads = 1;  // 生成线程仅允许1个，否则与导入模块的tx id会不一致
 
   // 1. 启动生成线程
-  runningProduceThreads_ = threads;
-  for (int i = 0; i < threads; i++) {
+  runningProduceThreads_ = kThreads;
+  for (int i = 0; i < kThreads; i++) {
     boost::thread t(boost::bind(&PreTx::threadProcessBlock, this, i));
   }
   // 2. 启动消费线程
@@ -90,10 +90,10 @@ void PreTx::threadConsumeAddr() {
   while (running_) {
     {
       ScopeLock sl(lock_);
-      while (txBuf_.size()) {
-        buf.push_back(*(txBuf_.rbegin()));
-        txBuf_.pop_back();
+      for (auto it = txBuf_.begin(); it != txBuf_.end(); it++) {
+        buf.push_back(*it);
       }
+      txBuf_.clear();
     }
 
     if (buf.size() == 0) {
@@ -112,7 +112,7 @@ void PreTx::threadConsumeAddr() {
       const int32_t tableIdx = HexToDecLast2Bytes(txhash) % 64;
       txs_.insert(tx);
       txIds_[tableIdx]++;
-      line = Strings::Format("%s,%lld,%lld", txhash.c_str(), txIds_[tableIdx]);
+      line = Strings::Format("%s,%lld", txhash.c_str(), txIds_[tableIdx]);
 
       fprintf(f_, "%s\n", line.c_str());
       cnt++;

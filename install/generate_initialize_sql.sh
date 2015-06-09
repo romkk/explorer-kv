@@ -257,4 +257,15 @@ CREATE TABLE `0_blocks` (
 
 echo "$blocks"
 
-## TODO: unconfirmed_txs_list
+unconfirmed_txs='
+DROP TABLE IF EXISTS `0_unconfirmed_txs`;
+CREATE TABLE `0_unconfirmed_txs` (
+  `position` int(11) NOT NULL,
+  `block_id` bigint(20) NOT NULL,
+  `tx_hash` char(64) NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`position`),
+  UNIQUE KEY `tx_hash` (`tx_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
+
+echo "$unconfirmed_txs"

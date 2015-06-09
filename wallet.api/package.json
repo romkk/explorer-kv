@@ -2,10 +2,10 @@
   "name": "wallet.api",
   "version": "1.0.0",
   "description": "API Service for Wallet",
-  "main": "bin/cli.js",
+  "main": "index.js",
   "scripts": {
     "dev": "DEBUG=wallet:* nodemon --exec npm run babel-node | bunyan",
-    "babel-node": "babel-node bin/cli.js",
+    "babel-node": "babel-node index.js",
     "test": "NODE_ENV=test mocha -r test/bootstrap.js --compilers js:babel/register --recursive test",
     "clean": "rm -rf npm-debug.log"
   },
@@ -24,6 +24,7 @@
     "lodash": "^3.9.3",
     "moment": "^2.10.3",
     "mysql": "^2.6.2",
+    "request-promise": "^0.4.2",
     "restify": "^3.0.3",
     "sprintf": "^0.1.5",
     "ssdb": "^0.3.2",

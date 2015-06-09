@@ -132,6 +132,7 @@ class CacheManager {
 
   // 待删除队列，临时
   set<string> qkvTemp_;
+  set<string> qhashsetTempSet_;  // 辅助去重
   vector<std::pair<string, string> > qhashsetTemp_;
   // 待删除队列，正式
   vector<string> qkv_;

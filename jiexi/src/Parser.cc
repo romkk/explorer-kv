@@ -1071,6 +1071,17 @@ void _insertTx(MySQLConnection &db, class TxLog *txLog, int64_t valueIn) {
   db.updateOrThrowEx(sql, 1);
 }
 
+// insert unconfirmed txs
+void _insertUnconfirmedTx(MySQLConnection &db, class TxLog *txLog) {
+  string sql;
+  sql = Strings::Format("INSERT INTO `0_unconfirmed_txs` (`position`, `block_id`, `tx_hash`, `created_at`)"
+                        " VALUES ("
+                        " (SELECT IFNULL(MAX(`position`), -1) + 1 FROM `0_unconfirmed_txs` as t1), "
+                        " %lld, '%s', '%s') ",
+                        txLog->blkId_, txLog->txHash_.ToString().c_str(),
+                        date("%F %T").c_str());
+  db.updateOrThrowEx(sql, 1);
+}
 
 // 接收一个新的交易
 void Parser::acceptTx(class TxLog *txLog) {
@@ -1111,6 +1122,11 @@ void Parser::acceptTx(class TxLog *txLog) {
 
   // 插入交易tx
   _insertTx(dbExplorer_, txLog, valueIn);
+
+  // 0_unconfirmed_txs
+  if (txLog->blkHeight_ == -1) {  // 高度为-1表示临时块
+    _insertUnconfirmedTx(dbExplorer_, txLog);
+  }
 }
 
 
@@ -1420,6 +1436,14 @@ void _rollbackTx(MySQLConnection &db, CacheManager *cache, class TxLog *txLog) {
   }
 }
 
+// rollback unconfirmed txs
+void _rollbackUnconfirmedTx(MySQLConnection &db, class TxLog *txLog) {
+  string sql;
+  sql = Strings::Format("DELETE FROM `0_unconfirmed_txs` WHERE `tx_hash`='%s'",
+                        txLog->txHash_.ToString().c_str());
+  db.updateOrThrowEx(sql, 1);
+}
+
 // 回滚一个交易
 void Parser::rollbackTx(class TxLog *txLog) {
   // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
@@ -1429,6 +1453,10 @@ void Parser::rollbackTx(class TxLog *txLog) {
   _rollbackTxOutputs (dbExplorer_, cache_, txLog, addressBalance);
   _rollbackAddressTxs(dbExplorer_, txLog, addressBalance);
   _rollbackTx        (dbExplorer_, cache_, txLog);
+
+  if (txLog->blkHeight_ == -1) {  // 高度为-1表示临时块
+    _rollbackUnconfirmedTx(dbExplorer_, txLog);
+  }
 }
 
 // 获取上次txlog的进度偏移量

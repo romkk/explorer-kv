@@ -123,29 +123,6 @@ blkHeight_(-2), txId_(0), blkId_(0)
 TxLog::~TxLog() {}
 
 
-//// 若SSDB宕机，则丢弃数据
-//class CacheManager {
-//  ssdb::Client *ssdb_;
-//  mutex lock_;
-//
-//  // 待删除队列
-//  vector<string> qkv_;
-//  vector<string> qzset_;
-//  vector<std> qhashset_;
-//
-//  void threadConsumer();
-//
-//public:
-//  CacheManager();
-//  ~CacheManager();
-//
-//  bool tryOpen();
-//
-//  void insertKV(const string &key);
-//  void insertZSet(const string &key);
-//  void insertHashSet(const string &key);
-//};
-
 CacheManager::CacheManager(const string  SSDBHost, const int32_t SSDBPort):
   ssdb_(nullptr), SSDBHost_(SSDBHost), SSDBPort_(SSDBPort)
 {
@@ -840,8 +817,10 @@ void _insertTxOutputs(MySQLConnection &db, CacheManager *cache,
   map<string, int64_t> addrMap;
   GetAddressIds(db, allAddresss, addrMap);
 
-  for (auto &singleAddrStr : allAddresss) {
-    cache->insertKV(Strings::Format("addr_%s", singleAddrStr.c_str()));
+  if (cache != nullptr) {
+    for (auto &singleAddrStr : allAddresss) {
+      cache->insertKV(Strings::Format("addr_%s", singleAddrStr.c_str()));
+    }
   }
 
   // 处理输出
@@ -1178,7 +1157,8 @@ void Parser::rollbackBlock(TxLog *txlog) {
 void _unremoveUnspentOutputs(MySQLConnection &db, CacheManager *cache,
                              const int64_t blockHeight,
                              const int64_t txId, const int32_t position,
-                             map<int64_t, int64_t> &addressBalance) {
+                             map<int64_t, int64_t> &addressBalance,
+                             const int32_t ymd) {
   MySQLResult res;
   string sql;
   string tableName;
@@ -1220,6 +1200,8 @@ void _unremoveUnspentOutputs(MySQLConnection &db, CacheManager *cache,
     auto addrStrVec = split(ids, '|');
     for (auto &singleAddrStr : addrStrVec) {
       cache->insertKV(Strings::Format("addr_%s", singleAddrStr.c_str()));
+      cache->insertHashSet(singleAddrStr, Strings::Format("address_txs_%d",
+                                                          tableIdx_AddrTxs(ymd)));
     }
   }
 }
@@ -1253,7 +1235,9 @@ void _rollbackTxInputs(MySQLConnection &db, CacheManager *cache,
     db.updateOrThrowEx(sql, 1);
 
     // 重新插入 address_unspent_outputs_xxxx 相关记录
-    _unremoveUnspentOutputs(db, cache, blockHeight, prevTxId, prevPos, addressBalance);
+    _unremoveUnspentOutputs(db, cache, blockHeight, prevTxId, prevPos,
+                            addressBalance,
+                            atoi(date("%Y%m%d", txLog->blockTimestamp_).c_str()));
 
     if (cache != nullptr) {
       // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
@@ -1275,6 +1259,7 @@ void _rollbackTxOutputs(MySQLConnection &db, CacheManager *cache,
                         map<int64_t, int64_t> &addressBalance) {
   const CTransaction &tx = txLog->tx_;
   const int64_t txId = txLog->txId_;
+  const int32_t ymd = atoi(date("%Y%m%d", txLog->blockTimestamp_).c_str());
 
   int n;
   const string now = date("%F %T");
@@ -1330,6 +1315,8 @@ void _rollbackTxOutputs(MySQLConnection &db, CacheManager *cache,
 
       if (cache) {
         cache->insertKV(Strings::Format("addr_%s", addrStr.c_str()));
+        cache->insertHashSet(addrStr, Strings::Format("address_txs_%d",
+                                                      tableIdx_AddrTxs(ymd)));
       }
     }
   }

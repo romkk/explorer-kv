@@ -22,7 +22,7 @@ module.exports = (server) => {
             var start = Date.now();
             var data = await request({
                 uri: UPSTREAM,
-                timeout: 10000
+                timeout: 7000
             });
             sb.multi_set(TICKER_CACHE, data, TICKER_TIMER, Date.now());
 
@@ -39,9 +39,9 @@ module.exports = (server) => {
         if (!cacheExists()) {
             log('[cache miss] ticker cache not exists');
             try {
-                pull();
+                await pull();
             } catch (err) {
-                res.send(new restify.ServiceUnavailableError());
+                res.send(new restify.ServiceUnavailableError('Service Unavailable Now. Please try again later.'));
                 return next();
             }
         }

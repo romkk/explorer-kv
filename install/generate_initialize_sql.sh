@@ -164,6 +164,7 @@ CREATE TABLE `0_tpl_txlogs` (
   `handle_status` int(11) NOT NULL,
   `handle_type` int(11) NOT NULL,
   `block_height` bigint(20) NOT NULL,
+  `block_id` bigint(20) NOT NULL,
   `block_timestamp` bigint(20) NOT NULL,
   `tx_hash` char(64) NOT NULL,
   `created_at` datetime NOT NULL,

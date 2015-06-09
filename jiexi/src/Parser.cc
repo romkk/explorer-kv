@@ -54,21 +54,19 @@ LastestAddressInfo::LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd,
 }
 
 // 获取block raw hex/id/chainId...
-void _getBlockRawHex(const int32_t height,
-                     MySQLConnection &db,
-                     string *rawHex, int32_t *chainId, int64_t *blockId) {
+void _getBlockRawHexByBlockId(const int64_t blockId,
+                              MySQLConnection &db, string *rawHex) {
   string sql;
 
   // 从DB获取raw block
   MySQLResult res;
-  sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
-                        " WHERE `block_height` = %d AND `chain_id`=0 ",
-                        height);
+  sql = Strings::Format("SELECT `hex` FROM `0_raw_blocks` WHERE `id` = %lld",
+                        blockId);
 
   char **row = nullptr;
   db.query(sql, res);
   if (res.numRows() == 0) {
-    THROW_EXCEPTION_DBEX("can't find block by height from DB: %d", height);
+    THROW_EXCEPTION_DBEX("can't find block by blkID from DB: %lld", blockId);
   }
 
   row = res.nextRow();
@@ -76,58 +74,7 @@ void _getBlockRawHex(const int32_t height,
     rawHex->assign(row[0]);
     assert(rawHex->length() % 2 == 0);
   }
-  if (chainId != nullptr) {
-    *chainId = atoi(row[1]);
-  }
-  if (blockId != nullptr) {
-    *blockId  = atoi64(row[2]);
-  }
 }
-
-// 获取block raw hex/id/chainId...
-// Rollback时用该函数
-void _getBlockRawHexRollback(const int32_t height,
-                             MySQLConnection &db,
-                             string *rawHex, int32_t *chainId, int64_t *blockId) {
-  string sql;
-  MySQLResult res;
-  char **row = nullptr;
-  string hash;
-
-  // 0_blocks 获取此高度的hash，不可从 0_row_blocks 中获取，因为此时分叉了
-  // 0_row_blocks 可能拿到的该高度另一个分支的块
-  sql = Strings::Format("SELECT `hash` FROM `0_blocks` WHERE "
-                        " `height` = %d AND `chain_id`=0 ", height);
-  db.query(sql, res);
-  if (res.numRows() == 0) {
-    THROW_EXCEPTION_DBEX("can't find block by height from DB when rollback: %d",
-                         height);
-  }
-  row = res.nextRow();
-  hash = string(row[0]);
-
-  // 根据 hash 从 0_row_blocks 中获取
-  sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
-                        " WHERE `block_hash` = '%s' ", hash.c_str());
-  db.query(sql, res);
-  if (res.numRows() == 0) {
-    THROW_EXCEPTION_DBEX("can't find block from DB when rollback: %s",
-                         hash.c_str());
-  }
-  row = res.nextRow();
-  if (rawHex != nullptr) {
-    rawHex->assign(row[0]);
-    assert(rawHex->length() % 2 == 0);
-  }
-  if (chainId != nullptr) {
-    *chainId = atoi(row[1]);
-  }
-  if (blockId != nullptr) {
-    *blockId  = atoi64(row[2]);
-  }
-}
-
-
 
 // 批量插入函数
 bool multiInsert(MySQLConnection &db, const string &table,
@@ -169,7 +116,9 @@ bool multiInsert(MySQLConnection &db, const string &table,
 //   -1   临时块（未确认的交易组成的虚拟块）
 //   >= 0 有效的块高度
 //
-TxLog::TxLog():logId_(0), tableIdx_(-1), status_(0), type_(0), blkHeight_(-2), txId_(0) {
+TxLog::TxLog():logId_(0), tableIdx_(-1), status_(0), type_(0),
+blkHeight_(-2), txId_(0), blkId_(0)
+{
 }
 TxLog::~TxLog() {}
 
@@ -436,13 +385,13 @@ void Parser::run() {
 
     if (txlog.type_ == TXLOG_TYPE_ACCEPT) {
       if (txlog.tx_.IsCoinBase()) {
-        acceptBlock(txlog.blkHeight_);
+        acceptBlock(&txlog);
       }
       acceptTx(&txlog);
     }
     else if (txlog.type_ == TXLOG_TYPE_ROLLBACK) {
       if (txlog.tx_.IsCoinBase()) {
-      	rollbackBlock(txlog.blkHeight_);
+      	rollbackBlock(&txlog);
       }
       rollbackTx(&txlog);
     }
@@ -668,14 +617,10 @@ void _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t block
 }
 
 // 接收一个新块
-void Parser::acceptBlock(const int32_t height) {
+void Parser::acceptBlock(TxLog *txlog) {
   // 获取块Raw Hex
   string blkRawHex;
-  int32_t chainId;
-  int64_t blockId;
-
-  _getBlockRawHex(height, dbExplorer_, &blkRawHex, &chainId, &blockId);
-  assert(chainId == 0);
+  _getBlockRawHexByBlockId(txlog->blkId_, dbExplorer_, &blkRawHex);
 
   // 解码Raw Hex
   vector<unsigned char> blockData(ParseHex(blkRawHex));
@@ -686,7 +631,7 @@ void Parser::acceptBlock(const int32_t height) {
   }
   catch (std::exception &e) {
     THROW_EXCEPTION_DBEX("Block decode failed, height: %d, blockId: %lld",
-                         height, blockId);
+                         txlog->blkHeight_, txlog->blkId_);
   }
 
   // 拿到 tx_hash -> tx_id 的对应关系
@@ -699,10 +644,11 @@ void Parser::acceptBlock(const int32_t height) {
   txsHash2ids(hashVec, hash2id);
 
   // 插入数据至 table.0_blocks
-  _insertBlock(dbExplorer_, blk, blockId, height, (int32_t)blkRawHex.length()/2);
+  _insertBlock(dbExplorer_, blk, txlog->blkId_,
+               txlog->blkHeight_, (int32_t)blkRawHex.length()/2);
 
   // 插入数据至 table.block_txs_xxxx
-  _insertBlockTxs(dbExplorer_, blk, blockId, hash2id);
+  _insertBlockTxs(dbExplorer_, blk, txlog->blkId_, hash2id);
 }
 
 
@@ -1169,17 +1115,13 @@ void Parser::acceptTx(class TxLog *txLog) {
 
 
 // 回滚一个块操作
-void Parser::rollbackBlock(const int32_t height) {
+void Parser::rollbackBlock(TxLog *txlog) {
   MySQLResult res;
   string sql;
 
   // 获取块Raw Hex
   string blkRawHex;
-  int32_t chainId;
-  int64_t blockId;
-
-  _getBlockRawHexRollback(height, dbExplorer_, &blkRawHex, &chainId, &blockId);
-  assert(chainId == 0);
+  _getBlockRawHexByBlockId(txlog->blkId_, dbExplorer_, &blkRawHex);
 
   // 解码Raw Block
   vector<unsigned char> blockData(ParseHex(blkRawHex));
@@ -1190,10 +1132,10 @@ void Parser::rollbackBlock(const int32_t height) {
   }
   catch (std::exception &e) {
     THROW_EXCEPTION_DBEX("Block decode failed, height: %d, blockId: %lld",
-                         height, blockId);
+                         txlog->blkHeight_, txlog->blkId_);
   }
-  const CBlockHeader header = blk.GetBlockHeader();  // alias
-  const  string prevBlockHash = header.hashPrevBlock.ToString();
+  const CBlockHeader header  = blk.GetBlockHeader();  // alias
+  const string prevBlockHash = header.hashPrevBlock.ToString();
 
   // 移除前向block的next指向
   sql = Strings::Format("UPDATE `0_blocks` SET `next_block_id`=0, `next_block_hash`=''"
@@ -1207,12 +1149,12 @@ void Parser::rollbackBlock(const int32_t height) {
 
   // table.block_txs_xxxx
   sql = Strings::Format("DELETE FROM `block_txs_%04d` WHERE `block_id`=%lld",
-                        tableIdx_BlockTxs(blockId), blockId);
+                        tableIdx_BlockTxs(txlog->blkId_), txlog->blkId_);
   dbExplorer_.updateOrThrowEx(sql, (int32_t)blk.vtx.size());
 
   if (cacheEnable_) {
     // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
-    cache_->insertKV(Strings::Format("blkh_%d", height));
+    cache_->insertKV(Strings::Format("blkh_%d", txlog->blkHeight_));
   }
 }
 
@@ -1566,7 +1508,8 @@ bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
 
   // fetch tx log, 每次处理一条日志记录
   sql = Strings::Format(" SELECT `id`,`handle_status`,`handle_type`, "
-                        "   `block_height`,`tx_hash`,`created_at`,`block_timestamp` "
+                        "   `block_height`,`tx_hash`,`created_at`, "
+                        " `block_timestamp`,`block_id` "
                         " FROM `txlogs_%04d` "
                         " WHERE `id` > %d ORDER BY `id` ASC LIMIT 1 ",
                         tableNameIdx, logId);
@@ -1600,6 +1543,7 @@ bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
   txLog->txHash_    = uint256(row[4]);
   txLog->createdAt_ = string(row[5]);
   txLog->blockTimestamp_ = (uint32_t)atoi64(row[6]);
+  txLog->blkId_     = atoi64(row[7]);
 
   if (txLog->status_ != TXLOG_STATUS_INIT) {
     LOG_FATAL("invalid status: %d", txLog->status_);

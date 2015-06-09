@@ -21,6 +21,7 @@
 #include <fstream>
 
 #include <boost/thread.hpp>
+#include <boost/filesystem.hpp>
 
 #include "Parser.h"
 #include "Common.h"
@@ -123,7 +124,8 @@ blkHeight_(-2), txId_(0), blkId_(0)
 TxLog::~TxLog() {}
 
 
-CacheManager::CacheManager(const string  SSDBHost, const int32_t SSDBPort):
+CacheManager::CacheManager(const string  SSDBHost,
+                           const int32_t SSDBPort, const string dirURL):
   ssdb_(nullptr), SSDBHost_(SSDBHost), SSDBPort_(SSDBPort)
 {
   // create connection
@@ -134,6 +136,18 @@ CacheManager::CacheManager(const string  SSDBHost, const int32_t SSDBPort):
   }
   running_   = true;
   ssdbAlive_ = true;
+
+  // remove last '/'
+  dirURL_ = dirURL;
+  if (dirURL_.length() > 1 && dirURL_[dirURL_.length() - 1] == '/') {
+    dirURL_.resize(dirURL_.length() - 1);
+  }
+  // create file if not exist
+  if (dirURL_.size() > 0 &&
+      !boost::filesystem::exists(dirURL_) &&
+      !boost::filesystem::create_directories(dirURL_)) {
+    THROW_EXCEPTION_DBEX("create folder failed: %s", dirURL_.c_str());
+  }
 
   // setup consumer thread
   boost::thread t(boost::bind(&CacheManager::threadConsumer, this));
@@ -175,6 +189,22 @@ void CacheManager::insertKV(const string &key) {
   if (qkvTemp_.find(key) != qkvTemp_.end()) {
     return;
   }
+
+  string url;
+  if (strncmp(key.c_str(), "blkh_", 5) == 0) {
+    url = Strings::Format("/block-height/%s", key.substr(5).c_str());
+  }
+  else if (strncmp(key.c_str(), "tx_", 3) == 0) {
+    url = Strings::Format("/rawtx/%s", key.substr(3).c_str());
+  }
+  else if (strncmp(key.c_str(), "addr_", 5) == 0) {
+    url = Strings::Format("/address/%s", key.substr(5).c_str());
+  }
+  if (url.length() > 0) {
+    qUrlTemp_.insert(url);
+    LOG_DEBUG("[CacheManager::insertKV] url: %s", url.c_str());
+  }
+
   qkvTemp_.insert(key);
   LOG_DEBUG("[CacheManager::insertKV] key: %s", key.c_str());
 }
@@ -195,6 +225,7 @@ void CacheManager::insertHashSet(const string &address,
 void CacheManager::commit() {
   ScopeLock sl(lock_);
 
+  // KV
   // 超过500万，丢弃数据，防止撑爆内存
   if (qkv_.size() > 500 * 10000) {
     vector<string>().swap(qkv_);
@@ -204,6 +235,7 @@ void CacheManager::commit() {
   }
   qkvTemp_.clear();
 
+  // Hash SET
   // 超过500万，丢弃数据，防止撑爆内存
   if (qhashset_.size() > 500 * 10000) {
     vector<std::pair<string, string> >().swap(qhashset_);
@@ -213,23 +245,74 @@ void CacheManager::commit() {
   }
   qhashsetTemp_.clear();
   qhashsetTempSet_.clear();
+
+  // URL
+  // 超过500万，丢弃数据，防止撑爆内存
+  if (qUrl_.size() > 500 * 10000) {
+    vector<string>().swap(qUrl_);
+  }
+  for (auto &it : qUrlTemp_) {
+    qUrl_.push_back(it);
+  }
+  qUrlTemp_.clear();
+}
+
+void CacheManager::flushURL(vector<string> &buf) {
+  {
+    ScopeLock sl(lock_);
+    buf.insert(buf.end(), qUrl_.begin(), qUrl_.end());
+    qUrl_.clear();
+  }
+  if (buf.size() == 0) {
+    return;
+  }
+
+  const string name = Strings::Format("%s/%s",
+                                      dirURL_.length() ? dirURL_.c_str() : ".",
+                                      date("%Y%m%d.%H%M%S").c_str());
+  const string nameTmp = name + ".tmp";
+
+  // write to disk
+  std::ofstream file(nameTmp, std::ios_base::app | std::ios_base::out);
+  if (!file.is_open()) {
+    LOG_ERROR("open file fail: %s", name.c_str());
+    return;
+  }
+  for (auto &line : buf) {
+    LOG_DEBUG("line: %s", line.c_str());
+    file << line << std::endl;
+  }
+  file.close();
+
+  LOG_DEBUG("[CacheManager::flushURL] write %lld to file: %s", buf.size(), name.c_str());
+
+  // rename
+  boost::filesystem::rename(nameTmp, name);
+  buf.clear();
 }
 
 //
 // SSDB数据结构文档：http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
 //
 void CacheManager::threadConsumer() {
-  vector<string> buf;
+  vector<string> buf, bufUrl;
   vector<std::pair<string, string> > bufHashSet;
-  buf.reserve(512);
-  bufHashSet.reserve(512);
+  buf.reserve(1024);
+  bufUrl.reserve(1024);
+  bufHashSet.reserve(1024);
   ssdb::Status s;
   int64_t successCount, itemCount;
+  time_t lastFlushTime = time(nullptr) - 10;
 
   while (running_) {
     assert(ssdbAlive_ == true);
     assert(ssdb_ != nullptr);
     itemCount = successCount = 0;
+
+    if (lastFlushTime + 60 < time(nullptr)) {
+      flushURL(bufUrl);
+      lastFlushTime = time(nullptr);
+    }
 
     // Key - Value
     {
@@ -275,7 +358,7 @@ void CacheManager::threadConsumer() {
     }
 
     if (itemCount == 0) {
-      sleepMs(200);  // 暂无数据
+      sleepMs(250);  // 暂无数据
     } else if (itemCount == successCount) {
       // 全部执行成功，清理数据
       buf.clear();
@@ -316,7 +399,8 @@ running_(true), cache_(nullptr)
   cacheEnable_ = Config::GConfig.getBool("ssdb.enable", false);
   if (cacheEnable_) {
     cache_ = new CacheManager(Config::GConfig.get("ssdb.host"),
-                              (int32_t)Config::GConfig.getInt("ssdb.port"));
+                              (int32_t)Config::GConfig.getInt("ssdb.port"),
+                              Config::GConfig.get("url.file.dir", ""));
   }
 }
 
@@ -780,9 +864,8 @@ void _insertTxInputs(MySQLConnection &db, CacheManager *cache,
 
       if (cache != nullptr) {
         // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
-        // 遍历inputs所关联tx，全部删除： txid_{id}, tx_{hash}
-        cache->insertKV(Strings::Format("txid_%lld", prevTxId));
-        cache->insertKV(Strings::Format("tx_%s",     prevHash.ToString().c_str()));
+        // 遍历inputs所关联tx，全部删除： tx_{hash}
+        cache->insertKV(Strings::Format("tx_%s", prevHash.ToString().c_str()));
 
         // 清理所有输入地址
         if (dbTxOutput.address.length()) {
@@ -1256,8 +1339,7 @@ void _rollbackTxInputs(MySQLConnection &db, CacheManager *cache,
     if (cache != nullptr) {
       // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
       // 遍历inputs所关联tx，全部删除： txid_{id}, tx_{hash}
-      cache->insertKV(Strings::Format("txid_%lld", prevTxId));
-      cache->insertKV(Strings::Format("tx_%s",     prevHash.ToString().c_str()));
+      cache->insertKV(Strings::Format("tx_%s", prevHash.ToString().c_str()));
     }
   } /* /for */
 
@@ -1433,9 +1515,8 @@ void _rollbackTx(MySQLConnection &db, CacheManager *cache, class TxLog *txLog) {
 
   if (cache != nullptr) {
     // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
-    // 删除自身: txid_{id}, tx_{hash}
-    cache->insertKV(Strings::Format("txid_%lld", txLog->txId_));
-    cache->insertKV(Strings::Format("tx_%s",     txLog->txHash_.ToString().c_str()));
+    // 删除自身: tx_{hash}
+    cache->insertKV(Strings::Format("tx_%s", txLog->txHash_.ToString().c_str()));
   }
 }
 

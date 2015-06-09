@@ -138,10 +138,17 @@ class CacheManager {
   vector<string> qkv_;
   vector<std::pair<string, string> > qhashset_;
 
+  // 待触发的URL列表
+  string dirURL_;
+  set<string>    qUrlTemp_;
+  vector<string> qUrl_;
+
   void threadConsumer();
 
+  void flushURL(vector<string> &buf);
+
 public:
-  CacheManager(const string  SSDBHost, const int32_t SSDBPort);
+  CacheManager(const string  SSDBHost, const int32_t SSDBPort, const string dirURL);
   ~CacheManager();
 
   // non-thread safe

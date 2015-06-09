@@ -58,6 +58,7 @@ class RawMemPool {
                     'handle_status' => 100,
                     'handle_type' => Txlogs::ROW_TYPE_FORWARD,
                     'block_height' => -1,
+                    'block_id' => -1,
                     'block_timestamp' => time(),
                     'tx_hash' => $tx->getHash(),
                     'created_at' => $now,

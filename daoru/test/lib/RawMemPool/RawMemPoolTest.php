@@ -134,8 +134,8 @@ class RawMemPoolTest extends ExplorerDatabaseTestCase {
     public function testRollback(){
         $now = Carbon::now()->toDateTimeString();
         $this->tableInsert('txlogs_0000', [
-            [ 'id' => 1, 'handle_status' => 100, 'handle_type' => Txlogs::ROW_TYPE_FORWARD, 'block_height' => -1, 'block_timestamp' => 1, 'tx_hash' => '2e997db6507ca12ec7b2182d8af47e1424d3342f1f5c3532d3289d7c82b6adb0', 'created_at' => $now, 'updated_at' => $now, ],
-            [ 'id' => 2, 'handle_status' => 100, 'handle_type' => Txlogs::ROW_TYPE_FORWARD, 'block_height' => -1, 'block_timestamp' => 2, 'tx_hash' => '929090a8c4ceb0822ab07f68d1e333a14cd9db8a354d31232cb939a5e391d89e', 'created_at' => $now, 'updated_at' => $now, ],
+            [ 'id' => 1, 'handle_status' => 100, 'handle_type' => Txlogs::ROW_TYPE_FORWARD, 'block_height' => -1, 'block_id' => -1, 'block_timestamp' => 1, 'tx_hash' => '2e997db6507ca12ec7b2182d8af47e1424d3342f1f5c3532d3289d7c82b6adb0', 'created_at' => $now, 'updated_at' => $now, ],
+            [ 'id' => 2, 'handle_status' => 100, 'handle_type' => Txlogs::ROW_TYPE_FORWARD, 'block_height' => -1, 'block_id' => -1, 'block_timestamp' => 2, 'tx_hash' => '929090a8c4ceb0822ab07f68d1e333a14cd9db8a354d31232cb939a5e391d89e', 'created_at' => $now, 'updated_at' => $now, ],
         ]);
 
         $pool = new RawMemPool();

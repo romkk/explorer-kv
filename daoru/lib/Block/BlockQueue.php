@@ -92,7 +92,17 @@ class BlockQueue {
     }
 
     public static function getLocalHeight() {
-        return ExplorerMeta::get('daoru.local_height', -1);
+        $h = ExplorerMeta::get('daoru.local_height');
+        if (is_null($h)) {
+            $h = RawBlock::where('chain_id', 0)
+                ->orderBy('id', 'desc')
+                ->pluck('block_height');
+            if (is_null($h)) {
+                $h = -1;
+            }
+            ExplorerMeta::put('daoru.local_height', $h);
+        }
+        return $h;
     }
 
     public static function setLocalHeight($h){

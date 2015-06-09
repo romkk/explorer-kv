@@ -10,6 +10,19 @@ class Block {
     protected $txs = null;
     protected $hex = null;
     protected $time = null;
+    protected $id = null;
+
+    public function getId() {
+        if (is_null($this->id)) {
+            $this->id = RawBlock::where('block_hash', $this->getHash())->pluck('id');
+        }
+        return $this->id;
+    }
+
+    public function setId($id) {
+        $this->id = $id;
+        return $this;
+    }
 
     public static function createFromBlockDetail(array $detail) {
         $block = new Block($detail['hash'], $detail['previousblockhash'], $detail['height'], $detail['time']);
@@ -123,6 +136,8 @@ class Block {
             'created_at' => $now->toDateTimeString(),
         ]);
 
+        $this->setId($rawBlockId);
+
         Log::info(sprintf('rawblock 表插入完成, table id = %d', $rawBlockId));
 
         Log::info('开始插入 txs');
@@ -135,6 +150,7 @@ class Block {
                 'handle_status' => 100,
                 'handle_type' => Txlogs::ROW_TYPE_FORWARD,
                 'block_height' => $this->getHeight(),
+                'block_id' => $rawBlockId,
                 'block_timestamp' => $this->getBlockTimestamp(),
                 'tx_hash' => $tx->getHash(),
                 'created_at' => $now->toDateTimeString(),

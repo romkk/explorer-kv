@@ -61,6 +61,7 @@ class Tx {
             'handle_status' => 100,
             'handle_type' => Txlogs::ROW_TYPE_ROLLBACK,
             'block_height' => $this->getBlock()->getHeight(),
+            'block_id' => $this->getBlock()->getId(),
             'block_timestamp' => $this->getBlock()->getBlockTimestamp(),
             'tx_hash' => $this->getHash(),
             'created_at' => $now,

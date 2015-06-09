@@ -85,6 +85,7 @@ class Txlogs extends Model {
                 'handle_status' => 100,
                 'handle_type' => static::ROW_TYPE_ROLLBACK,
                 'block_height' => $tx['block_height'],
+                'block_id' => $tx['block_id'],
                 'block_timestamp' => $tx['block_timestamp'],
                 'tx_hash' => $tx['tx_hash'],
                 'created_at' => Carbon::now()->toDateTimeString(),
@@ -122,7 +123,7 @@ class Txlogs extends Model {
                 ->orderBy('id', 'desc')
                 ->take($pageSize);
 
-            while (!$done && ($txs = $query->skip($offset * $pageSize)->get(['handle_type', 'block_height', 'tx_hash', 'block_timestamp'])) && count($txs)) {
+            while (!$done && ($txs = $query->skip($offset * $pageSize)->get(['handle_type', 'block_height', 'block_id', 'tx_hash', 'block_timestamp'])) && count($txs)) {
                 foreach ($txs as $tx) {
                     if ($tx['handle_type'] === 1 && $tx['block_height'] === -1) {
                         $ret[] = $tx;

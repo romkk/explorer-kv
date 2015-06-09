@@ -62,8 +62,8 @@ class TxlogsSimpleTempLogsTest extends ExplorerDatabaseTestCase {
     public function testFindAndClearTempLogsWithMultiTables() {
         $this->tableCreateLike('txlogs_0001', '0_tpl_txlogs');
         $this->tableInsert('txlogs_0001', [
-            ['id' => 1, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'tx_hash' => 'txhash8', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
-            ['id' => 2, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'tx_hash' => 'txhash9', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
+            ['id' => 1, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'block_id' => -1, 'tx_hash' => 'txhash8', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
+            ['id' => 2, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'block_id' => -1, 'tx_hash' => 'txhash9', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
         ]);
 
         $logs = Txlogs::getTempLogs(1);
@@ -99,13 +99,13 @@ class TxlogsSimpleTempLogsTest extends ExplorerDatabaseTestCase {
     protected function getDataSet() {
         return new DbUnit_ArrayDataSet([
             'txlogs_0000' => [
-                ['id' => 1, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => 0, 'tx_hash' => 'txhash1', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
-                ['id' => 2, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => 1, 'tx_hash' => 'txhash2', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
-                ['id' => 3, 'handle_status' => 100, 'handle_type' => 2, 'block_height' => 1, 'tx_hash' => 'txhash3', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
-                ['id' => 4, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'tx_hash' => 'txhash4', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
-                ['id' => 5, 'handle_status' => 100, 'handle_type' => 2, 'block_height' => -1, 'tx_hash' => 'txhash5', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
-                ['id' => 6, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'tx_hash' => 'txhash6', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
-                ['id' => 7, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'tx_hash' => 'txhash7', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
+                ['id' => 1, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => 0, 'block_id' => 1, 'tx_hash' => 'txhash1', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
+                ['id' => 2, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => 1, 'block_id' => 2, 'tx_hash' => 'txhash2', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
+                ['id' => 3, 'handle_status' => 100, 'handle_type' => 2, 'block_height' => 1, 'block_id' => 3, 'tx_hash' => 'txhash3', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
+                ['id' => 4, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'block_id' => -1, 'tx_hash' => 'txhash4', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
+                ['id' => 5, 'handle_status' => 100, 'handle_type' => 2, 'block_height' => -1, 'block_id' => -1, 'tx_hash' => 'txhash5', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
+                ['id' => 6, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'block_id' => -1, 'tx_hash' => 'txhash6', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
+                ['id' => 7, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'block_id' => -1, 'tx_hash' => 'txhash7', 'block_timestamp' => 1, 'created_at' => Carbon::now(), 'updated_at' => Carbon::now()],
             ]
         ]);
 

@@ -70,7 +70,7 @@ class BlockTest extends ExplorerDatabaseTestCase {
     public function testRollback() {
         $this->tableCreateLike('txlogs_0000', '0_tpl_txlogs');
 
-        $block = Block::createFromBlockDetail(Bitcoin::make()->bm_get_block_detail('000000000000226f7618566e70a2b5e020e29579b46743f05348427239bf41a1'));        // height = 300000
+        $block = Block::createFromBlockDetail(Bitcoin::make()->bm_get_block_detail('000000000000226f7618566e70a2b5e020e29579b46743f05348427239bf41a1'))->setId(1);        // height = 300000
         $this->assertEquals('00000000dfe970844d1bf983d0745f709368b5c66224837a17ed633f0dabd300', $block->getPrevHash());
         $this->assertEquals(2, count($block->getTxs()));
 

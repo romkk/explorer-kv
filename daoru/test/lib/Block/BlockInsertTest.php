@@ -21,11 +21,11 @@ class BlockInsertTest extends ExplorerDatabaseTestCase {
     protected function getDataSet() {
         return new DbUnit_ArrayDataSet([
             'txlogs_0000' => [
-                ['id' => 1, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => 0, 'tx_hash' => 'hash1', 'block_timestamp' => 1, 'created_at' => Carbon::now()->toDateTimeString(), 'updated_at' => Carbon::now()->toDateTimeString(),],
-                ['id' => 2, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'tx_hash' => 'hash2', 'block_timestamp' => 1, 'created_at' => Carbon::now()->toDateTimeString(), 'updated_at' => Carbon::now()->toDateTimeString(),],
+                ['id' => 1, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => 0, 'block_id' => 1, 'tx_hash' => 'hash1', 'block_timestamp' => 1, 'created_at' => Carbon::now()->toDateTimeString(), 'updated_at' => Carbon::now()->toDateTimeString(),],
+                ['id' => 2, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'block_id' => -1, 'tx_hash' => 'hash2', 'block_timestamp' => 1, 'created_at' => Carbon::now()->toDateTimeString(), 'updated_at' => Carbon::now()->toDateTimeString(),],
             ],
             'txlogs_0001' => [
-                ['id' => 1, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'tx_hash' => 'hash3', 'block_timestamp' => 1, 'created_at' => Carbon::now()->toDateTimeString(), 'updated_at' => Carbon::now()->toDateTimeString(),],
+                ['id' => 1, 'handle_status' => 100, 'handle_type' => 1, 'block_height' => -1, 'block_id' => -1, 'tx_hash' => 'hash3', 'block_timestamp' => 1, 'created_at' => Carbon::now()->toDateTimeString(), 'updated_at' => Carbon::now()->toDateTimeString(),],
             ],
             '0_raw_blocks' => [
                 ['id' => 1, 'block_hash' => 'hasha', 'block_height' => 0, 'chain_id' => 1, 'hex' => 'hex', 'created_at' => Carbon::now()->toDateTimeString(),],

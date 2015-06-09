@@ -50,7 +50,7 @@ class TxTest extends ExplorerDatabaseTestCase {
     public function testRollback() {
         $this->tableCreateLike('txlogs_0000', '0_tpl_txlogs');
 
-        $block = new Block('hash', 'prevhash', 1, 12345);
+        $block = (new Block('hash', 'prevhash', 1, 12345))->setId(1);
         $tx = new Tx($block, 'txhash');
 
         $this->assertTableRowCount('txlogs_0000', 0);

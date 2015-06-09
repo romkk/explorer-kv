@@ -92,11 +92,11 @@ class BlockQueueTest extends ExplorerDatabaseTestCase {
 
 
     public function testDiff() {
-        $queue = new BlockQueue(new Collection([
-            new Block('hash1', 'prevhash1', 0, 1),
-            new Block('hash2', 'prevhash2', 1, 1),
-            new Block('hash3', 'prevhash3', 2, 1),
-        ]));
+        $b1 = (new Block('hash1', 'prevhash1', 0, 1))->setid(1);
+        $b2 = (new Block('hash2', 'prevhash2', 1, 1))->setid(2);
+        $b3 = (new Block('hash3', 'prevhash3', 2, 1))->setid(3);
+
+        $queue = new BlockQueue(new Collection([$b1, $b2, $b3]));
 
         $remote = new Block('hash4', 'hash3', 3, 1);
         $this->assertTrue($queue->diff($remote));
@@ -113,9 +113,9 @@ class BlockQueueTest extends ExplorerDatabaseTestCase {
 
         $client = Bitcoin::make();
         $orphanBlocks = new Collection([
-            Block::createFromBlockDetail($client->bm_get_block_detail('000000000000226f7618566e70a2b5e020e29579b46743f05348427239bf41a1')),
-            Block::createFromBlockDetail($client->bm_get_block_detail('0000000000004829474748f3d1bc8fcf893c88be255e6d7f571c548aff57abf4')),
-            Block::createFromBlockDetail($client->bm_get_block_detail('000000000000e6ae2516b4249f14f368dd57adc23d0f7c8a6c615f5cc0d50db8')),
+            Block::createFromBlockDetail($client->bm_get_block_detail('000000000000226f7618566e70a2b5e020e29579b46743f05348427239bf41a1'))->setId(1),
+            Block::createFromBlockDetail($client->bm_get_block_detail('0000000000004829474748f3d1bc8fcf893c88be255e6d7f571c548aff57abf4'))->setId(2),
+            Block::createFromBlockDetail($client->bm_get_block_detail('000000000000e6ae2516b4249f14f368dd57adc23d0f7c8a6c615f5cc0d50db8'))->setId(3),
         ]);
 
         $queue = new BlockQueue(Collection::make());

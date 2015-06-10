@@ -11,6 +11,11 @@ flock -n 9 || {
 	exit 1
 }
 
+if [[ -z "$HOST" ]]; then
+	echo '[ERROR] HOST env not set' >&2
+	exit 1
+fi
+
 if ! which wget >/dev/null 2>&1; then
 	echo '[ERROR] Wget not found.' >&2
 	exit 1
@@ -38,5 +43,5 @@ cd "$dir"
 
 tmp=`mktemp`
 find . -type f -not -name '*.tmp' > "$tmp"
-cat "$tmp" | xargs cat | sort | uniq | xargs -P 10 -n 1 wget --timeout 5 --tries 3 -O /dev/null -a "$ROOT"/log
+( cat "$tmp" | xargs cat | sort | uniq | xargs -I{} -P 10 -n 1 wget --timeout 5 --tries 3 -O /dev/null -a "$ROOT"/log "$HOST"{} ) || true
 cat "$tmp" | xargs rm -f

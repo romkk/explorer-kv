@@ -21,7 +21,9 @@ TODO
 
 ## 响应格式
 
-API 请求的响应结果均为`JSON`格式、`UTF8`编码，并开启了 Gzip 压缩。一个典型的响应如下：
+API 请求的响应结果均为`JSON`格式、`UTF8`编码。为了节省流量，推荐在 Request Header 中加入`Accept-Encoding: gzip`字段，开启 Gzip 压缩。
+
+一个典型的响应如下：
 
 ```
 HTTP/1.1 200 OK

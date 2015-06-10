@@ -17,6 +17,50 @@ module.exports = (server) => {
         next();
     });
 
+    server.get('/identify-block/:hash', async (req, res, next) => {
+        let rows = await mysql.query('select pool_id, name, key_words from 0_pool');
+        var bag = {};
+        rows.forEach(r => {
+            if (!bag[r.name]) bag[r.name] = [];
+            try {
+                bag[r.name] = {
+                    re: new RegExp(r.key_words, 'i'),
+                    id: r.pool_id
+                }
+            } catch (err) {
+                log(`[WARN] ${r.name} 正则表达式初始化失败，请检查。`);
+            }
+
+        });
+
+        var hash = req.params.hash;
+
+        var blk;
+        try {
+            blk = await Block.grab(hash, 0, 1, true, !req.params.skipcache);
+        } catch (err) {
+            return next(new restify.ResourceNotFoundError('Block Not Found'));
+        }
+
+        if (!blk.tx.length) {
+            return next(new restify.ServiceUnavailableError('Block Not Available'));
+        }
+
+        var [tx] = blk.tx;
+        var text = new Buffer(tx.inputs[0].script, 'hex').toString('utf8');
+
+        var pool = _.findKey(bag, v => v.re.test(text));
+        var id = pool ? bag[pool].id : 0;
+        var name = pool || 'Unknown';
+
+        mysql.query(`update 0_blocks set relayed_by = ? where hash = ?`, [id, blk.hash]);
+
+        res.send({
+            relayedBy: name
+        });
+        next();
+    });
+
     /*
     server.get('/unspent', async (req, res, next) => {
         var err = validators.isValidAddressList(req.query.active);

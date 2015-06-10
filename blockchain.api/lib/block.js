@@ -38,7 +38,8 @@ class Block {
             block_index: this.attrs.block_id,
             main_chain: this.attrs.chain_id === 0,
             height: this.attrs.height,
-            tx: this.txs
+            tx: this.txs,
+            relayed_by: this.attrs.relayed_by || 'Unknown'
         };
     }
 
@@ -67,8 +68,10 @@ class Block {
 
     static make(id) {
         var idType = helper.paramType(id);
-        var sql = `select *
-                   from 0_blocks
+        var sql = `select v1.*, v2.name as relayed_by
+                   from 0_blocks v1
+                        left join 0_pool v2
+                            on v1.relayed_by = v2.pool_id
                    where ${idType == helper.constant.HASH_IDENTIFIER ? 'hash' : 'block_id'} = ?
                    limit 1`;
         return mysql.selectOne(sql, [id])

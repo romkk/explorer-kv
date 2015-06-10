@@ -249,6 +249,7 @@ CREATE TABLE `0_blocks` (
   `tx_count` int(11) NOT NULL,
   `reward_block` bigint(20) NOT NULL,
   `reward_fees` bigint(20) NOT NULL,
+  `relayed_by` int(11) NOT NULL DEFAULT '0',
   `created_at` datetime NOT NULL,
   PRIMARY KEY (`block_id`),
   UNIQUE KEY `block_hash` (`hash`),
@@ -269,3 +270,28 @@ CREATE TABLE `0_unconfirmed_txs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 echo "$unconfirmed_txs"
+
+pool=`cat <<EOF
+DROP TABLE IF EXISTS `0_pool`;
+CREATE TABLE `0_pool` (
+  `pool_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(200) NOT NULL,
+  `key_words` varchar(500) NOT NULL,
+  PRIMARY KEY (`pool_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8;
+
+INSERT INTO `0_pool` (`pool_id`, `name`, `key_words`) VALUES
+(1, 'AntPool', 'antpool'),
+(2, 'Kano CKPool', 'ckpool/Kano'),
+(3, 'BitFury', '/BitFury/'),
+(4, 'BTCChina',	'BTCChina Pool'),
+(5, 'slush', '/slush/'),
+(6, 'BW.com', 'BW Pool'),
+(7, 'KnCMiner', 'KnCminer'),
+(8, 'Eligius', 'Eligius'),
+(9, 'megabigpower', 'megabigpower'),
+(10, 'F2POOL', '七彩神仙鱼');
+EOF
+`
+echo "$pool"
+

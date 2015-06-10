@@ -21,6 +21,7 @@
 #include <fstream>
 
 #include <boost/thread.hpp>
+#include <boost/filesystem.hpp>
 
 #include "Parser.h"
 #include "Common.h"
@@ -54,21 +55,19 @@ LastestAddressInfo::LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd,
 }
 
 // 获取block raw hex/id/chainId...
-void _getBlockRawHex(const int32_t height,
-                     MySQLConnection &db,
-                     string *rawHex, int32_t *chainId, int64_t *blockId) {
+void _getBlockRawHexByBlockId(const int64_t blockId,
+                              MySQLConnection &db, string *rawHex) {
   string sql;
 
   // 从DB获取raw block
   MySQLResult res;
-  sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
-                        " WHERE `block_height` = %d AND `chain_id`=0 ",
-                        height);
+  sql = Strings::Format("SELECT `hex` FROM `0_raw_blocks` WHERE `id` = %lld",
+                        blockId);
 
   char **row = nullptr;
   db.query(sql, res);
   if (res.numRows() == 0) {
-    THROW_EXCEPTION_DBEX("can't find block by height from DB: %d", height);
+    THROW_EXCEPTION_DBEX("can't find block by blkID from DB: %lld", blockId);
   }
 
   row = res.nextRow();
@@ -76,58 +75,7 @@ void _getBlockRawHex(const int32_t height,
     rawHex->assign(row[0]);
     assert(rawHex->length() % 2 == 0);
   }
-  if (chainId != nullptr) {
-    *chainId = atoi(row[1]);
-  }
-  if (blockId != nullptr) {
-    *blockId  = atoi64(row[2]);
-  }
 }
-
-// 获取block raw hex/id/chainId...
-// Rollback时用该函数
-void _getBlockRawHexRollback(const int32_t height,
-                             MySQLConnection &db,
-                             string *rawHex, int32_t *chainId, int64_t *blockId) {
-  string sql;
-  MySQLResult res;
-  char **row = nullptr;
-  string hash;
-
-  // 0_blocks 获取此高度的hash，不可从 0_row_blocks 中获取，因为此时分叉了
-  // 0_row_blocks 可能拿到的该高度另一个分支的块
-  sql = Strings::Format("SELECT `hash` FROM `0_blocks` WHERE "
-                        " `height` = %d AND `chain_id`=0 ", height);
-  db.query(sql, res);
-  if (res.numRows() == 0) {
-    THROW_EXCEPTION_DBEX("can't find block by height from DB when rollback: %d",
-                         height);
-  }
-  row = res.nextRow();
-  hash = string(row[0]);
-
-  // 根据 hash 从 0_row_blocks 中获取
-  sql = Strings::Format("SELECT `hex`,`chain_id`,`id` FROM `0_raw_blocks`  "
-                        " WHERE `block_hash` = '%s' ", hash.c_str());
-  db.query(sql, res);
-  if (res.numRows() == 0) {
-    THROW_EXCEPTION_DBEX("can't find block from DB when rollback: %s",
-                         hash.c_str());
-  }
-  row = res.nextRow();
-  if (rawHex != nullptr) {
-    rawHex->assign(row[0]);
-    assert(rawHex->length() % 2 == 0);
-  }
-  if (chainId != nullptr) {
-    *chainId = atoi(row[1]);
-  }
-  if (blockId != nullptr) {
-    *blockId  = atoi64(row[2]);
-  }
-}
-
-
 
 // 批量插入函数
 bool multiInsert(MySQLConnection &db, const string &table,
@@ -169,35 +117,15 @@ bool multiInsert(MySQLConnection &db, const string &table,
 //   -1   临时块（未确认的交易组成的虚拟块）
 //   >= 0 有效的块高度
 //
-TxLog::TxLog():logId_(0), tableIdx_(-1), status_(0), type_(0), blkHeight_(-2), txId_(0) {
+TxLog::TxLog():logId_(0), tableIdx_(-1), status_(0), type_(0),
+blkHeight_(-2), txId_(0), blkId_(0)
+{
 }
 TxLog::~TxLog() {}
 
 
-//// 若SSDB宕机，则丢弃数据
-//class CacheManager {
-//  ssdb::Client *ssdb_;
-//  mutex lock_;
-//
-//  // 待删除队列
-//  vector<string> qkv_;
-//  vector<string> qzset_;
-//  vector<std> qhashset_;
-//
-//  void threadConsumer();
-//
-//public:
-//  CacheManager();
-//  ~CacheManager();
-//
-//  bool tryOpen();
-//
-//  void insertKV(const string &key);
-//  void insertZSet(const string &key);
-//  void insertHashSet(const string &key);
-//};
-
-CacheManager::CacheManager(const string  SSDBHost, const int32_t SSDBPort):
+CacheManager::CacheManager(const string  SSDBHost,
+                           const int32_t SSDBPort, const string dirURL):
   ssdb_(nullptr), SSDBHost_(SSDBHost), SSDBPort_(SSDBPort)
 {
   // create connection
@@ -208,6 +136,18 @@ CacheManager::CacheManager(const string  SSDBHost, const int32_t SSDBPort):
   }
   running_   = true;
   ssdbAlive_ = true;
+
+  // remove last '/'
+  dirURL_ = dirURL;
+  if (dirURL_.length() > 1 && dirURL_[dirURL_.length() - 1] == '/') {
+    dirURL_.resize(dirURL_.length() - 1);
+  }
+  // create file if not exist
+  if (dirURL_.size() > 0 &&
+      !boost::filesystem::exists(dirURL_) &&
+      !boost::filesystem::create_directories(dirURL_)) {
+    THROW_EXCEPTION_DBEX("create folder failed: %s", dirURL_.c_str());
+  }
 
   // setup consumer thread
   boost::thread t(boost::bind(&CacheManager::threadConsumer, this));
@@ -246,20 +186,46 @@ CacheManager::~CacheManager() {
 }
 
 void CacheManager::insertKV(const string &key) {
+  if (qkvTemp_.find(key) != qkvTemp_.end()) {
+    return;
+  }
+
+  string url;
+  if (strncmp(key.c_str(), "blkh_", 5) == 0) {
+    url = Strings::Format("/block-height/%s", key.substr(5).c_str());
+  }
+  else if (strncmp(key.c_str(), "tx_", 3) == 0) {
+    url = Strings::Format("/rawtx/%s", key.substr(3).c_str());
+  }
+  else if (strncmp(key.c_str(), "addr_", 5) == 0) {
+    url = Strings::Format("/address/%s", key.substr(5).c_str());
+  }
+  if (url.length() > 0) {
+    qUrlTemp_.insert(url);
+    LOG_DEBUG("[CacheManager::insertKV] url: %s", url.c_str());
+  }
+
   qkvTemp_.insert(key);
   LOG_DEBUG("[CacheManager::insertKV] key: %s", key.c_str());
 }
 
 void CacheManager::insertHashSet(const string &address,
                                  const string &tableName) {
+  const string s = address + "." + tableName;
+  if (qhashsetTempSet_.find(s) != qhashsetTempSet_.end()) {
+    return;  // already exist, ignore
+  }
+
+  qhashsetTempSet_.insert(s);
   qhashsetTemp_.push_back(std::make_pair(address, tableName));
-  LOG_DEBUG("[CacheManager::insertHashSet] address:%s, tableName: %d",
+  LOG_DEBUG("[CacheManager::insertHashSet] address:%s, tableName: %s",
             address.c_str(), tableName.c_str());
 }
 
 void CacheManager::commit() {
   ScopeLock sl(lock_);
 
+  // KV
   // 超过500万，丢弃数据，防止撑爆内存
   if (qkv_.size() > 500 * 10000) {
     vector<string>().swap(qkv_);
@@ -269,6 +235,7 @@ void CacheManager::commit() {
   }
   qkvTemp_.clear();
 
+  // Hash SET
   // 超过500万，丢弃数据，防止撑爆内存
   if (qhashset_.size() > 500 * 10000) {
     vector<std::pair<string, string> >().swap(qhashset_);
@@ -277,18 +244,65 @@ void CacheManager::commit() {
     qhashset_.push_back(std::make_pair(it.first, it.second));
   }
   qhashsetTemp_.clear();
+  qhashsetTempSet_.clear();
+
+  // URL
+  // 超过500万，丢弃数据，防止撑爆内存
+  if (qUrl_.size() > 500 * 10000) {
+    vector<string>().swap(qUrl_);
+  }
+  for (auto &it : qUrlTemp_) {
+    qUrl_.push_back(it);
+  }
+  qUrlTemp_.clear();
+}
+
+void CacheManager::flushURL(vector<string> &buf) {
+  {
+    ScopeLock sl(lock_);
+    buf.insert(buf.end(), qUrl_.begin(), qUrl_.end());
+    qUrl_.clear();
+  }
+  if (buf.size() == 0) {
+    return;
+  }
+
+  const string name = Strings::Format("%s/%s",
+                                      dirURL_.length() ? dirURL_.c_str() : ".",
+                                      date("%Y%m%d.%H%M%S").c_str());
+  const string nameTmp = name + ".tmp";
+
+  // write to disk
+  std::ofstream file(nameTmp, std::ios_base::app | std::ios_base::out);
+  if (!file.is_open()) {
+    LOG_ERROR("open file fail: %s", name.c_str());
+    return;
+  }
+  for (auto &line : buf) {
+    LOG_DEBUG("line: %s", line.c_str());
+    file << line << "?skipcache=1" << std::endl;
+  }
+  file.close();
+
+  LOG_DEBUG("[CacheManager::flushURL] write %lld to file: %s", buf.size(), name.c_str());
+
+  // rename
+  boost::filesystem::rename(nameTmp, name);
+  buf.clear();
 }
 
 //
 // SSDB数据结构文档：http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
 //
 void CacheManager::threadConsumer() {
-  vector<string> buf;
+  vector<string> buf, bufUrl;
   vector<std::pair<string, string> > bufHashSet;
-  buf.reserve(512);
-  bufHashSet.reserve(512);
+  buf.reserve(1024);
+  bufUrl.reserve(1024);
+  bufHashSet.reserve(1024);
   ssdb::Status s;
   int64_t successCount, itemCount;
+  time_t lastFlushTime = time(nullptr) - 10;
 
   while (running_) {
     assert(ssdbAlive_ == true);
@@ -298,29 +312,29 @@ void CacheManager::threadConsumer() {
     // Key - Value
     {
       ScopeLock sl(lock_);
-      buf = qkv_;
+      buf.insert(buf.end(), qkv_.begin(), qkv_.end());
       qkv_.clear();
     }
     if (buf.size()) {
       itemCount += buf.size();
       s = ssdb_->multi_del(buf);
-      LOG_DEBUG("ssdb multi del, count: %lld", buf.size());
+      LOG_DEBUG("ssdb KV del, count: %lld", buf.size());
       if (s.error()) {
         LOG_ERROR("ssdb KV del fail");
       } else {
         successCount += buf.size();
       }
-      buf.clear();
     }
 
     // HashSet: 目前HashSet类型就一个: addr_table_{addr_id}
     {
       ScopeLock sl(lock_);
-      bufHashSet = qhashset_;
+      bufHashSet.insert(bufHashSet.end(), qhashset_.begin(), qhashset_.end());
       qhashset_.clear();
     }
     if (bufHashSet.size()) {
       itemCount += bufHashSet.size();
+      LOG_DEBUG("ssdb HashSet del, count: %lld", bufHashSet.size());
       for (auto &it : bufHashSet) {
         const string name = "addr_table_" + it.first;
         s = ssdb_->hdel(name, it.second);
@@ -331,7 +345,12 @@ void CacheManager::threadConsumer() {
           successCount++;
         }
       }
-      bufHashSet.clear();
+    }
+
+    // flush URL
+    if (lastFlushTime + 60 < time(nullptr)) {
+      lastFlushTime = time(nullptr);
+      flushURL(bufUrl);
     }
 
     if (itemCount != successCount) {
@@ -340,7 +359,11 @@ void CacheManager::threadConsumer() {
     }
 
     if (itemCount == 0) {
-      sleepMs(200);  // 暂无数据
+      sleepMs(250);  // 暂无数据
+    } else if (itemCount == successCount) {
+      // 全部执行成功，清理数据
+      buf.clear();
+      bufHashSet.clear();
     }
 
     // 成功数量为零，说明SSDB server端出故障了，尝试重新连接
@@ -377,7 +400,8 @@ running_(true), cache_(nullptr)
   cacheEnable_ = Config::GConfig.getBool("ssdb.enable", false);
   if (cacheEnable_) {
     cache_ = new CacheManager(Config::GConfig.get("ssdb.host"),
-                              (int32_t)Config::GConfig.getInt("ssdb.port"));
+                              (int32_t)Config::GConfig.getInt("ssdb.port"),
+                              Config::GConfig.get("url.file.dir", ""));
   }
 }
 
@@ -436,13 +460,13 @@ void Parser::run() {
 
     if (txlog.type_ == TXLOG_TYPE_ACCEPT) {
       if (txlog.tx_.IsCoinBase()) {
-        acceptBlock(txlog.blkHeight_);
+        acceptBlock(&txlog);
       }
       acceptTx(&txlog);
     }
     else if (txlog.type_ == TXLOG_TYPE_ROLLBACK) {
       if (txlog.tx_.IsCoinBase()) {
-      	rollbackBlock(txlog.blkHeight_);
+      	rollbackBlock(&txlog);
       }
       rollbackTx(&txlog);
     }
@@ -668,14 +692,10 @@ void _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t block
 }
 
 // 接收一个新块
-void Parser::acceptBlock(const int32_t height) {
+void Parser::acceptBlock(TxLog *txlog) {
   // 获取块Raw Hex
   string blkRawHex;
-  int32_t chainId;
-  int64_t blockId;
-
-  _getBlockRawHex(height, dbExplorer_, &blkRawHex, &chainId, &blockId);
-  assert(chainId == 0);
+  _getBlockRawHexByBlockId(txlog->blkId_, dbExplorer_, &blkRawHex);
 
   // 解码Raw Hex
   vector<unsigned char> blockData(ParseHex(blkRawHex));
@@ -686,7 +706,7 @@ void Parser::acceptBlock(const int32_t height) {
   }
   catch (std::exception &e) {
     THROW_EXCEPTION_DBEX("Block decode failed, height: %d, blockId: %lld",
-                         height, blockId);
+                         txlog->blkHeight_, txlog->blkId_);
   }
 
   // 拿到 tx_hash -> tx_id 的对应关系
@@ -699,10 +719,11 @@ void Parser::acceptBlock(const int32_t height) {
   txsHash2ids(hashVec, hash2id);
 
   // 插入数据至 table.0_blocks
-  _insertBlock(dbExplorer_, blk, blockId, height, (int32_t)blkRawHex.length()/2);
+  _insertBlock(dbExplorer_, blk, txlog->blkId_,
+               txlog->blkHeight_, (int32_t)blkRawHex.length()/2);
 
   // 插入数据至 table.block_txs_xxxx
-  _insertBlockTxs(dbExplorer_, blk, blockId, hash2id);
+  _insertBlockTxs(dbExplorer_, blk, txlog->blkId_, hash2id);
 }
 
 
@@ -773,11 +794,11 @@ DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t po
 }
 
 void _insertTxInputs(MySQLConnection &db, CacheManager *cache,
-                     const CTransaction &tx,
-                     const int64_t txId, map<int64_t, int64_t> &addressBalance,
+                     TxLog *txlog, map<int64_t, int64_t> &addressBalance,
                      int64_t &valueIn) {
   int n;
-  const string tableName = Strings::Format("tx_inputs_%04d", txId % 100);
+  const int32_t ymd = atoi(date("%Y%m%d", txlog->blockTimestamp_).c_str());
+  const string tableName = Strings::Format("tx_inputs_%04d", txlog->txId_ % 100);
   const string now = date("%F %T");
   // table.tx_inputs_xxxx
   const string fields = "`tx_id`, `position`, `input_script_asm`, `input_script_hex`,"
@@ -787,13 +808,13 @@ void _insertTxInputs(MySQLConnection &db, CacheManager *cache,
   string sql;
 
   n = -1;
-  for (auto &in : tx.vin) {
+  for (auto &in : txlog->tx_.vin) {
     n++;
     uint256 prevHash;
     int64_t prevTxId;
     int32_t prevPos;
 
-    if (tx.IsCoinBase()) {
+    if (txlog->tx_.IsCoinBase()) {
       prevHash = 0;
       prevTxId = 0;
       prevPos  = -1;
@@ -803,7 +824,7 @@ void _insertTxInputs(MySQLConnection &db, CacheManager *cache,
       // coinbase无法担心其长度，bitcoind对coinbase tx的coinbase字段长度做了限制
       values.push_back(Strings::Format("%lld,%d,'','%s',%u,"
                                        "0,-1,0,'','','%s'",
-                                       txId, n,
+                                       txlog->txId_, n,
                                        HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
                                        in.nSequence, now.c_str()));
     } else
@@ -817,7 +838,7 @@ void _insertTxInputs(MySQLConnection &db, CacheManager *cache,
                             " `spent_tx_id`=%lld, `spent_position`=%d"
                             " WHERE `tx_id`=%lld AND `position`=%d "
                             " AND `spent_tx_id`=0 AND `spent_position`=-1 ",
-                            prevTxId % 100, txId, n,
+                            prevTxId % 100, txlog->txId_, n,
                             prevTxId, prevPos);
       db.updateOrThrowEx(sql, 1);
 
@@ -832,7 +853,7 @@ void _insertTxInputs(MySQLConnection &db, CacheManager *cache,
       }
       values.push_back(Strings::Format("%lld,%d,'%s','%s',%u,%lld,%d,"
                                        "%lld,'%s','%s','%s'",
-                                       txId, n,
+                                       txlog->txId_, n,
                                        in.scriptSig.ToString().c_str(),
                                        HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
                                        in.nSequence, prevTxId, prevPos,
@@ -844,15 +865,16 @@ void _insertTxInputs(MySQLConnection &db, CacheManager *cache,
 
       if (cache != nullptr) {
         // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
-        // 遍历inputs所关联tx，全部删除： txid_{id}, tx_{hash}
-        cache->insertKV(Strings::Format("txid_%lld", prevTxId));
-        cache->insertKV(Strings::Format("tx_%s",     prevHash.ToString().c_str()));
+        // 遍历inputs所关联tx，全部删除： tx_{hash}
+        cache->insertKV(Strings::Format("tx_%s", prevHash.ToString().c_str()));
 
         // 清理所有输入地址
         if (dbTxOutput.address.length()) {
           auto addrStrVec = split(dbTxOutput.address, '|');
           for (auto &singleAddrStr : addrStrVec) {
             cache->insertKV(Strings::Format("addr_%s", singleAddrStr.c_str()));
+            cache->insertHashSet(singleAddrStr, Strings::Format("address_txs_%d",
+                                                                tableIdx_AddrTxs(ymd)));
           }
         }
       }
@@ -862,27 +884,26 @@ void _insertTxInputs(MySQLConnection &db, CacheManager *cache,
   // 执行插入 inputs
   if (!multiInsert(db, tableName, fields, values)) {
     THROW_EXCEPTION_DBEX("insert inputs fail, txId: %lld, hash: %s",
-                         txId, tx.GetHash().ToString().c_str());
+                         txlog->txId_, txlog->tx_.GetHash().ToString().c_str());
   }
 }
 
 
 void _insertTxOutputs(MySQLConnection &db, CacheManager *cache,
-                      const CTransaction &tx,
-                      const int64_t txId, const int64_t blockHeight,
-                      map<int64_t, int64_t> &addressBalance) {
+                      TxLog *txlog, map<int64_t, int64_t> &addressBalance) {
   int n;
   const string now = date("%F %T");
   set<string> allAddresss;
+  const int32_t ymd = atoi(date("%Y%m%d", txlog->blockTimestamp_).c_str());
 
   // 提取涉及到的所有地址
-  for (auto &out : tx.vout) {
+  for (auto &out : txlog->tx_.vout) {
     txnouttype type;
     vector<CTxDestination> addresses;
     int nRequired;
     if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
       LOG_WARN("extract destinations failure, txId: %lld, hash: %s",
-               txId, tx.GetHash().ToString().c_str());
+               txlog->txId_, txlog->tx_.GetHash().ToString().c_str());
       continue;
     }
     for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
@@ -894,15 +915,19 @@ void _insertTxOutputs(MySQLConnection &db, CacheManager *cache,
   map<string, int64_t> addrMap;
   GetAddressIds(db, allAddresss, addrMap);
 
-  for (auto &singleAddrStr : allAddresss) {
-    cache->insertKV(Strings::Format("addr_%s", singleAddrStr.c_str()));
+  if (cache != nullptr) {
+    for (auto &singleAddrStr : allAddresss) {
+      cache->insertKV(Strings::Format("addr_%s", singleAddrStr.c_str()));
+      cache->insertHashSet(singleAddrStr, Strings::Format("address_txs_%d",
+                                                          tableIdx_AddrTxs(ymd)));
+    }
   }
 
   // 处理输出
   // (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)
   n = -1;
   vector<string> itemValues;
-  for (auto &out : tx.vout) {
+  for (auto &out : txlog->tx_.vout) {
     n++;
     string addressStr;
     string addressIdsStr;
@@ -911,7 +936,7 @@ void _insertTxOutputs(MySQLConnection &db, CacheManager *cache,
     int nRequired;
     if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
       LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
-               txId, tx.GetHash().ToString().c_str(), n);
+               txlog->txId_, txlog->tx_.GetHash().ToString().c_str(), n);
     }
 
     // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
@@ -930,7 +955,7 @@ void _insertTxOutputs(MySQLConnection &db, CacheManager *cache,
       string sql = Strings::Format("INSERT INTO `address_unspent_outputs_%04d`"
                                    " (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)"
                                    " VALUES (%lld, %lld, %d, %d, %lld, %lld, '%s') ",
-                                   addrId % 10, addrId, txId, n, i, blockHeight,
+                                   addrId % 10, addrId, txlog->txId_, n, i, txlog->blkHeight_,
                                    out.nValue, now.c_str());
       db.updateOrThrowEx(sql, 1);
     }
@@ -956,7 +981,7 @@ void _insertTxOutputs(MySQLConnection &db, CacheManager *cache,
                                          "%lld,'%s','%s','%s',"
                                          "0,-1,'%s','%s'",
                                          // `tx_id`,`position`,`address`,`address_ids`
-                                         txId, n, addressStr.c_str(), addressIdsStr.c_str(),
+                                         txlog->txId_, n, addressStr.c_str(), addressIdsStr.c_str(),
                                          // `value`,`output_script_asm`,`output_script_hex`,`output_script_type`
                                          out.nValue,
                                          outputScriptAsm.c_str(),
@@ -967,14 +992,14 @@ void _insertTxOutputs(MySQLConnection &db, CacheManager *cache,
   }
 
   // table.tx_outputs_xxxx
-  const string tableNameTxOutputs = Strings::Format("tx_outputs_%04d", txId % 100);
+  const string tableNameTxOutputs = Strings::Format("tx_outputs_%04d", txlog->txId_ % 100);
   const string fieldsTxOutputs = "`tx_id`,`position`,`address`,`address_ids`,`value`,"
   "`output_script_asm`,`output_script_hex`,`output_script_type`,"
   "`spent_tx_id`,`spent_position`,`created_at`,`updated_at`";
   // multi insert outputs
   if (!multiInsert(db, tableNameTxOutputs, fieldsTxOutputs, itemValues)) {
     THROW_EXCEPTION_DBEX("insert outputs fail, txId: %lld, hash: %s",
-                         txId, tx.GetHash().ToString().c_str());
+                         txlog->txId_, txlog->tx_.GetHash().ToString().c_str());
   }
 }
 
@@ -1125,6 +1150,17 @@ void _insertTx(MySQLConnection &db, class TxLog *txLog, int64_t valueIn) {
   db.updateOrThrowEx(sql, 1);
 }
 
+// insert unconfirmed txs
+void _insertUnconfirmedTx(MySQLConnection &db, class TxLog *txLog) {
+  string sql;
+  sql = Strings::Format("INSERT INTO `0_unconfirmed_txs` (`position`, `block_id`, `tx_hash`, `created_at`)"
+                        " VALUES ("
+                        " (SELECT IFNULL(MAX(`position`), -1) + 1 FROM `0_unconfirmed_txs` as t1), "
+                        " %lld, '%s', '%s') ",
+                        txLog->blkId_, txLog->txHash_.ToString().c_str(),
+                        date("%F %T").c_str());
+  db.updateOrThrowEx(sql, 1);
+}
 
 // 接收一个新的交易
 void Parser::acceptTx(class TxLog *txLog) {
@@ -1153,33 +1189,32 @@ void Parser::acceptTx(class TxLog *txLog) {
   map<int64_t/* addrID */, int64_t/*  balance diff */> addressBalance;
 
   // 处理inputs
-  _insertTxInputs(dbExplorer_, cache_, txLog->tx_, txLog->txId_,
-                  addressBalance, valueIn);
+  _insertTxInputs(dbExplorer_, cache_, txLog, addressBalance, valueIn);
 
   // 处理outputs
-  _insertTxOutputs(dbExplorer_, cache_, txLog->tx_, txLog->txId_,
-                   txLog->blkHeight_, addressBalance);
+  _insertTxOutputs(dbExplorer_, cache_, txLog, addressBalance);
 
   // 变更地址相关信息
   _insertAddressTxs(dbExplorer_, txLog, addressBalance);
 
   // 插入交易tx
   _insertTx(dbExplorer_, txLog, valueIn);
+
+  // 0_unconfirmed_txs
+  if (txLog->blkHeight_ == -1) {  // 高度为-1表示临时块
+    _insertUnconfirmedTx(dbExplorer_, txLog);
+  }
 }
 
 
 // 回滚一个块操作
-void Parser::rollbackBlock(const int32_t height) {
+void Parser::rollbackBlock(TxLog *txlog) {
   MySQLResult res;
   string sql;
 
   // 获取块Raw Hex
   string blkRawHex;
-  int32_t chainId;
-  int64_t blockId;
-
-  _getBlockRawHexRollback(height, dbExplorer_, &blkRawHex, &chainId, &blockId);
-  assert(chainId == 0);
+  _getBlockRawHexByBlockId(txlog->blkId_, dbExplorer_, &blkRawHex);
 
   // 解码Raw Block
   vector<unsigned char> blockData(ParseHex(blkRawHex));
@@ -1190,10 +1225,10 @@ void Parser::rollbackBlock(const int32_t height) {
   }
   catch (std::exception &e) {
     THROW_EXCEPTION_DBEX("Block decode failed, height: %d, blockId: %lld",
-                         height, blockId);
+                         txlog->blkHeight_, txlog->blkId_);
   }
-  const CBlockHeader header = blk.GetBlockHeader();  // alias
-  const  string prevBlockHash = header.hashPrevBlock.ToString();
+  const CBlockHeader header  = blk.GetBlockHeader();  // alias
+  const string prevBlockHash = header.hashPrevBlock.ToString();
 
   // 移除前向block的next指向
   sql = Strings::Format("UPDATE `0_blocks` SET `next_block_id`=0, `next_block_hash`=''"
@@ -1207,12 +1242,12 @@ void Parser::rollbackBlock(const int32_t height) {
 
   // table.block_txs_xxxx
   sql = Strings::Format("DELETE FROM `block_txs_%04d` WHERE `block_id`=%lld",
-                        tableIdx_BlockTxs(blockId), blockId);
+                        tableIdx_BlockTxs(txlog->blkId_), txlog->blkId_);
   dbExplorer_.updateOrThrowEx(sql, (int32_t)blk.vtx.size());
 
   if (cacheEnable_) {
     // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
-    cache_->insertKV(Strings::Format("blkh_%d", height));
+    cache_->insertKV(Strings::Format("blkh_%d", txlog->blkHeight_));
   }
 }
 
@@ -1220,7 +1255,8 @@ void Parser::rollbackBlock(const int32_t height) {
 void _unremoveUnspentOutputs(MySQLConnection &db, CacheManager *cache,
                              const int64_t blockHeight,
                              const int64_t txId, const int32_t position,
-                             map<int64_t, int64_t> &addressBalance) {
+                             map<int64_t, int64_t> &addressBalance,
+                             const int32_t ymd) {
   MySQLResult res;
   string sql;
   string tableName;
@@ -1262,6 +1298,8 @@ void _unremoveUnspentOutputs(MySQLConnection &db, CacheManager *cache,
     auto addrStrVec = split(ids, '|');
     for (auto &singleAddrStr : addrStrVec) {
       cache->insertKV(Strings::Format("addr_%s", singleAddrStr.c_str()));
+      cache->insertHashSet(singleAddrStr, Strings::Format("address_txs_%d",
+                                                          tableIdx_AddrTxs(ymd)));
     }
   }
 }
@@ -1295,13 +1333,14 @@ void _rollbackTxInputs(MySQLConnection &db, CacheManager *cache,
     db.updateOrThrowEx(sql, 1);
 
     // 重新插入 address_unspent_outputs_xxxx 相关记录
-    _unremoveUnspentOutputs(db, cache, blockHeight, prevTxId, prevPos, addressBalance);
+    _unremoveUnspentOutputs(db, cache, blockHeight, prevTxId, prevPos,
+                            addressBalance,
+                            atoi(date("%Y%m%d", txLog->blockTimestamp_).c_str()));
 
     if (cache != nullptr) {
       // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
       // 遍历inputs所关联tx，全部删除： txid_{id}, tx_{hash}
-      cache->insertKV(Strings::Format("txid_%lld", prevTxId));
-      cache->insertKV(Strings::Format("tx_%s",     prevHash));
+      cache->insertKV(Strings::Format("tx_%s", prevHash.ToString().c_str()));
     }
   } /* /for */
 
@@ -1317,6 +1356,7 @@ void _rollbackTxOutputs(MySQLConnection &db, CacheManager *cache,
                         map<int64_t, int64_t> &addressBalance) {
   const CTransaction &tx = txLog->tx_;
   const int64_t txId = txLog->txId_;
+  const int32_t ymd = atoi(date("%Y%m%d", txLog->blockTimestamp_).c_str());
 
   int n;
   const string now = date("%F %T");
@@ -1340,6 +1380,14 @@ void _rollbackTxOutputs(MySQLConnection &db, CacheManager *cache,
   // 拿到所有地址的id
   map<string, int64_t> addrMap;
   GetAddressIds(db, allAddresss, addrMap);
+
+  if (cache != nullptr) {
+    for (auto &singleAddrStr : allAddresss) {
+      cache->insertKV(Strings::Format("addr_%s", singleAddrStr.c_str()));
+      cache->insertHashSet(singleAddrStr, Strings::Format("address_txs_%d",
+                                                    tableIdx_AddrTxs(ymd)));
+    }
+  }
 
   // 处理输出
   // (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)
@@ -1369,10 +1417,6 @@ void _rollbackTxOutputs(MySQLConnection &db, CacheManager *cache,
                             tableIdx_AddrUnspentOutput(addrId),
                             addrId, txId, n, i);
       db.updateOrThrowEx(sql, 1);
-
-      if (cache) {
-        cache->insertKV(Strings::Format("addr_%s", addrStr.c_str()));
-      }
     }
   }
 
@@ -1472,10 +1516,17 @@ void _rollbackTx(MySQLConnection &db, CacheManager *cache, class TxLog *txLog) {
 
   if (cache != nullptr) {
     // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
-    // 删除自身: txid_{id}, tx_{hash}
-    cache->insertKV(Strings::Format("txid_%lld", txLog->txId_));
-    cache->insertKV(Strings::Format("tx_%s",     txLog->txHash_.ToString().c_str()));
+    // 删除自身: tx_{hash}
+    cache->insertKV(Strings::Format("tx_%s", txLog->txHash_.ToString().c_str()));
   }
+}
+
+// rollback unconfirmed txs
+void _rollbackUnconfirmedTx(MySQLConnection &db, class TxLog *txLog) {
+  string sql;
+  sql = Strings::Format("DELETE FROM `0_unconfirmed_txs` WHERE `tx_hash`='%s'",
+                        txLog->txHash_.ToString().c_str());
+  db.updateOrThrowEx(sql, 1);
 }
 
 // 回滚一个交易
@@ -1487,6 +1538,10 @@ void Parser::rollbackTx(class TxLog *txLog) {
   _rollbackTxOutputs (dbExplorer_, cache_, txLog, addressBalance);
   _rollbackAddressTxs(dbExplorer_, txLog, addressBalance);
   _rollbackTx        (dbExplorer_, cache_, txLog);
+
+  if (txLog->blkHeight_ == -1) {  // 高度为-1表示临时块
+    _rollbackUnconfirmedTx(dbExplorer_, txLog);
+  }
 }
 
 // 获取上次txlog的进度偏移量
@@ -1566,7 +1621,8 @@ bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
 
   // fetch tx log, 每次处理一条日志记录
   sql = Strings::Format(" SELECT `id`,`handle_status`,`handle_type`, "
-                        "   `block_height`,`tx_hash`,`created_at`,`block_timestamp` "
+                        "   `block_height`,`tx_hash`,`created_at`, "
+                        " `block_timestamp`,`block_id` "
                         " FROM `txlogs_%04d` "
                         " WHERE `id` > %d ORDER BY `id` ASC LIMIT 1 ",
                         tableNameIdx, logId);
@@ -1600,6 +1656,7 @@ bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
   txLog->txHash_    = uint256(row[4]);
   txLog->createdAt_ = string(row[5]);
   txLog->blockTimestamp_ = (uint32_t)atoi64(row[6]);
+  txLog->blkId_     = atoi64(row[7]);
 
   if (txLog->status_ != TXLOG_STATUS_INIT) {
     LOG_FATAL("invalid status: %d", txLog->status_);

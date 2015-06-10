@@ -100,11 +100,12 @@ public:
 
 class TxLog {
 public:
-  int64_t  logId_;     // id in table
-  int32_t  tableIdx_;  // txlogs table name index
-  int32_t  status_;    // handle status
-  int32_t  type_;      // 1: accept, 2: rollback
-  int32_t  blkHeight_;
+  int64_t  logId_;      // id in table
+  int32_t  tableIdx_;   // txlogs table name index
+  int32_t  status_;     // handle status
+  int32_t  type_;       // 1: accept, 2: rollback
+  int32_t  blkHeight_;  // block height
+  int64_t  blkId_;      // block ID
   uint32_t blockTimestamp_;
   string  createdAt_;
 
@@ -131,15 +132,23 @@ class CacheManager {
 
   // 待删除队列，临时
   set<string> qkvTemp_;
+  set<string> qhashsetTempSet_;  // 辅助去重
   vector<std::pair<string, string> > qhashsetTemp_;
   // 待删除队列，正式
   vector<string> qkv_;
   vector<std::pair<string, string> > qhashset_;
 
+  // 待触发的URL列表
+  string dirURL_;
+  set<string>    qUrlTemp_;
+  vector<string> qUrl_;
+
   void threadConsumer();
 
+  void flushURL(vector<string> &buf);
+
 public:
-  CacheManager(const string  SSDBHost, const int32_t SSDBPort);
+  CacheManager(const string  SSDBHost, const int32_t SSDBPort, const string dirURL);
   ~CacheManager();
 
   // non-thread safe
@@ -165,8 +174,8 @@ private:
   void updateLastTxlogId(const int64_t newId);
   void checkTableAddressTxs(const uint32_t timestamp);
 
-  void acceptBlock  (const int32_t height);
-  void rollbackBlock(const int32_t height);
+  void acceptBlock  (TxLog *txlog);
+  void rollbackBlock(TxLog *txlog);
 
   void acceptTx  (class TxLog *txLog);
   void rollbackTx(class TxLog *txLog);

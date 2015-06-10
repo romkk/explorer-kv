@@ -48,7 +48,6 @@ class Tx {
             ver: this.attrs.version,
             inputs: this.inputs,
             block_height: this.attrs.height,
-            relayed_by: null,
             out: this.outputs,
             lock_time: this.attrs.lock_time,
             size: this.attrs.size,

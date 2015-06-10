@@ -280,7 +280,7 @@ void CacheManager::flushURL(vector<string> &buf) {
   }
   for (auto &line : buf) {
     LOG_DEBUG("line: %s", line.c_str());
-    file << line << std::endl;
+    file << line << "?skipcache=1" << std::endl;
   }
   file.close();
 
@@ -308,11 +308,6 @@ void CacheManager::threadConsumer() {
     assert(ssdbAlive_ == true);
     assert(ssdb_ != nullptr);
     itemCount = successCount = 0;
-
-    if (lastFlushTime + 60 < time(nullptr)) {
-      flushURL(bufUrl);
-      lastFlushTime = time(nullptr);
-    }
 
     // Key - Value
     {
@@ -350,6 +345,12 @@ void CacheManager::threadConsumer() {
           successCount++;
         }
       }
+    }
+
+    // flush URL
+    if (lastFlushTime + 60 < time(nullptr)) {
+      lastFlushTime = time(nullptr);
+      flushURL(bufUrl);
     }
 
     if (itemCount != successCount) {

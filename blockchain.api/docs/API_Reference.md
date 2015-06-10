@@ -102,13 +102,13 @@ TODO
 }
 ```
 
-### Single transaction
+### Transaction
 
 #### Request
 
 * Get Transaction By Hash
 
-        GET /rawtx/{$tx_hash}
+        GET /rawtx/${tx_hash}
 
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
@@ -121,6 +121,12 @@ TODO
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |tx_id|交易 id|Path|√|String|
+    
+* [PRIVATE] Get Multiple Transactions
+
+        GET /rawtx/${tx_id},${tx_id}...
+        
+    可以传入多个`tx_id`，使用`,`分隔。    
 
 #### Response
 

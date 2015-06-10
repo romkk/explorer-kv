@@ -6,14 +6,21 @@ var sb = require('../lib/ssdb')();
 var helper = require('../lib/helper');
 
 module.exports = (server) => {
-    server.get('/rawtx/:txIdentifier', (req, res, next) => {
-        Tx.grab(req.params.txIdentifier, !req.params.skipcache)
-            .then(tx => {
-                res.send(tx);
-                next();
-            }, () => {
+    server.get('/rawtx/:txIdentifier', async (req, res, next) => {
+        var ids = req.params.txIdentifier.split(',');
+        var txs = await Tx.multiGrab(ids, !req.params.skipcache);
+
+        if (ids.length == 1) {
+            let [tx] = txs;
+            if (tx == null) {
                 res.send(new restify.ResourceNotFoundError('Transaction not found'));
-                next();
-            });
+            } else {
+                res.send(tx);
+            }
+        } else {
+            res.send(txs);
+        }
+
+        next();
     });
 };

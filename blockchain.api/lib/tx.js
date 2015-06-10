@@ -56,7 +56,10 @@ class Tx {
             hash: this.attrs.hash,
             vin_sz: this.attrs.inputs_count,
             vout_sz: this.attrs.outputs_count,
-            is_coinbase: !!this.attrs.is_coinbase
+            is_coinbase: !!this.attrs.is_coinbase,
+            fee: this.attrs.fee,
+            total_in_value: this.attrs.total_in_value,
+            total_out_value: this.attrs.total_out_value
         };
 
         /*

@@ -53,6 +53,10 @@ class Address {
     }
 
     static getAddressToTxTable(date) {
+        if (date == null) {
+            throw new Error(`date can not be undefined, date = ${date}`);
+        }
+
         date = +date;
 
         if (date === 0) {

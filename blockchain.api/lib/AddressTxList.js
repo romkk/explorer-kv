@@ -126,10 +126,72 @@ class AddressTxList {
         }
 
     }
-    [Symbol.iterator]() {
 
+    async iter() {
+        var cache = [];
+        var table = await this.findFirstTable();
+        var height = await this.findHeight();
+        var offset = 0;
+        const PAGESIZE = 100;
+
+        var pull = () => {
+            if (table == null) {
+                return false;
+            }
+
+            var sql = `select * from ${table}
+                       where address_id = ? and tx_height ${this._order === 'desc' ? '<=' : '>='} ?
+                       order by idx ${this._order}
+                       limit ?, ?`;
+            return mysql.query(sql, [ this._addr.id, height, offset, PAGESIZE])
+                .then(rows => {
+                    cache = rows;
+
+                    var last = cache[cache.length - 1];
+                    var prop = this._order === 'desc' ? 'prev_ymd' : 'next_ymd';
+                    var nextYmd = last[prop];
+                    var nextTable = Address.getAddressToTxTable(nextYmd);
+
+                    if (nextTable == table) {
+                        offset += PAGESIZE;
+                    } else {
+                        offset = 0;
+                    }
+
+                    table = nextTable;
+
+                    return true;
+                });
+        };
+
+        log(`start: cache.length = ${cache.length}`);
+
+        var gen = function* () {
+            let v = Promise.resolve();
+            var done = false;
+
+            while (!done) {
+
+                log(`${Date.now()}: cache.length = ${cache.length}`);
+
+                if (!cache.length) {
+                    v = v.then(pull)
+                        .then(success => {
+                            if (done = !success) {
+                                throw new Error(`${this._addr.address}: No more rows`);
+                            }
+                        });
+                }
+                log('yield');
+                yield v.then(() => {
+                    return cache.shift();
+                });
+
+            }
+        }.bind(this);
+
+        return gen();
     }
-
 }
 
 AddressTxList.make = async (addr, ts, order) => {

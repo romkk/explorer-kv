@@ -46,6 +46,27 @@ module.exports = (server) => {
         next();
     });
 
+    server.get('/test/:addr', async (req, res, next) => {
+        var addr = await Address.grab(req.params.addr, !req.params.skipcache);
+        var atList = new AddressTxList(addr.attrs, req.params.timestamp, req.params.sort);
+        var it = await atList.iter();
+
+        var ret = [];
+        var c;
+
+        while ((c = it.next()) && !c.done) {
+            try {
+                var v = await c.value;
+                ret.push(v);
+            } catch (err) { break; }
+        }
+
+        log(`it's done!, ret.length = ${ret.length}`);
+
+        res.send(ret);
+        next();
+    });
+
     server.get('/multiaddr', async (req, res, next) => {
         var err = validators.isValidAddressList(req.query.active);
         if (err != null) {

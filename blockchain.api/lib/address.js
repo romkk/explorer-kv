@@ -87,7 +87,7 @@ class Address {
                                     limit 1`;
 
                 let next = await mysql.pluck(sqlNextTable, 'next', [this.attrs.id]);
-                table = this.getAddressToTxTable(next);
+                table = Address.getAddressToTxTable(next);
                 continue;
             }
 
@@ -104,7 +104,7 @@ class Address {
             } else {    //单表不满足，需要继续下一张表
                 limit -= rows.length;
                 offset = 0;
-                table = this.getAddressToTxTable(rows[rows.length - 1][addrMapTableProp]);
+                table = Address.getAddressToTxTable(rows[rows.length - 1][addrMapTableProp]);
             }
         }
     }
@@ -113,7 +113,7 @@ class Address {
         var date = +moment.utc(timestamp * 1000).format('YYYYMMDD');
         var end = this.attrs.end_tx_ymd;
         var start = this.attrs.begin_tx_ymd;
-        var table = this.getAddressToTxTable(order === 'desc' ? Math.min(end, date) : Math.max(start, date));
+        var table = Address.getAddressToTxTable(order === 'desc' ? Math.min(end, date) : Math.max(start, date));
         var sql, id;
 
         sql = `select height from 0_blocks where \`timestamp\` ${order === 'desc' ? '<=' : '>='} ?
@@ -164,7 +164,7 @@ class Address {
             });
     }
 
-    getAddressToTxTable(date) {
+    static getAddressToTxTable(date) {
         date = +date;
 
         if (date === 0) {

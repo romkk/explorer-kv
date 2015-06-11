@@ -7,6 +7,8 @@ var restify = require('restify');
 var _ = require('lodash');
 var moment = require('moment');
 var validators = require('../lib/custom_validators');
+var AddressTxList = require('../lib/AddressTxList');
+var Tx = require('../lib/tx');
 
 module.exports = (server) => {
     server.get('/address/:addr', async (req, res, next)=> {
@@ -36,7 +38,10 @@ module.exports = (server) => {
             return new restify.ResourceNotFoundError('Address not found');
         }
 
-        addr = await addr.load(req.params.timestamp, req.params.sort, req.params.offset, req.params.limit);
+        var atList = new AddressTxList(addr.attrs, req.params.timestamp, req.params.sort);
+        atList = await atList.slice(req.params.offset, req.params.limit);
+        addr.txs = await Tx.multiGrab(atList.map(el => el.tx_id), !req.params.skipcache);
+
         res.send(addr);
         next();
     });

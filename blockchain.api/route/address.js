@@ -9,6 +9,7 @@ var moment = require('moment');
 var validators = require('../lib/custom_validators');
 var AddressTxList = require('../lib/AddressTxList');
 var Tx = require('../lib/tx');
+var PriorityQueue = require('js-priority-queue');
 
 module.exports = (server) => {
     server.get('/address/:addr', async (req, res, next)=> {
@@ -46,24 +47,75 @@ module.exports = (server) => {
         next();
     });
 
-    server.get('/test/:addr', async (req, res, next) => {
-        var addr = await Address.grab(req.params.addr, !req.params.skipcache);
-        var atList = new AddressTxList(addr.attrs, req.params.timestamp, req.params.sort);
-        var it = await atList.iter();
+    server.get('/address-tx/', async (req, res, next) => {
+        req.checkQuery('timestamp', 'should be a valid timestamp').optional().isNumeric({ min: 0, max: moment.utc().unix() + 3600 });    // +3600 以消除误差
+        req.sanitize('timestamp').toInt();
 
-        var ret = [];
-        var c;
+        req.checkQuery('limit', 'should be between 1 and 50').optional().isNumeric().isInt({ max: 50, min: 1});
+        req.sanitize('limit').toInt();
 
-        while ((c = it.next()) && !c.done) {
-            try {
-                var v = await c.value;
-                ret.push(v);
-            } catch (err) { break; }
+        req.checkQuery('sort', 'should be desc or asc').optional().isIn(['desc', 'asc']);
+
+        var errors = req.validationErrors();
+
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
         }
 
-        log(`it's done!, ret.length = ${ret.length}`);
+        var err = validators.isValidAddressList(req.query.active);
+        if (err != null) {
+            return next(err);
+        }
 
-        res.send(ret);
+        var limit = req.params.limit || 50;
+        var sort = req.params.sort === 'desc' ? 'desc' : 'asc';
+        var parts = req.params.active.trim().split('|');
+        var addrs = _.compact(await Address.multiGrab(parts, !req.params.skipcache));
+        var its = await* addrs.map(addr => {
+            var atList = new AddressTxList(addr.attrs, req.params.timestamp, sort);
+            return atList.iter();
+        });
+        var pq = new PriorityQueue({
+            comparator: sort == 'desc' ? (a, b) => b[0].tx_height - a[0].tx_height : (a, b) => a[0].tx_height - b[0].tx_height
+        });
+
+        async function push(i) {
+            var it = its[i];
+            if (it == false) return;
+
+            var c = it.next();
+            if (it.done) {
+                its[i] = false;
+                return;
+            }
+            try {
+                var v = await c.value;
+                pq.queue([v, i]);
+            } catch (err) {
+                its[i] = false;
+            }
+        }
+
+        // 初始化 Priority Queue
+        await* its.map((it, i) => {
+            return push(i);
+        });
+
+        var ret = [];
+
+        while (limit--) {
+            try {
+                let [v, i] = pq.dequeue();
+                ret.push(v.tx_id);
+                await push(i);
+            } catch (err) {
+                break;  //no more element
+            }
+        }
+
+        res.send(_.compact(await Tx.multiGrab(ret, !req.params.skipcache)));
         next();
     });
 

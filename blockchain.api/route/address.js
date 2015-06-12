@@ -70,7 +70,7 @@ module.exports = (server) => {
         }
 
         var limit = req.params.limit || 50;
-        var sort = req.params.sort === 'desc' ? 'desc' : 'asc';
+        var sort = req.params.sort || 'desc';
         var parts = req.params.active.trim().split('|');
         var addrs = _.compact(await Address.multiGrab(parts, !req.params.skipcache));
         var its = await* addrs.map(addr => {

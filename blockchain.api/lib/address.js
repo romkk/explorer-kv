@@ -91,12 +91,12 @@ Address.multiGrab = async (addrs, useCache = true) => {
 
     var bag = _.zipObject(addrs);
     var defs = await sb.multi_get.apply(sb, addrs.map(addr => `addr_${addr}`));
-    _.extend(bag, _.chain(defs).chunk(2).zipObject().mapKeys((v, k) => k.slice(5)).mapValues(v => JSON.parse(v)).value());
+    _.extend(bag, _.chain(defs).chunk(2).zipObject().mapKeys((v, k) => k.slice(5)).mapValues(v => new Address(JSON.parse(v))).value());
     var missedAddrs = addrs.filter(addr => bag[addr] == null);
-    var missedAddrDefs = await * missedAddrs.map(addr => Address.grab(addr));
+    var missedAddrDefs = await* missedAddrs.map(addr => Address.grab(addr, useCache));
     _.extend(bag, _.zipObject(missedAddrs, missedAddrDefs));
 
-    return addrs.map(addr => bag[addr] == null ? null : new Address(bag[addr]));
+    return addrs.map(addr => bag[addr]);
 };
 
 module.exports = Address;

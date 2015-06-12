@@ -132,7 +132,7 @@ class AddressTxList {
         var table = await this.findFirstTable();
         var height = await this.findHeight();
         var offset = 0;
-        const PAGESIZE = 100;
+        const PAGESIZE = 200;
 
         var pull = () => {
             if (table == null) {
@@ -164,15 +164,11 @@ class AddressTxList {
                 });
         };
 
-        log(`start: cache.length = ${cache.length}`);
-
         var gen = function* () {
             let v = Promise.resolve();
             var done = false;
 
             while (!done) {
-
-                log(`${Date.now()}: cache.length = ${cache.length}`);
 
                 if (!cache.length) {
                     v = v.then(pull)
@@ -182,7 +178,6 @@ class AddressTxList {
                             }
                         });
                 }
-                log('yield');
                 yield v.then(() => {
                     return cache.shift();
                 });

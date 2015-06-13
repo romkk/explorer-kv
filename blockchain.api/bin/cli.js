@@ -58,8 +58,8 @@ server.use((req, res, next) => {
 
 require('../route')(server);
 
-server.listen(3000, ()=> {
-    log('listen on 3000');
+server.listen(process.env.BLOCKCHAIN_API_PORT || 3000, ()=> {
+    log(`listen on ${process.env.BLOCKCHAIN_API_PORT || 3000}`);
 });
 
 server.on('uncaughtException', function(req, res, route, err) {

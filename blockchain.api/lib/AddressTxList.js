@@ -53,7 +53,7 @@ class AddressTxList {
 
                 let sqlNextTable = `select ${addrMapTableProp} as next from ${table}
                                     where address_id = ?
-                                    order by tx_height ${tmpOrder}, id ${tmpOrder}
+                                    order by idx ${tmpOrder}
                                     limit 1`;
 
                 let next = await mysql.pluck(sqlNextTable, 'next', [this._addr.id]);

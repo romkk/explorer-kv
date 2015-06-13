@@ -32,32 +32,33 @@ class AddressTxList {
                 return ret;
             }
 
-            let cnt;
+            let cnt, prev, next;
 
             if (cache[table]) {
                 log(`[cache hit] addr_table_${this._addr.address} ${table}`);
-                cnt = cache[table];
+                [cnt, prev, next] = cache[table].split('|');
             } else {
                 log(`[cache miss] addr_table_${this._addr.address} ${table}`);
+                //cache: addr_table_${address} => ${cnt}|${prev}|${next}
                 let sqlRowCnt = `select count(id) as cnt from ${table}
-                                 where address_id = ?`;
-                cnt = await mysql.pluck(sqlRowCnt, 'cnt', [this._addr.id]);
-                sb.hset(`addr_table_${this._addr.address}`, table, cnt);
+                                 where address_id = ? limit 1`;
+                let sqlPrev = `select prev_ymd as prev from ${table}
+                               where address_id = ? order by idx asc limit 1`;
+                let sqlNext = `select next_ymd as next from ${table}
+                               where address_id = ? order by idx desc limit 1`;
+                [cnt, prev, next] = await* [
+                    mysql.pluck(sqlRowCnt, 'cnt', [this._addr.id]),
+                    mysql.pluck(sqlPrev, 'prev', [this._addr.id]),
+                    mysql.pluck(sqlNext, 'next', [this._addr.id])
+                ];
+                sb.hset(`addr_table_${this._addr.address}`, table, `${cnt}|${prev}|${next}`);
             }
 
             if (Number(cnt) <= offset) {    //单表无法满足 offset，直接下一张表
                 log(`单表无法满足offset, cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
                 offset -= cnt;
 
-                let tmpOrder = this._order === 'desc' ? 'asc' : 'desc';
-
-                let sqlNextTable = `select ${addrMapTableProp} as next from ${table}
-                                    where address_id = ?
-                                    order by tx_height ${tmpOrder}, id ${tmpOrder}
-                                    limit 1`;
-
-                let next = await mysql.pluck(sqlNextTable, 'next', [this._addr.id]);
-                table = Address.getAddressToTxTable(next);
+                table = Address.getAddressToTxTable(this._order === 'desc' ? prev : next);
                 continue;
             }
 

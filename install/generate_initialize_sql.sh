@@ -192,7 +192,8 @@ CREATE TABLE `0_tpl_address_txs` (
   `created_at` datetime NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `address_id_tx_id` (`address_id`,`tx_id`),
-  UNIQUE KEY `address_id_idx` (`address_id`,`idx`)
+  UNIQUE KEY `address_id_idx` (`address_id`,`idx`),
+  KEY `address_id_tx_height` (`address_id`,`tx_height`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 echo "$tpl_address_txs"

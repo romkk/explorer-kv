@@ -7,10 +7,11 @@ var _ = require('lodash');
 
 class AddressTxList {
 
-    constructor(addr, ts = moment().unix(), order = 'desc') {
+    constructor(addr, ts = null, order = 'desc') {
         this._addr = addr;
-        this._ts = ts;
+        this._ts = ts == null ? (order === 'desc' ? moment.utc().unix() : 0) : ts;
         this._order = order;
+        this._idx = 0;
     }
 
     async slice(offset = 0, limit = 50) {
@@ -32,47 +33,61 @@ class AddressTxList {
                 return ret;
             }
 
-            let cnt;
+            let cnt, prev, next;
 
             if (cache[table]) {
                 log(`[cache hit] addr_table_${this._addr.address} ${table}`);
-                cnt = cache[table];
+                [cnt, prev, next] = cache[table].split('|').map(Number);
             } else {
                 log(`[cache miss] addr_table_${this._addr.address} ${table}`);
-                let sqlRowCnt = `select count(id) as cnt from ${table}
-                                 where address_id = ?`;
-                cnt = await mysql.pluck(sqlRowCnt, 'cnt', [this._addr.id]);
-                sb.hset(`addr_table_${this._addr.address}`, table, cnt);
+                //cache: addr_table_${address} => ${cnt}|${prev}|${next}
+                let sqlPrev = `select idx, prev_ymd from ${table}
+                               where address_id = ? order by idx asc limit 1`;
+                let sqlNext = `select idx, next_ymd from ${table}
+                               where address_id = ? order by idx desc limit 1`;
+                let [prevRow, nextRow] = await* [
+                    mysql.selectOne(sqlPrev, [this._addr.id]),
+                    mysql.selectOne(sqlNext, [this._addr.id])
+                ];
+
+                cnt = nextRow.idx - prevRow.idx + 1;
+                prev = prevRow.prev_ymd;
+                next = nextRow.next_ymd;
+
+                sb.hset(`addr_table_${this._addr.address}`, table, `${cnt}|${prev}|${next}`);
             }
 
             if (Number(cnt) <= offset) {    //单表无法满足 offset，直接下一张表
                 log(`单表无法满足offset, cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
                 offset -= cnt;
+                this._idx = this._order == 'desc' ? this._idx - cnt : this._idx + cnt;
 
-                let tmpOrder = this._order === 'desc' ? 'asc' : 'desc';
-
-                let sqlNextTable = `select ${addrMapTableProp} as next from ${table}
-                                    where address_id = ?
-                                    order by tx_height ${tmpOrder}, id ${tmpOrder}
-                                    limit 1`;
-
-                let next = await mysql.pluck(sqlNextTable, 'next', [this._addr.id]);
-                table = Address.getAddressToTxTable(next);
+                table = Address.getAddressToTxTable(this._order === 'desc' ? prev : next);
                 continue;
             }
 
             let sql = `select * from ${table}
-                                    where address_id = ? and tx_height ${this._order === 'desc' ? '<=' : '>='} ?
-                                    order by idx ${this._order}
-                                    limit ?, ?`;
+                       where address_id = ? and idx between ? and ?
+                       order by idx ${this._order}`;
 
             log(`单表 cnt = ${cnt}, offset = ${offset}, limit = ${limit}`);
-            let rows = await mysql.query(sql, [this._addr.id, await this.findHeight(), offset, limit]);
+            let idxStart, idxEnd;
+
+            if (this._order == 'desc') {
+                idxEnd = this._idx - offset;
+                idxStart = idxEnd - limit + 1;
+            } else {
+                idxStart = this._idx + offset;
+                idxEnd = idxStart + limit - 1;
+            }
+
+            let rows = await mysql.query(sql, [this._addr.id, idxStart, idxEnd]);
             ret.push.apply(ret, rows);
             if (cnt >= offset + limit) {    //单表即满足要求
                 table = null;
             } else {    //单表不满足，需要继续下一张表
                 limit -= rows.length;
+                this._idx = this._order == 'desc' ? this._idx - offset - rows.length : this._idx + offset + rows.length;
                 offset = 0;
                 table = Address.getAddressToTxTable(rows[rows.length - 1][addrMapTableProp]);
             }
@@ -96,25 +111,27 @@ class AddressTxList {
         var end = this._addr.end_tx_ymd;
         var start = this._addr.begin_tx_ymd;
         var table = Address.getAddressToTxTable(this._order === 'desc' ? Math.min(end, date) : Math.max(start, date));
-        var sql, id;
+        var sql;
 
         var height = await this.findHeight();
 
+        //find the table and remember the idx corresponding to timestamp
         while (true) {
-            sql = `select id
+            sql = `select idx
                    from ${table}
                    where address_id = ? and tx_height ${this._order === 'desc' ? '<=' : '>='} ?
                    order by tx_height ${this._order} limit 1`;
 
             try {
-                id = await mysql.pluck(sql, 'id', [this._addr.id, height]);
-                if (id == null) {
+                this._idx = await mysql.pluck(sql, 'idx', [this._addr.id, height]);
+                if (this._idx == null) {
                     let postfix = +table.slice(-6);
                     let newPostfix = moment.utc(postfix, 'YYYYMM');
                     newPostfix = (this._order === 'desc' ? newPostfix.subtract(1, 'months') : newPostfix.add(1, 'months')).format('YYYYMM');
                     table = table.slice(0, -6) + newPostfix;
                     continue;
                 }
+
                 return table;
             } catch (err) {
                 if (err.code === 'ER_NO_SUCH_TABLE') {

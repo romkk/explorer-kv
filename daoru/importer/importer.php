@@ -48,13 +48,6 @@ function format(array $detail) {
     // rawblocks
     $ret['rawBlocks'] = join(',', [$height + 1, $hash, $height, 0, $rawhex, $now]) . "\n";
 
-    // txlogs
-    /*
-    $ret['txlogs'] = array_map(function($t) use ($detail, $now) {
-        return [$t['hash'], join(',', [100, 1, $detail['height'], $detail['time'], $t['hash'], $now, $now]) . "\n"];
-    }, $tx);
-    */
-
     // rawtxs
     $ret['rawtxs'] = array_map(function($t) use ($detail, $now) {
         return [$t['hash'], join(',', ['{}', $t['hash'], $t['rawhex'], $now]) . "\n"];  // {}: placeholder
@@ -109,36 +102,22 @@ for ($i = $startIndex; $i <= $endIndex; $i++) {
 
     fwrite($rawBlocksFile, $lines['rawBlocks']);
 
-    // txlogs
-    /*
-    foreach ($lines['txlogs'] as $tx) {
-        $hash = $tx[0];
-        $line = $tx[1];
-
-        fwrite($txlogsFile, $line);
-        $txlogsCounter++;
-    }
-    */
-
     // rawtxs
     foreach ($lines['rawtxs'] as $tx) {
         $hash = $tx[0];
         $line = $tx[1];
+
+        //硬编码需要跳过的 tx
+        if ($i == 91842 && $hash == 'd5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599' ||
+            $i == 91880 && $hash == 'e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468') {
+            continue;
+        }
+
         fwrite($rawTxs[getRawTxsIndex($hash)], $line);
     }
-
-    // update txlogs table
-    /*
-    if ($txlogsCounter >= 1000e4) {
-        fclose($txlogsFile);
-        $txlogsTableIndex++;
-        $txlogsFile = fopen(sprintf('txlogs_%04d', $txlogsTableIndex), 'a');
-        $txlogsCounter = 0;
-    }
-    */
 }
 
-// close all file descriptor
+//close all file descriptor
 fclose($rawBlocksFile);
 //fclose($txlogsFile);
 for ($i = 0; $i < 64; $i++) {

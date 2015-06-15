@@ -68,7 +68,6 @@ sql="
 truncate %s;
 set foreign_key_checks = 0;
 set unique_checks = 0;
-set sql_log_bin = 0;
 set autocommit = 0;
 
 $sql

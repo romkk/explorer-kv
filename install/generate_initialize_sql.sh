@@ -120,7 +120,7 @@ CREATE TABLE `tx_outputs_%04d` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `tx_id` bigint(20) NOT NULL,
   `position` int(11) NOT NULL,
-  `address` varchar(1024) NOT NULL,               
+  `address` varchar(1024) NOT NULL,
   `address_ids` varchar(512) NOT NULL,
   `value` bigint(20) NOT NULL,
   `output_script_asm` longtext NOT NULL,
@@ -273,18 +273,19 @@ CREATE TABLE `0_unconfirmed_txs` (
 
 echo "$unconfirmed_txs"
 
-pool=`cat <<EOF
-DROP TABLE IF EXISTS `0_pool`;
-CREATE TABLE `0_pool` (
-  `pool_id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(200) NOT NULL,
-  `key_words` varchar(500) NOT NULL,
-  PRIMARY KEY (`pool_id`)
+pool=`cat <<EOT
+
+DROP TABLE IF EXISTS 0_pool;
+CREATE TABLE 0_pool (
+  pool_id int(11) NOT NULL AUTO_INCREMENT,
+  name varchar(200) NOT NULL,
+  key_words varchar(500) NOT NULL,
+  PRIMARY KEY (pool_id)
 ) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8;
 
-INSERT INTO `0_pool` (`pool_id`, `name`, `key_words`) VALUES
+INSERT INTO 0_pool (pool_id, name, key_words) VALUES
 (1, 'AntPool', 'antpool'),
-(2, 'Kano CKPool', 'ckpool/Kano'),
+(2, 'Kano CKPool', 'ckpool/Kano'),
 (3, 'BitFury', '/BitFury/'),
 (4, 'BTCChina',	'BTCChina Pool'),
 (5, 'slush', '/slush/'),
@@ -293,7 +294,9 @@ INSERT INTO `0_pool` (`pool_id`, `name`, `key_words`) VALUES
 (8, 'Eligius', 'Eligius'),
 (9, 'megabigpower', 'megabigpower'),
 (10, 'F2POOL', '七彩神仙鱼');
-EOF
+
+EOT
 `
+
 echo "$pool"
 

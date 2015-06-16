@@ -116,3 +116,8 @@ TEST(Util, GetAddressIds) {
     db.update(sql);
   }
 }
+
+TEST(Util, callBlockRelayParseUrl) {
+  callBlockRelayParseUrl("0000000000000000070967a14e39d40734dbcf697d0eef915490d33acc93f0a3");
+  sleep(1);
+}

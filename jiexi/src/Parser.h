@@ -174,7 +174,7 @@ private:
   void updateLastTxlogId(const int64_t newId);
   void checkTableAddressTxs(const uint32_t timestamp);
 
-  void acceptBlock  (TxLog *txlog);
+  void acceptBlock  (TxLog *txlog, string &blockHash);
   void rollbackBlock(TxLog *txlog);
 
   void acceptTx  (class TxLog *txLog);

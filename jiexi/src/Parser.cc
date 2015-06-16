@@ -442,6 +442,7 @@ bool Parser::init() {
 
 void Parser::run() {
   TxLog txlog;
+  string blockHash;  // 目前仅用在URL回调上
   int64_t lastTxLogOffset;
 
   while (running_) {
@@ -460,7 +461,7 @@ void Parser::run() {
 
     if (txlog.type_ == TXLOG_TYPE_ACCEPT) {
       if (txlog.tx_.IsCoinBase()) {
-        acceptBlock(&txlog);
+        acceptBlock(&txlog, blockHash);
       }
       acceptTx(&txlog);
     }
@@ -484,6 +485,12 @@ void Parser::run() {
     if (cache_ != nullptr) {
       cache_->commit();
     }
+
+    if (blockHash.length()) {  // 目前仅用在URL回调上，仅使用一次
+      callBlockRelayParseUrl(blockHash);
+      blockHash.clear();
+    }
+
   } /* /while */
   return;
 
@@ -692,7 +699,7 @@ void _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t block
 }
 
 // 接收一个新块
-void Parser::acceptBlock(TxLog *txlog) {
+void Parser::acceptBlock(TxLog *txlog, string &blockHash) {
   // 获取块Raw Hex
   string blkRawHex;
   _getBlockRawHexByBlockId(txlog->blkId_, dbExplorer_, &blkRawHex);
@@ -708,6 +715,8 @@ void Parser::acceptBlock(TxLog *txlog) {
     THROW_EXCEPTION_DBEX("Block decode failed, height: %d, blockId: %lld",
                          txlog->blkHeight_, txlog->blkId_);
   }
+
+  blockHash = blk.GetHash().ToString();
 
   // 拿到 tx_hash -> tx_id 的对应关系
   // 要求"导入"模块：存入所有的区块交易(table.raw_txs_xxxx)

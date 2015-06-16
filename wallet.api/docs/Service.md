@@ -85,17 +85,17 @@
 
     可能的错误码：
 
-    * AUTH\_INVALID\_SIGNATURE
+    *   AUTH\_INVALID\_SIGNATURE
 
-      无效签名。
+        无效签名。
 
-    * AUTH\_INVALID\_CHALLENGE
+    *   AUTH\_INVALID\_CHALLENGE
 
-      待签名字符串过期或不存在。
+        待签名字符串过期或不存在。
 
-    * AUTH\_DENIED
+    *   AUTH\_DENIED
 
-      其他原因导致的服务器拒绝登录。
+        其他原因导致的服务器拒绝登录。
 
 ### 会话
 

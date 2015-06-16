@@ -681,10 +681,10 @@ void _saveBlock(BlockInfo &b, FILE *f, FileWriter *fwriter) {
   // `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`,
   // `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
   // `next_block_id`, `next_block_hash`, `chain_id`, `size`,
-  // `difficulty`, `tx_count`, `reward_block`, `reward_fees`, `created_at`
+  // `difficulty`, `tx_count`, `reward_block`, `reward_fees`, `relayed_by`, `created_at`
   line = Strings::Format("%lld,%d,%s,%d,%s,%u,%lld,%lld,"
                          "%lld,%s,%lld,%s,"
-                         "%d,%d,%llu,%d,%lld,%lld,%s",
+                         "%d,%d,%llu,%d,%lld,%lld,0,%s",
                          b.blockId_, b.height_, b.blockHash_.ToString().c_str(),
                          b.header_.nVersion, b.header_.hashMerkleRoot.ToString().c_str(),
                          (uint32_t)b.header_.nTime, b.header_.nBits, b.header_.nNonce,

@@ -7,24 +7,24 @@
   ```
   Accept-Encoding: gzip;
   ```
-  
+
 * 提交和返回的内容均为 JSON 格式；
 * 所有的货币单位均为 satoshi；
 
 ## 概念
 
 * Wallet_ID
-  
+
   钱包的全局唯一 id，生成方式如下：
-  
-    ```
-    'w_' + sha256(sha256($private_key))
-    ```
-        
+
+  ```
+  'w_' + sha256(sha256($private_key))
+  ```
+
   服务端根据 walletid 来保存备份、区分用户、推送消息等。
-  
+
   以下以`wid`表示。
-  
+
 ## 鉴权
 
 ### 登录
@@ -32,24 +32,24 @@
 1.  客户端发起登录请求，服务端返回待签名字符串。待签名字符串在 300 秒后过期，届时需要重新申请。
 
     **Request**
-    
+
     ```
     GET /auth
     ```
-    
+
     **Response**
-    
+
     ```
     challenge = sha256($request_ip + $random)
     ```
-    
+
     ```
     {
         "challenge": "ZGZkZmRmZA",
         "expired_at": 1434360774
     }
     ```
-    
+
 2.  客户端使用私钥签名，签名方式如下：
 
     ```
@@ -59,10 +59,10 @@
     提交认证字符串：
 
     **Request**
-    
+
     ```
     POST /auth
-    
+
     {
         "challenge": "ZGZkZmRmZA",
         "signature": "signature",
@@ -70,11 +70,11 @@
         "wid": "mywid"
     }
     ```
-    
+
     **Response**
-    
+
     成功：
-    
+
     ```
     {
         "success": true,
@@ -82,21 +82,21 @@
         "expired_at": "1434360614"
     }
     ```
-    
+
     可能的错误码：
-    
+
     * AUTH\_INVALID\_SIGNATURE
-      
+
       无效签名。
-      
+
     * AUTH\_INVALID\_CHALLENGE
 
       待签名字符串过期或不存在。
-      
+
     * AUTH\_DENIED
 
       其他原因导致的服务器拒绝登录。
-    
+
 ### 会话
 
 在登录完成后，与服务器的会话使用`token`认证，即在 HTTP Request Header 中加入以下字段：
@@ -125,7 +125,7 @@ HTTP/1.1 401 Unauthorized
 * AUTH\_INVALID\_TOKEN
 
   token 非法。
-  
+
 在鉴权失败后，客户端需要重新发起登录过程。
 
 ## 交易
@@ -191,13 +191,13 @@ POST /tx
 可能的错误码：
 
 * TX_UNAFFORDABLE
-  
+
   余额不足。
-  
+
 * TX_FAILED
 
   其他原因导致的失败。
-  
+
 ### 广播交易
 
 **Request**

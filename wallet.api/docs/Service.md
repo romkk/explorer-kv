@@ -9,6 +9,7 @@
   ```
   
 * 提交和返回的内容均为 JSON 格式；
+* 所有的货币单位均为 satoshi；
 
 ## 概念
 
@@ -22,11 +23,11 @@
         
   服务端根据 walletid 来保存备份、区分用户、推送消息等。
   
-  以下简称为 `wid`。
+  以下以`wid`表示。
   
-### 鉴权
+## 鉴权
 
-#### 登录
+### 登录
 
 1.  客户端发起登录请求，服务端返回待签名字符串。待签名字符串在 300 秒后过期，届时需要重新申请。
 
@@ -39,16 +40,20 @@
     **Response**
     
     ```
+    challenge = sha256($request_ip + $random)
+    ```
+    
+    ```
     {
         "challenge": "ZGZkZmRmZA",
-        "expiredAt": 1434360774
+        "expired_at": 1434360774
     }
     ```
     
 2.  客户端使用私钥签名，签名方式如下：
 
     ```
-    signature = signByPrivateKey($challenge + $expiredAt + $wid)
+    signature = sign_by_private_key($challenge + $expired_at + $wid)
     ```
 
     提交认证字符串：
@@ -56,12 +61,12 @@
     **Request**
     
     ```
-    POST /auth/verify
+    POST /auth
     
     {
         "challenge": "ZGZkZmRmZA",
         "signature": "signature",
-        "publicKey": "my_pubkey",
+        "public_key": "my_pubkey",
         "wid": "mywid"
     }
     ```
@@ -71,24 +76,10 @@
     成功：
     
     ```
-    HTTP/1.1 200 OK
-    
     {
         "success": true,
         "token": "yourtoken",
-        "expiredAt": "1434360614"
-    }
-    ```
-    
-    失败：
-    
-    ```
-    HTTP/1.1 401 Unauthorized
-    
-    {
-        "success": false,
-        "message": "Invalid Signature",
-        "code": "AUTH_INVALID_SIGNATURE"
+        "expired_at": "1434360614"
     }
     ```
     
@@ -105,23 +96,16 @@
     * AUTH\_DENIED
 
       其他原因导致的服务器拒绝登录。
-      
-#### 登录成功后处理
-
-读取或新建`wid`的账户信息，包括：
-
-1. 在 OSS 上新建备份存储目录；
-2. 
     
-#### 会话
+### 会话
 
 在登录完成后，与服务器的会话使用`token`认证，即在 HTTP Request Header 中加入以下字段：
 
 ```
-X-BMW-Token: $token
+X-Wallet-Token: $token
 ```
 
-请求到达服务器后，会首先经过鉴权模块，如果鉴权失败则有以下错误信息：
+会话请求到达服务器后，会首先经过鉴权模块，如果鉴权失败则有以下错误信息：
 
 ```
 HTTP/1.1 401 Unauthorized
@@ -144,19 +128,223 @@ HTTP/1.1 401 Unauthorized
   
 在鉴权失败后，客户端需要重新发起登录过程。
 
-### 普通交易
+## 交易
 
-#### 发起交易
+### 查询交易记录
 
-#### 查询交易  
+请使用数据 API。
 
-### 多重签名账户
+### 查询交易详细信息
 
-#### 发起创建请求
+请使用数据 API。
 
-#### 查询创建状态
+### 提交构造交易请求
 
-#### 修改创建状态
+**Request**
 
-### TBD
+```
+POST /tx
+
+{
+    "fee_per_kb": 10000,
+    "from": [ "mqyAnt6z7rSqqRvmKQSWqdiesAgFEVWegT" ],
+    "to": [
+        {
+            "addr": "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR",
+            "amount": 12345
+        },
+        {
+            "addr": "mzZypShcs1B35udnkqeYeJy8rUdgHDDvKG",
+            "amount": 45678
+        }
+    ]
+}
+```
+
+**Response**
+
+成功：
+
+```
+{
+    "success": true,
+    "fee": 10000,
+    "unspent_txs": [
+        {
+            "tx_hash": "txhash",
+            "tx_hash_big_endian": "shhatx",
+            "script": "script",
+            "tx_output_n": 0,
+            "value": 12345
+        },
+        {
+            "tx_hash": "txhash",
+            "tx_hash_big_endian": "shhatx",
+            "script": "script",
+            "tx_output_n": 1,
+            "value": 45678
+        }
+    ]
+}
+```
+
+可能的错误码：
+
+* TX_UNAFFORDABLE
+  
+  余额不足。
+  
+* TX_FAILED
+
+  其他原因导致的失败。
+  
+### 广播交易
+
+**Request**
+
+```
+POST /tx/publish
+
+{
+    "hex": "HEXSTRING"
+}
+```
+
+**Response**
+
+```
+{
+    "success": true
+}
+```
+
+可能的错误码：
+
+* TX\_PUBLISH\_INVALID_HEX
+
+  hex 非法。
+
+* TX\_PUBLISH\_FAILED
+
+  其他原因导致的发布失败。
+
+### 监控地址余额变动
+
+提交地址用于余额变动监控，每次最大 1024 个。
+
+**Request**
+
+```
+POST /address
+
+[
+    "mzZypShcs1B35udnkqeYeJy8rUdgHDDvKG",
+    "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR"
+]
+```
+
+**Response**
+
+成功：
+
+```
+{
+    "success": true
+}
+
+```
+
+可能的错误码：
+
+* ADDRESS\_WATCH\_FAILED
+
+  添加监控失败。
+
+## 多重签名账户
+
+### 发起创建请求
+
+**Request**
+
+**Request**
+
+```
+POST /multi-signature-addr
+
+```
+
+**Response**
+
+```
+HTTP/1.1 201 CREATED
+
+{
+}
+```
+
+### 查询创建状态
+
+**Reqeust**
+
+```
+GET /multi-signature-addr/:addr
+```
+
+### 修改创建状态
+
+**Request**
+
+```
+PUT /multi-signature-addr/:addr
+```
+
+### 发起多重签名交易
+
+**Request**
+
+```
+POST /multi-tx
+```
+
+**Response**
+
+### 查询多重签名交易确认状态
+
+**Request**
+
+```
+GET /multi-tx/:txid
+```
+
+### 修改多重签名交易确认状态
+
+**Request**
+
+```
+PUT /multi-tx/:txid
+```
+
+## 用户数据文件的备份与恢复
+
+基于阿里云 OSS 存储用户加密后的数据文件。
+
+### 备份
+
+TODO
+
+### 恢复
+
+TODO
+
+## 主密钥文件的备份与恢复
+
+基于阿里云 OSS 存储用户加密后的主密钥文件，需要使用 BM 帐号登录后方可使用。
+
+### 备份
+
+TODO
+
+### 恢复
+
+TODO
 

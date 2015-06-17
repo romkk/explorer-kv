@@ -22,20 +22,25 @@ class RawMemPool {
     }
 
     public function update(Collection $txDataList) {
-        Log::info(sprintf('Local Mempool count = %d', $this->length()));
         $hashList = $this->queue->map(function(Tx $tx) {
             return $tx->getHash();
         })->toArray();
 
+        Log::info(sprintf('[mempool] count = %d', $this->length()), $hashList);
+        $diffHash = [];
+
         $diff = $txDataList->filter(function($txData) use (&$hashList, &$diff) {
             return !in_array($txData['hash'], $hashList);
-        })->map(function($txData) {
+        })->map(function($txData) use (&$diffHash) {
             $tx = new Tx($this->fakeBlock, $txData['hash']);
             $tx->setHex($txData['data']);
+            $diffHash[] = $txData['hash'];
             return $tx;
         });
 
         $this->queue = $this->queue->merge($diff);
+
+        Log::info(sprintf('[mempool] diff count = %d', count($diff)), $diffHash);
 
         return $diff;
     }
@@ -47,6 +52,8 @@ class RawMemPool {
         while ($this->queue->count()) {
             $this->queue->pop();
         }
+
+        Log::info(sprintf('[mempool] clear up, count = %d', $this->length()));
     }
 
     public function insert($newTxs) {

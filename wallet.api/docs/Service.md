@@ -171,6 +171,7 @@ POST /tx
     "fee": 10000,
     "unspent_txs": [
         {
+            "address": "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR",
             "tx_hash": "txhash",
             "tx_hash_big_endian": "shhatx",
             "script": "script",
@@ -178,6 +179,7 @@ POST /tx
             "value": 12345
         },
         {
+            "address": "mzZypShcs1B35udnkqeYeJy8rUdgHDDvKG",
             "tx_hash": "txhash",
             "tx_hash_big_endian": "shhatx",
             "script": "script",

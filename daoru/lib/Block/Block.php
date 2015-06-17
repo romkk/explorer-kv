@@ -128,17 +128,26 @@ class Block {
         Log::info('更新已有块的 chain_id 完成');
 
         // insert raw block
-        $rawBlockId = RawBlock::insertGetId([
-            'block_hash' => $this->getHash(),
-            'block_height' => $this->getHeight(),
-            'chain_id' => 0,
-            'hex' => $this->getHex(),
-            'created_at' => $now->toDateTimeString(),
-        ]);
+        // 检查该块是否已存在于 raw_block 表中
+        $oldBlock = RawBlock::where('block_hash', $this->getHash())->first(['id', 'block_hash', 'chain_id']);
+        if (is_null($oldBlock)) {       //不存在，直接插入
+            $rawBlockId = RawBlock::insertGetId([
+                'block_hash' => $this->getHash(),
+                'block_height' => $this->getHeight(),
+                'chain_id' => 0,
+                'hex' => $this->getHex(),
+                'created_at' => $now->toDateTimeString(),
+            ]);
 
-        $this->setId($rawBlockId);
+            $this->setId($rawBlockId);
 
-        Log::info(sprintf('rawblock 表插入完成, table id = %d', $rawBlockId));
+            Log::info(sprintf('rawblock 表插入完成, table id = %d', $rawBlockId));
+        } else {        //已存在，将其修改为主链
+            $oldBlock->chain_id = 0;
+            $oldBlock->save();
+            $this->setId($oldBlock->id);
+            Log::info(sprintf('rawblock 表更新完成，table id = %d 重新成为主链', $oldBlock->id));
+        }
 
         Log::info('开始插入 txs');
         forEach($this->getTxs() as $tx) {
@@ -150,7 +159,7 @@ class Block {
                 'handle_status' => 100,
                 'handle_type' => Txlogs::ROW_TYPE_FORWARD,
                 'block_height' => $this->getHeight(),
-                'block_id' => $rawBlockId,
+                'block_id' => $this->getId(),
                 'block_timestamp' => $this->getBlockTimestamp(),
                 'tx_hash' => $tx->getHash(),
                 'created_at' => $now->toDateTimeString(),

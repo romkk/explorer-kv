@@ -22,6 +22,7 @@ class RawMemPool {
     }
 
     public function update(Collection $txDataList) {
+        Log::info(sprintf('Local Mempool count = %d', $this->length()));
         $hashList = $this->queue->map(function(Tx $tx) {
             return $tx->getHash();
         })->toArray();

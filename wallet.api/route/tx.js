@@ -71,7 +71,12 @@ module.exports = server => {
         let iter = 1;
         do {
             // 获得 unspent 列表
-            let [curOffset, curAggregated, curAggregatedTxs] = await getUnspentTxs(sentFrom, fee + totalSentAmount - aggregated, offset);
+            let curOffset, curAggregated, curAggregatedTxs;
+            try {
+                [curOffset, curAggregated, curAggregatedTxs] = await getUnspentTxs(sentFrom, fee + totalSentAmount - aggregated, offset);
+            } catch (err) {
+                return next(err);
+            }
             offset = curOffset;
             aggregated += curAggregated;
             aggregatedTxs.push.apply(aggregatedTxs, curAggregatedTxs);

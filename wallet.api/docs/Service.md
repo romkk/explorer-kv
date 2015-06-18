@@ -172,19 +172,23 @@ POST /tx
     "unspent_txs": [
         {
             "address": "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR",
-            "tx_hash": "txhash",
-            "tx_hash_big_endian": "shhatx",
-            "script": "script",
+            "confirmations": 173450,
+            "script": "76a914b96b816f378babb1fe585b7be7a2cd16eb99b3e488ac",
+            "tx_hash": "c1b01e96d2aa9b6a53abe6d5301e92144792fa8ddbcf7b3cd41b907b7c1f242d",
+            "tx_index": 45000043241,
             "tx_output_n": 0,
-            "value": 12345
+            "value": 7,
+            "value_hex": "7"
         },
         {
             "address": "mzZypShcs1B35udnkqeYeJy8rUdgHDDvKG",
-            "tx_hash": "txhash",
-            "tx_hash_big_endian": "shhatx",
-            "script": "script",
-            "tx_output_n": 1,
-            "value": 45678
+            "confirmations": 173136,
+            "script": "76a914b96b816f378babb1fe585b7be7a2cd16eb99b3e488ac",
+            "tx_hash": "ec35d4e66b94bbbafb848658bdc4f6afb003ba4205b779991c7614659112c690",
+            "tx_index": 16000043299,
+            "tx_output_n": 0,
+            "value": 7,
+            "value_hex": "7"
         }
     ]
 }

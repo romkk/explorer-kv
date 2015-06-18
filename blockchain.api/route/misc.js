@@ -61,7 +61,6 @@ module.exports = (server) => {
         next();
     });
 
-    /*
     server.get('/unspent', async (req, res, next) => {
         var err = validators.isValidAddressList(req.query.active);
         if (err != null) {
@@ -69,38 +68,40 @@ module.exports = (server) => {
         }
 
         var parts = req.params.active.trim().split('|');
-        var ret = _.zipObject(parts);
+        var ret = [];
 
-        var height = await Block.getLatestHeight();
+        var [height, addrs] = await* [Block.getLatestHeight(), Address.multiGrab(parts, !req.params.skipcache)];
 
-        await* parts.map(async p => {
-            var addr = await Address.grab(p, !req.params.skipcache);
-            if (addr == null) {
-                return [];
-            }
-
-            var table = sprintf('address_unspent_outputs_%04d', addr.attrs.id % 10);
-            var sql = `select tx_id, block_height, value
+        while (ret.length < 200 && addrs.length) {
+            let addr = addrs.shift();
+            if (addr == null) continue;
+            let table = sprintf('address_unspent_outputs_%04d', addr.attrs.id % 10);
+            let sql = `select tx_id, block_height, value, position
                        from ${table}
                        where address_id = ?
-                       order by tx_id asc, position asc, position2 asc`;
+                       order by block_height asc, position asc`;
 
-            var rows = await mysql.query(sql, [addr.attrs.id]);
+            let rows = await mysql.query(sql, [addr.attrs.id]);
 
-            if (rows.length === 0) {
-                return [];
-            }
+            if (!rows.length) continue;
 
-            ret[p] = rows.map(r => ({
-                tx_index: r.tx_id,
-                value: r.value,
-                value_hex: r.value.toString(16),
-                confirmations: height - r.block_height + 1
-            }));
-        });
+            let txs = await Tx.multiGrab(rows.map(r => r.tx_id), !req.params.skipcache);
+
+            rows.every((r, i) => {
+                ret.push({
+                    tx_hash: txs[i].hash,
+                    tx_index: r.tx_id,
+                    tx_output_n: r.position,
+                    script: txs[i].out[r.position].script,
+                    value: r.value,
+                    value_hex: r.value.toString(16),
+                    confirmations: height - r.block_height + 1
+                });
+                return ret.length < 200;
+            });
+        }
 
         res.send(ret);
         next();
     });
-    */
 };

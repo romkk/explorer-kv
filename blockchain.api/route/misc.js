@@ -104,7 +104,7 @@ module.exports = (server) => {
 
             let sql = `select tx_id, block_height, value, position
                        from ${table}
-                       where address_id = ?
+                       where address_id = ? and value != 0
                        order by block_height asc, position asc
                        limit ?, ?`;
 

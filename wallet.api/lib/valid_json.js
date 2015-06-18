@@ -86,8 +86,6 @@ module.exports = (schemaName) => {
 
         var errors = validator.validate(json, schema[schemaName]);
 
-        console.log(errors);
-
         if (errors.length) {
             let e = errors[0];
             return next(new restify.BadRequestError(formatError(e)));

@@ -85,15 +85,15 @@
 
     可能的错误码：
 
-    *   AUTH\_INVALID\_SIGNATURE
+    *   AuthInvalidSignature
 
         无效签名。
 
-    *   AUTH\_INVALID\_CHALLENGE
+    *   AuthInvalidChallenge
 
         待签名字符串过期或不存在。
 
-    *   AUTH\_DENIED
+    *   AuthDenied
 
         其他原因导致的服务器拒绝登录。
 
@@ -118,11 +118,11 @@ HTTP/1.1 401 Unauthorized
 
 可能的错误码：
 
-* AUTH\_TOKEN\_EXPIRED
+* AuthTokenExpired
 
   token 过期。
 
-* AUTH\_INVALID\_TOKEN
+* AuthInvalidToken
 
   token 非法。
 
@@ -196,7 +196,7 @@ POST /tx
 
 可能的错误码：
 
-* TX_UNAFFORDABLE
+* TxUnaffordable
 
   余额不足。
 
@@ -222,7 +222,7 @@ POST /tx/publish
 
 可能的错误码：
 
-* TX\_PUBLISH\_FAILED
+* TxPublishFailed
 
   发布失败，详细信息请关注`message`字段。
 
@@ -251,12 +251,6 @@ POST /address
 }
 
 ```
-
-可能的错误码：
-
-* ADDRESS\_WATCH\_FAILED
-
-  添加监控失败。
 
 ## 多重签名账户
 

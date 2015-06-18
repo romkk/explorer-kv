@@ -1,5 +1,13 @@
-var validate = require('jsonschema').validate;
+var JaySchema = require('jayschema');
 var restify = require('restify');
+var bitcore = require('bitcore');
+
+var validator = new JaySchema();
+
+validator.addFormat('btc-address', v => {
+    return bitcore.Address.isValid(v) ? null : 'must be valid btc address';
+});
+
 var schema = {
 
     txPublish: {
@@ -11,9 +19,58 @@ var schema = {
             }
         },
         required: ['hex']
+    },
+
+    tx: {
+        type: 'object',
+        properties: {
+            'from': {
+                type: 'array',
+                maxItems: 1024,
+                minItems: 1,
+                uniqueItems: true,
+                items: {
+                    type: 'string',
+                    format: 'btc-address'
+                }
+            },
+            to: {
+                type: 'array',
+                maxItems: 1024,
+                minItems: 1,
+                uniqueItems: true,
+                items: {
+                    type: 'object',
+                    properties: {
+                        addr: {
+                            type: 'string',
+                            format: 'btc-address'
+                        },
+                        amount: {
+                            type: 'integer',
+                            minimum: 0
+                        }
+                    },
+                    required: ['addr', 'amount']
+                }
+            },
+            fee_per_kb: {
+                type: 'integer',
+                'enum': [10000]
+            }
+        },
+        required: ['fee_per_kb', 'from', 'to']
     }
 
 };
+
+function formatError(e) {
+    if (e.kind == 'ObjectValidationError') {
+        return `${e.kind} - ${e.desc}`;
+    }
+
+    return `position: ${e.instanceContext}, rule: ${e.constraintName}`;
+}
 
 module.exports = (schemaName) => {
     if (!schema[schemaName]) {
@@ -27,10 +84,13 @@ module.exports = (schemaName) => {
             return next(new restify.BadRequestError('Reqeust body can not be empty'));
         }
 
-        var result = validate(json, schema[schemaName]);
+        var errors = validator.validate(json, schema[schemaName]);
 
-        if (result.errors.length) {
-            return next(new restify.BadRequestError(`${result.errors[0].property} ${result.errors[0].message}`));
+        console.log(errors);
+
+        if (errors.length) {
+            let e = errors[0];
+            return next(new restify.BadRequestError(formatError(e)));
         }
 
         next();

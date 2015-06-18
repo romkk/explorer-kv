@@ -222,13 +222,9 @@ POST /tx/publish
 
 可能的错误码：
 
-* TX\_PUBLISH\_INVALID_HEX
-
-  hex 非法。
-
 * TX\_PUBLISH\_FAILED
 
-  其他原因导致的发布失败。
+  发布失败，详细信息请关注`message`字段。
 
 ### 监控地址余额变动
 

@@ -116,6 +116,7 @@ module.exports = (server) => {
 
             rows.every((r, i) => {
                 ret.push({
+                    address: addr.attrs.address,
                     tx_hash: txs[i].hash,
                     tx_index: r.tx_id,
                     tx_output_n: r.position,

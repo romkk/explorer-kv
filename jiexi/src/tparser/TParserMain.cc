@@ -86,6 +86,7 @@ int main(int argc, char **argv) {
   }
   Log::SetDevice(fdLog);
 
+  LOG_INFO("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
   LOG_INFO("---------------------- tparser start ----------------------");
   if (!boost::filesystem::is_regular_file(optConf)) {
     LOG_FATAL("can't find config file: %s", optConf);
@@ -111,23 +112,25 @@ int main(int argc, char **argv) {
   signal(SIGTERM, handler);
   signal(SIGINT,  handler);
 
-  gParser = new Parser();
-  if (!gParser->init()) {
-    LOG_FATAL("Parser init failed");
-    exit(1);
-  }
-
-  if (reverseEndID > 0) {
-    string l = Strings::Format("using reverse mode, end txlog ID: %lld",
-                               reverseEndID);
-    LOG_WARN("%s", l.c_str());
-    fprintf(stdout, l.c_str());
-    fprintf(stdout, "\n");
-    gParser->setReverseMode(reverseEndID);
-  }
-
   try {
+    gParser = new Parser();
+
+    if (!gParser->init()) {
+      LOG_FATAL("Parser init failed");
+      exit(1);
+    }
+
+    if (reverseEndID > 0) {
+      string l = Strings::Format("using reverse mode, end txlog ID: %lld",
+                                 reverseEndID);
+      LOG_WARN("%s", l.c_str());
+      fprintf(stdout, l.c_str());
+      fprintf(stdout, "\n");
+      gParser->setReverseMode(reverseEndID);
+    }
+
     gParser->run();
+
     delete gParser;
     gParser = nullptr;
   } catch (std::exception & e) {

@@ -56,8 +56,8 @@ server.use((req, res, next) => {
 
 require('../route')(server);
 
-server.listen(process.env.WALLET_API_PORT || 3001, ()=> {
-    log(`listen on ${process.env.WALLET_API_PORT || 3001}`);
+server.listen(process.env.WALLET_API_PORT || 3002, ()=> {
+    log(`listen on ${process.env.WALLET_API_PORT || 3002}`);
 });
 
 server.on('uncaughtException', function(req, res, route, err) {

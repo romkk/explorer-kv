@@ -65,7 +65,7 @@ module.exports = server => {
             res.send({
                 success: false,
                 code: 'TxUnaffordable',
-                msg: `totalSentAmount = ${totalSentAmount}, you got = ${totalUnspentAmount}`
+                message: `totalSentAmount = ${totalSentAmount}, you got = ${totalUnspentAmount}, diff = ${totalUnspentAmount - totalSentAmount}`
             });
             return next();
         }
@@ -85,7 +85,7 @@ module.exports = server => {
                 res.send({
                     success: false,
                     code: 'TxUnaffordable',
-                    msg: `estimated fee = ${fee}, total spent = ${totalSentAmount}, you got = ${totalUnspentAmount}`
+                    message: `estimated fee = ${fee}, total spent = ${totalSentAmount}, you got = ${totalUnspentAmount}, will send = ${aggregated}, diff = ${totalUnspentAmount - totalSentAmount - fee}`
                 });
                 return next();
             }

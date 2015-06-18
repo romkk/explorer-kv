@@ -16,6 +16,9 @@ async function getUnspentTxs(sentFrom, amount, offset) {
             offset: offset,
             limit: limit
         });
+
+        if (!unspentList.unspent_outputs.length) break;
+
         unspentList.unspent_outputs.every(tx => {
             aggregated += tx.value;
             aggregatedTxs.push(tx);
@@ -62,7 +65,7 @@ module.exports = server => {
             res.send({
                 success: false,
                 code: 'TxUnaffordable',
-                msg: 'You are so poor.'
+                msg: `totalSentAmount = ${totalSentAmount}, you got = ${totalUnspentAmount}`
             });
             return next();
         }
@@ -77,6 +80,16 @@ module.exports = server => {
             } catch (err) {
                 return next(err);
             }
+
+            if (curAggregated == 0) {  //没有更多了
+                res.send({
+                    success: false,
+                    code: 'TxUnaffordable',
+                    msg: `estimated fee = ${fee}, total spent = ${totalSentAmount}, you got = ${totalUnspentAmount}`
+                });
+                return next();
+            }
+
             offset = curOffset;
             aggregated += curAggregated;
             aggregatedTxs.push.apply(aggregatedTxs, curAggregatedTxs);

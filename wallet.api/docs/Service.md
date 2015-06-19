@@ -34,13 +34,13 @@
     **Request**
 
     ```
-    GET /auth
+    GET /auth?device_id=$device_id&wid=$wid
     ```
 
     **Response**
 
     ```
-    challenge = sha256($request_ip + $random)
+    challenge = sha256($request_ip + $device_id + $wid + $random)
     ```
 
     ```

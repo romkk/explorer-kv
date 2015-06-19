@@ -1,6 +1,7 @@
 var restify = require('restify');
 var sprintf = require('sprintf').sprintf;
 var moment = require('moment');
+var auth = require('../lib/auth');
 
 var debug = require('debug');
 debug.formatArgs = function () {
@@ -53,6 +54,8 @@ server.use((req, res, next) => {
 
     next();
 });
+
+server.use(auth.findIP);    // find remote ip address
 
 require('../route')(server);
 

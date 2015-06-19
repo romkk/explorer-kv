@@ -224,7 +224,7 @@ POST /tx/publish
 
 * TxPublishFailed
 
-  发布失败，详细信息请关注`message`字段。
+  发布失败，详细信息请关注`bitcoind`字段，含有调用 bitcoind 返回的错误信息。
 
 ### 监控地址余额变动
 

@@ -82,6 +82,21 @@ module.exports = server => {
             }
 
             if (curAggregated == 0) {  //没有更多了
+                // balance change ?
+                try {
+                    let currentAmount = _.sum(await blockData('/multiaddr', {
+                        active: sentFrom.join('|')
+                    }), 'final_balance');
+                    if (totalUnspentAmount != currentAmount) {      //余额变动，重新启动
+                        log(`检测到 unspent 余额变动, previous = ${totalUnspentAmount}, currentAmount = ${currentAmount}`);
+                        totalUnspentAmount = currentAmount;
+                        offset = aggregated = aggregatedTxs = txSize = fee = 0;
+                        continue;
+                    }
+                } catch (err) {
+                    //do nothing
+                }
+
                 res.send({
                     success: false,
                     code: 'TxUnaffordable',

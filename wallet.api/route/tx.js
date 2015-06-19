@@ -3,6 +3,8 @@ var validate = require('../lib/valid_json');
 var log = require('debug')('wallet:route:tx');
 var _ = require('lodash');
 var blockData = require('../lib/block_data');
+var request = require('request-promise');
+var config = require('config');
 
 // 获取 unspent，找出合适的 unspent
 async function getUnspentTxs(sentFrom, amount, offset) {
@@ -143,9 +145,14 @@ module.exports = server => {
                 success: true
             });
         } catch (err) {
+            console.log(err.response.body);
             res.send({
                 success: false,
-                message: err.response.body.error.message || 'Publish failed',
+                bitcoind: {
+                    statusCode: err.statusCode,
+                    body: err.response.body
+                },
+                message: 'Publish failed',
                 code: 'TX_PUBLISH_FAILED'
             });
         }

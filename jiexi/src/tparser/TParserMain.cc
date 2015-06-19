@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
     usage();
     return 1;
   }
-  while ((c = getopt(argc, argv, "c:l:h")) != -1) {
+  while ((c = getopt(argc, argv, "c:l:r:h")) != -1) {
     switch (c) {
       case 'c':
         optConf = optarg;

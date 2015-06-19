@@ -448,7 +448,7 @@ bool Parser::init() {
 void Parser::run() {
   TxLog txlog;
   string blockHash;  // 目前仅用在URL回调上
-  int64_t lastTxLogOffset;
+  int64_t lastTxLogOffset = 0;
 
   // 启动时：如果是反向消费，则需要将txlog offset向后加一。即使txlogID不连续也OK。
   if (isReverse_) {
@@ -464,9 +464,9 @@ void Parser::run() {
       continue;
     }
     // 反向消费，达到停止txlog ID
-    if (lastTxLogOffset < reverseEndTxlogID_) {
+    if (txlog.logId_ < reverseEndTxlogID_) {
       LOG_WARN("current txlog ID (%lld) is less than stop txlog ID (%lld), stopping...",
-               lastTxLogOffset, reverseEndTxlogID_);
+               txlog.logId_, reverseEndTxlogID_);
       stop();
       break;
     }
@@ -514,7 +514,7 @@ void Parser::run() {
   // 终止时：如果是反向消费，则需要将txlog offset向前减一。即使txlogID不连续也OK。
   if (isReverse_) {
     lastTxLogOffset = getLastTxLogOffset();
-    updateLastTxlogId(lastTxLogOffset-1);
+    updateLastTxlogId(lastTxLogOffset - 1);
   }
 
   return;

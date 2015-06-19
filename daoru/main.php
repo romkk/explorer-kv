@@ -76,8 +76,12 @@ while (true) {
         $newBlock->insert();
 
     } else {
-        $tempTxList = $bitcoinClient->getblocktemplate()['transactions'];
-        $newTxs = $pool->update(Collection::make($tempTxList));
+        $gbt = $bitcoinClient->getblocktemplate();
+        $gbtPrevHash = $gbt['previousblockhash'];
+
+        if ($gbtPrevHash != $queue->getBlock()->getHash()) continue;       //已出新块，立即处理
+
+        $newTxs = $pool->update(Collection::make($gbt['transactions']));
         if (count($newTxs)) {
             Log::info(sprintf('检测到临时块新交易 %d 个', count($newTxs)));
             $pool->insert($newTxs);

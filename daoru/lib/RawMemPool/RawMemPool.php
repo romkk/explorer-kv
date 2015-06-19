@@ -26,6 +26,9 @@ class RawMemPool {
             return $tx->getHash();
         })->toArray();
 
+        // assert memory pool matches gbt
+        assert(count(array_diff($hashList, $txDataList->lists('hash'))) == 0, 'GBT results should contains all the txs in the mempool');
+
         Log::info(sprintf('[mempool] count = %d', $this->length()), $hashList);
         $diffHash = [];
 

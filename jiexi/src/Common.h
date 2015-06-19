@@ -188,6 +188,8 @@ inline string humanFormat1024(double size) {
   return humanFormat(size, 1024);
 }
 
+bool curlCallUrl(const string &url);
+
 void writePid2FileOrExit(const char *filename);
 void writeTime2File(const char *filename, uint64 t);
 void killSelf();

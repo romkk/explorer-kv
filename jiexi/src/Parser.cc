@@ -117,8 +117,8 @@ bool multiInsert(MySQLConnection &db, const string &table,
 //   -1   临时块（未确认的交易组成的虚拟块）
 //   >= 0 有效的块高度
 //
-TxLog::TxLog():logId_(0), tableIdx_(-1), status_(0), type_(0),
-blkHeight_(-2), txId_(0), blkId_(0)
+TxLog::TxLog():logId_(0), status_(0), type_(0),
+blkHeight_(-2), txId_(0), blkId_(0), blockTimestamp_(0)
 {
 }
 TxLog::~TxLog() {}
@@ -394,7 +394,7 @@ void CacheManager::threadConsumer() {
 
 
 Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
-running_(true), cache_(nullptr)
+running_(true), cache_(nullptr), isReverse_(false), reverseEndTxlogID_(0)
 {
   // setup cache manager: SSDB
   cacheEnable_ = Config::GConfig.getBool("ssdb.enable", false);
@@ -412,6 +412,11 @@ Parser::~Parser() {
     delete cache_;
     cache_ = nullptr;
   }
+}
+
+void Parser::setReverseMode(const int64_t endTxlogID) {
+  isReverse_  = true;
+  reverseEndTxlogID_ = endTxlogID;
 }
 
 void Parser::stop() {
@@ -442,7 +447,14 @@ bool Parser::init() {
 
 void Parser::run() {
   TxLog txlog;
-  int64_t lastTxLogOffset;
+  string blockHash;  // 目前仅用在URL回调上
+  int64_t lastTxLogOffset = 0;
+
+  // 启动时：如果是反向消费，则需要将txlog offset向后加一。即使txlogID不连续也OK。
+  if (isReverse_) {
+    lastTxLogOffset = getLastTxLogOffset();
+    updateLastTxlogId(lastTxLogOffset+1);
+  }
 
   while (running_) {
     lastTxLogOffset = getLastTxLogOffset();
@@ -450,6 +462,13 @@ void Parser::run() {
     if (tryFetchLog(&txlog, lastTxLogOffset) == false) {
       sleepMs(1000);
       continue;
+    }
+    // 反向消费，达到停止txlog ID
+    if (txlog.logId_ < reverseEndTxlogID_) {
+      LOG_WARN("current txlog ID (%lld) is less than stop txlog ID (%lld), stopping...",
+               txlog.logId_, reverseEndTxlogID_);
+      stop();
+      break;
     }
 
     checkTableAddressTxs(txlog.blockTimestamp_);
@@ -460,7 +479,7 @@ void Parser::run() {
 
     if (txlog.type_ == TXLOG_TYPE_ACCEPT) {
       if (txlog.tx_.IsCoinBase()) {
-        acceptBlock(&txlog);
+        acceptBlock(&txlog, blockHash);
       }
       acceptTx(&txlog);
     }
@@ -474,8 +493,8 @@ void Parser::run() {
       LOG_FATAL("invalid txlog type: %d", txlog.type_);
     }
 
-    // 设置为当前的ID，该ID不一定连续
-    updateLastTxlogId(lastTxLogOffset / 100000000 + txlog.logId_);
+    // 设置为当前的ID，该ID不一定连续，不可以 updateLastTxlogId++
+    updateLastTxlogId(txlog.logId_);
 
     if (!dbExplorer_.execute("COMMIT")) {
       goto error;
@@ -484,7 +503,20 @@ void Parser::run() {
     if (cache_ != nullptr) {
       cache_->commit();
     }
+
+    if (blockHash.length()) {  // 目前仅用在URL回调上，仅使用一次
+      callBlockRelayParseUrl(blockHash);
+      blockHash.clear();
+    }
+
   } /* /while */
+
+  // 终止时：如果是反向消费，则需要将txlog offset向前减一。即使txlogID不连续也OK。
+  if (isReverse_) {
+    lastTxLogOffset = getLastTxLogOffset();
+    updateLastTxlogId(lastTxLogOffset - 1);
+  }
+
   return;
 
 error:
@@ -692,7 +724,7 @@ void _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t block
 }
 
 // 接收一个新块
-void Parser::acceptBlock(TxLog *txlog) {
+void Parser::acceptBlock(TxLog *txlog, string &blockHash) {
   // 获取块Raw Hex
   string blkRawHex;
   _getBlockRawHexByBlockId(txlog->blkId_, dbExplorer_, &blkRawHex);
@@ -708,6 +740,8 @@ void Parser::acceptBlock(TxLog *txlog) {
     THROW_EXCEPTION_DBEX("Block decode failed, height: %d, blockId: %lld",
                          txlog->blkHeight_, txlog->blkId_);
   }
+
+  blockHash = blk.GetHash().ToString();
 
   // 拿到 tx_hash -> tx_id 的对应关系
   // 要求"导入"模块：存入所有的区块交易(table.raw_txs_xxxx)
@@ -1610,45 +1644,32 @@ void _getTxHexId(MySQLConnection &db, class TxLog *txLog) {
 
 bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
   MySQLResult res;
-  int32_t tableNameIdx = -1, logId = -1;
   char **row = nullptr;
   string sql;
 
-  // id / 100000000 是表名称索引
-  tableNameIdx = (int32_t)(lastTxLogOffset / 100000000);
-  // id % 100000000 是该表中的id序列
-  logId        = (int32_t)(lastTxLogOffset % 100000000);
-
   // fetch tx log, 每次处理一条日志记录
-  sql = Strings::Format(" SELECT `id`,`handle_status`,`handle_type`, "
-                        "   `block_height`,`tx_hash`,`created_at`, "
-                        " `block_timestamp`,`block_id` "
-                        " FROM `txlogs_%04d` "
-                        " WHERE `id` > %d ORDER BY `id` ASC LIMIT 1 ",
-                        tableNameIdx, logId);
+  if (isReverse_) {
+    // 反向消费
+    sql = Strings::Format(" SELECT `id`,`handle_status`,`handle_type`, "
+                          "   `block_height`,`tx_hash`,`created_at`, "
+                          " `block_timestamp`,`block_id` "
+                          " FROM `txlogs_0000` "
+                          " WHERE `id` < %lld ORDER BY `id` DESC LIMIT 1 ",
+                          lastTxLogOffset);
+  } else {
+    sql = Strings::Format(" SELECT `id`,`handle_status`,`handle_type`, "
+                          "   `block_height`,`tx_hash`,`created_at`, "
+                          " `block_timestamp`,`block_id` "
+                          " FROM `txlogs_0000` "
+                          " WHERE `id` > %lld ORDER BY `id` ASC LIMIT 1 ",
+                          lastTxLogOffset);
+  }
   dbExplorer_.query(sql, res);
   if (res.numRows() == 0) {
-    // 检测是否发生txlog表切换
-    // 若读取不到数据且表名索引出现新的，则更新 'jiexi.last_txlog_offset'
-    int32_t txLogMaxIdx = getTxLogMaxIdx();
-    assert(txLogMaxIdx >= tableNameIdx);
-
-    if (txLogMaxIdx > tableNameIdx) {
-      updateLastTxlogId((tableNameIdx + 1)*100000000 + 0);
-      LOG_INFO("switch table.txlogs from `txlogs_%04d` to `txlogs_%04d`",
-               tableNameIdx, tableNameIdx + 1);
-    } else if (txLogMaxIdx < tableNameIdx) {
-      LOG_FATAL("table.txlogs name index(%d) is too larger than exist(%d)",
-                tableNameIdx, txLogMaxIdx);
-    } else {
-      // do nothing
-      assert(txLogMaxIdx == tableNameIdx);
-    }
     return false;
   }
 
   row = res.nextRow();
-  txLog->tableIdx_  = tableNameIdx;
   txLog->logId_     = strtoll(row[0], nullptr, 10);
   txLog->status_    = atoi(row[1]);
   txLog->type_      = atoi(row[2]);
@@ -1667,9 +1688,19 @@ bool Parser::tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset) {
     return false;
   }
 
-  LOG_INFO("process txlog, tableIdx: %d, logId: %d, type: %d, "
+  // 反向消费，需要翻转类型
+  if (isReverse_) {
+    if (txLog->type_ == TXLOG_TYPE_ACCEPT) {
+      txLog->type_ = TXLOG_TYPE_ROLLBACK;
+    } else if (txLog->type_ == TXLOG_TYPE_ROLLBACK) {
+      txLog->type_ = TXLOG_TYPE_ACCEPT;
+    }
+  }
+
+  LOG_INFO("process txlog(%c), logId: %d, type: %d, "
            "height: %d, tx hash: %s, created: %s",
-           tableNameIdx, txLog->logId_, txLog->type_, txLog->blkHeight_,
+           isReverse_ ? '-' : '+',
+           txLog->logId_, txLog->type_, txLog->blkHeight_,
            txLog->txHash_.ToString().c_str(), txLog->createdAt_.c_str());
 
   // find raw tx hex/id

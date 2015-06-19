@@ -118,13 +118,13 @@ void PreTx::threadConsumeAddr() {
       cnt++;
 
       if (cnt % 10000 == 0) {
-        LOG_INFO("total address: %lld", cnt);
+        LOG_INFO("total tx: %lld", cnt);
       }
     }
     buf.clear();
   }
 
-  LOG_INFO("total address: %lld", txs_.size());
+  LOG_INFO("total tx: %lld", txs_.size());
   runningConsumeThreads_--;
 }
 

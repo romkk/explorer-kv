@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <regex>
 
+#include <curl/curl.h>
 #include <boost/thread.hpp>
 
 #ifdef __MACH__
@@ -392,6 +393,46 @@ string humanFormat(double size, int unitSize) {
   }
   sprintf(buf, "%.*f %s", i, size, units[i]);
   return string(buf);
+}
+
+static size_t _curl_write_data_empty(void *buffer, size_t size,
+                                     size_t nmemb, void *userp) {
+  return size * nmemb;
+}
+
+bool curlCallUrl(const string &url) {
+  CURL *curl = nullptr;
+  CURLcode res;
+
+  curl = curl_easy_init();
+  if (!curl) {
+    LOG_FATAL("curl_easy_init() failed");
+    return false;
+  }
+
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 3);         // max time the request is allowed
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 1);  // timeout for the connect phase
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 3L); // allow redirection
+  // do not output to stdout
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _curl_write_data_empty);
+
+  /* Perform the request, res will get the return code */
+  res = curl_easy_perform(curl);
+  /* Check for errors */
+  if(res != CURLE_OK) {
+    LOG_ERROR("curl_easy_perform() failed: %s, url: %s",
+              curl_easy_strerror(res), url.c_str());
+  }
+  curl_easy_cleanup(curl); /* always cleanup */
+
+  //
+  // 无需检查返回值，仅需要判断响应状态
+  //
+  if(res == CURLE_OK) {
+    return true;
+  }
+  return false;
 }
 
 void writePid2FileOrExit(const char *filename) {

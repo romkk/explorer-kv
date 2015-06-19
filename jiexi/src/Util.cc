@@ -23,6 +23,9 @@
 #include <sstream>
 #include <vector>
 
+#include <boost/algorithm/string/replace.hpp>
+#include <boost/thread.hpp>
+
 static std::vector<std::string> &split(const std::string &s, char delim,
                                        std::vector<std::string> &elems) {
   std::stringstream ss(s);
@@ -141,4 +144,15 @@ int64_t txHash2Id(MySQLConnection &db, const uint256 &txHash) {
   row = res.nextRow();
 
   return atoi64(row[0]);
+}
+
+// 回调块解析URL
+void callBlockRelayParseUrl(const string &blockHash) {
+  string url = Config::GConfig.get("block.relay.parse.url", "");
+  if (url.length() == 0) { return; }
+
+  boost::replace_all(url, "%s", blockHash);
+
+  LOG_INFO("call block relay parse url: %s", url.c_str());
+  boost::thread t(curlCallUrl, url); // thread runs free
 }

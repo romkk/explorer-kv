@@ -42,8 +42,8 @@ add_library(explorer STATIC ${LIB_SOURCES})
 
 file(GLOB TPARSER_SOURCES src/tparser/*.cc)
 add_executable(tparser ${TPARSER_SOURCES})
-target_link_libraries(tparser explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${SSDB_LIBRARIES})
+target_link_libraries(tparser explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${SSDB_LIBRARIES} -lcurl)
 
 file(GLOB_RECURSE TEST_SOURCES test/*.cc)
 add_executable(unittest ${TEST_SOURCES})
-target_link_libraries(unittest explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} -lpthread)
+target_link_libraries(unittest explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} -lpthread -lcurl)

@@ -101,7 +101,6 @@ public:
 class TxLog {
 public:
   int64_t  logId_;      // id in table
-  int32_t  tableIdx_;   // txlogs table name index
   int32_t  status_;     // handle status
   int32_t  type_;       // 1: accept, 2: rollback
   int32_t  blkHeight_;  // block height
@@ -164,6 +163,9 @@ private:
   atomic<bool> running_;
   MySQLConnection dbExplorer_;
 
+  bool isReverse_;
+  int64_t reverseEndTxlogID_;
+
   CacheManager *cache_;
   bool cacheEnable_;
 
@@ -174,7 +176,7 @@ private:
   void updateLastTxlogId(const int64_t newId);
   void checkTableAddressTxs(const uint32_t timestamp);
 
-  void acceptBlock  (TxLog *txlog);
+  void acceptBlock  (TxLog *txlog, string &blockHash);
   void rollbackBlock(TxLog *txlog);
 
   void acceptTx  (class TxLog *txLog);
@@ -187,6 +189,8 @@ public:
   bool init();
   void run();
   void stop();
+
+  void setReverseMode(const int64_t endTxlogID);
 
   bool txsHash2ids(const std::set<uint256> &hashVec,
                    std::map<uint256, int64_t> &hash2id);

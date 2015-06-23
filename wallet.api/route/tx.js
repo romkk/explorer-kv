@@ -136,15 +136,19 @@ module.exports = server => {
                 success: true
             });
         } catch (err) {
-            res.send({
-                success: false,
-                bitcoind: {
-                    statusCode: err.statusCode,
-                    body: err.response.body
-                },
-                message: 'Publish failed',
-                code: 'TX_PUBLISH_FAILED'
-            });
+            if (err.name == 'StatusCodeError') {
+                res.send({
+                    success: false,
+                    bitcoind: {
+                        statusCode: err.statusCode,
+                        body: err.response.body
+                    },
+                    message: 'Publish failed',
+                    code: 'TX_PUBLISH_FAILED'
+                });
+            } else {
+                res.send(new restify.InternalServerError('RPC call error.'));
+            }
         }
 
         next();

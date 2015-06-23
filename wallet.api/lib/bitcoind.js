@@ -21,7 +21,7 @@ module.exports = async (method, ...params) => {
         log(`RPC 调用完成: ${Date.now() - start} ms`);
         return JSON.parse(response);
     } catch (err) {
-        log(`RPC 调用失败，statusCode = ${err.statusCode}, err = ${err.response.body}`);
+        log(`RPC 调用失败，message = ${err.message}, err = ${err.name}`);
         throw err;
     }
 };

@@ -5,6 +5,7 @@ var _ = require('lodash');
 var blockData = require('../lib/block_data');
 var request = require('request-promise');
 var config = require('config');
+var bitcoind = require('../lib/bitcoind');
 
 // 获取 unspent，找出合适的 unspent
 async function getUnspentTxs(sentFrom, amount, offset) {
@@ -130,22 +131,11 @@ module.exports = server => {
         var hex = String(req.body.hex);
 
         try {
-            await request({
-                uri: `http://${config.get('bitcoind.host')}:${config.get('bitcoind.port')}`,
-                method: 'POST',
-                json: { id: 1, method: 'sendrawtransaction', params: [hex] },
-                auth: {
-                    user: config.get('bitcoind.user'),
-                    pass: config.get('bitcoind.pass'),
-                    sendImmediately: false
-                }
-            });
-
+            await bitcoind('sendrawtransaction', hex);
             res.send({
                 success: true
             });
         } catch (err) {
-            console.log(err.response.body);
             res.send({
                 success: false,
                 bitcoind: {

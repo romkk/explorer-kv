@@ -34,18 +34,14 @@
     **Request**
 
     ```
-    GET /auth?device_id=$device_id&wid=$wid
+    GET /auth?device_id=$did&wid=$wid
     ```
 
     **Response**
 
     ```
-    challenge = sha256($request_ip + $device_id + $wid + $random)
-    ```
-
-    ```
     {
-        "challenge": "ZGZkZmRmZA",
+        "challenge": "ZGZkZmRmZA.ZGZkZmRmZA",
         "expired_at": 1434360774
     }
     ```
@@ -53,7 +49,7 @@
 2.  客户端使用私钥签名，签名方式如下：
 
     ```
-    signature = sign_by_private_key($challenge + $expired_at + $wid)
+    signature = sign_by_private_key($challenge, $privateKey)
     ```
 
     提交认证字符串：
@@ -64,10 +60,9 @@
     POST /auth
 
     {
-        "challenge": "ZGZkZmRmZA",
+        "challenge": "ZGZkZmRmZA.ZGZkZmRmZA",
         "signature": "signature",
-        "public_key": "my_pubkey",
-        "wid": "mywid"
+        "public_key": "my_pubkey"
     }
     ```
 

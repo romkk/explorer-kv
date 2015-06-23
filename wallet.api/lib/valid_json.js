@@ -60,6 +60,23 @@ var schema = {
             }
         },
         required: ['fee_per_kb', 'from', 'to']
+    },
+
+    verifyAuth: {
+        type: 'object',
+        required: ['challenge', 'signature', 'address'],
+        properties: {
+            challenge: {
+                type: 'string'
+            },
+            signature: {
+                type: 'string'
+            },
+            address: {
+                type: 'string',
+                format: 'btc-address'
+            }
+        }
     }
 
 };

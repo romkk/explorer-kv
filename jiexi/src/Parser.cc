@@ -500,6 +500,8 @@ void Parser::run() {
       goto error;
     }
 
+    writeLastProcessTxlogTime();
+
     if (cache_ != nullptr) {
       cache_->commit();
     }
@@ -522,6 +524,17 @@ void Parser::run() {
 error:
   dbExplorer_.execute("ROLLBACK");
   return;
+}
+
+void Parser::writeLastProcessTxlogTime() {
+  // 写最后消费txlog的时间，30秒之内仅写一次
+  static time_t lastTime = 0;
+
+  time_t now = time(nullptr);
+  if (now > lastTime + 30) {
+    lastTime = now;
+    writeTime2File("lastProcessTxLogTime.txt", now);
+  }
 }
 
 // 检测表是否存在，`create table` 这样的语句会导致DB事务隐形提交，必须摘离出事务之外

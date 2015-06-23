@@ -34,7 +34,7 @@
 **Request**
 
 ```
-GET /register?did=$device_id&wid=$wid
+POST /device/$wid/$did
 ```
 
 **Response**
@@ -60,7 +60,7 @@ GET /register?did=$device_id&wid=$wid
 **Reqeust**
 
 ```
-POST /unregister?did=$device_id&wid=$wid
+DELETE /device/$wid/$did
 ```
 
 **Response**

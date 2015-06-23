@@ -182,6 +182,8 @@ private:
   void acceptTx  (class TxLog *txLog);
   void rollbackTx(class TxLog *txLog);
 
+  void writeLastProcessTxlogTime();
+
 public:
   Parser();
   ~Parser();

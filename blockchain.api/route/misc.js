@@ -61,46 +61,79 @@ module.exports = (server) => {
         next();
     });
 
-    /*
     server.get('/unspent', async (req, res, next) => {
+        req.checkQuery('offset', 'should be a valid number').optional().isNumeric();
+        req.sanitize('offset').toInt();
+
+        req.checkQuery('limit', 'should be between 1 and 50').optional().isNumeric().isInt({ max: 200, min: 1});
+        req.sanitize('limit').toInt();
+
+        var errors = req.validationErrors();
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
         var err = validators.isValidAddressList(req.query.active);
         if (err != null) {
             return next(err);
         }
 
         var parts = req.params.active.trim().split('|');
-        var ret = _.zipObject(parts);
+        var offset = req.params.offset || 0;
+        var limit = req.params.limit || 200;
+        var ret = [];
 
-        var height = await Block.getLatestHeight();
+        var [height, addrs] = await* [Block.getLatestHeight(), Address.multiGrab(parts, !req.params.skipcache)];
 
-        await* parts.map(async p => {
-            var addr = await Address.grab(p, !req.params.skipcache);
-            if (addr == null) {
-                return [];
+        while (limit && addrs.length) {
+            let addr = addrs.shift();
+            if (addr == null) continue;
+            let table = sprintf('address_unspent_outputs_%04d', addr.attrs.id % 10);
+
+            if (offset > 0) {
+                let sql = `select count(tx_id) as cnt from ${table} where address_id = ?`;
+                let cnt = await mysql.pluck(sql, 'cnt', [addr.attrs.id]);
+                log(`addr = ${addr.attrs.address}, table = ${table}, cnt = ${cnt}, offset = ${offset}`);
+                if (cnt < offset) {     //直接下一个地址
+                    offset -= cnt;
+                    continue;
+                }
             }
 
-            var table = sprintf('address_unspent_outputs_%04d', addr.attrs.id % 10);
-            var sql = `select tx_id, block_height, value
+            let sql = `select tx_id, block_height, value, position
                        from ${table}
-                       where address_id = ?
-                       order by tx_id asc, position asc, position2 asc`;
+                       where address_id = ? and value != 0
+                       order by block_height asc, position asc
+                       limit ?, ?`;
 
-            var rows = await mysql.query(sql, [addr.attrs.id]);
+            let rows = await mysql.query(sql, [addr.attrs.id, offset, limit]);
 
-            if (rows.length === 0) {
-                return [];
-            }
+            if (!rows.length) continue;
 
-            ret[p] = rows.map(r => ({
-                tx_index: r.tx_id,
-                value: r.value,
-                value_hex: r.value.toString(16),
-                confirmations: height - r.block_height + 1
-            }));
+            let txs = await Tx.multiGrab(rows.map(r => r.tx_id), !req.params.skipcache);
+
+            rows.every((r, i) => {
+                ret.push({
+                    address: addr.attrs.address,
+                    tx_hash: txs[i].hash,
+                    tx_index: r.tx_id,
+                    tx_output_n: r.position,
+                    script: txs[i].out[r.position].script,
+                    value: r.value,
+                    value_hex: r.value.toString(16),
+                    confirmations: height - r.block_height + 1
+                });
+                return --limit > 0;
+            });
+
+            offset = 0;
+        }
+
+        res.send({
+            unspent_outputs: ret
         });
-
-        res.send(ret);
         next();
     });
-    */
 };

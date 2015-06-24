@@ -76,8 +76,18 @@ while (true) {
         $newBlock->insert();
 
     } else {
-        $tempTxList = $bitcoinClient->getblocktemplate()['transactions'];
-        $newTxs = $pool->update(Collection::make($tempTxList));
+        $gbt = $bitcoinClient->getblocktemplate();
+        $gbtPrevHash = $gbt['previousblockhash'];
+
+        if ($gbtPrevHash != $queue->getBlock()->getHash()) {    //已出新块，立即处理
+            Log::info('获取的 gbt 与当前块 hash 不同，可能已出新块，立即处理', [
+                'local_hash' => $queue->getBlock()->getHash(),
+                'gtb_prev_hash' => $gbtPrevHash
+            ]);
+            continue;
+        }
+
+        $newTxs = $pool->update(Collection::make($gbt['transactions']));
         if (count($newTxs)) {
             Log::info(sprintf('检测到临时块新交易 %d 个', count($newTxs)));
             $pool->insert($newTxs);

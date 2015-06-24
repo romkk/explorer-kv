@@ -1,0 +1,29 @@
+---
+
+-   name: install deps
+    apt:
+        name: "{{ item }}"
+    with_items:
+        - php5-mysqlnd
+        - php5-curl
+        - php5-cli
+        - mysql-client
+    tags: install
+
+-   name: ensure dir
+    file:
+        path: /work/Explorer/daoru
+        state: directory
+    tags: install
+
+-   name: rsync source code
+    synchronize:
+        src: ..
+        dest: /work/Explorer/daoru
+    tags: sync
+
+-   name: copy env files
+    copy:
+        src: "{{ envfile }}"
+        dest: /work/Explorer/daoru/.env
+    tags: sync

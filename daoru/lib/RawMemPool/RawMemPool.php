@@ -26,15 +26,24 @@ class RawMemPool {
             return $tx->getHash();
         })->toArray();
 
+        // assert memory pool matches gbt
+        assert(count(array_diff($hashList, $txDataList->lists('hash'))) == 0, 'GBT results should contains all the txs in the mempool');
+
+        Log::info(sprintf('[mempool] count = %d', $this->length()), $hashList);
+        $diffHash = [];
+
         $diff = $txDataList->filter(function($txData) use (&$hashList, &$diff) {
             return !in_array($txData['hash'], $hashList);
-        })->map(function($txData) {
+        })->map(function($txData) use (&$diffHash) {
             $tx = new Tx($this->fakeBlock, $txData['hash']);
             $tx->setHex($txData['data']);
+            $diffHash[] = $txData['hash'];
             return $tx;
         });
 
         $this->queue = $this->queue->merge($diff);
+
+        Log::info(sprintf('[mempool] diff count = %d', count($diff)), $diffHash);
 
         return $diff;
     }
@@ -46,6 +55,8 @@ class RawMemPool {
         while ($this->queue->count()) {
             $this->queue->pop();
         }
+
+        Log::info(sprintf('[mempool] clear up, count = %d', $this->length()));
     }
 
     public function insert($newTxs) {

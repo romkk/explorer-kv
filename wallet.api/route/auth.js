@@ -95,7 +95,11 @@ module.exports = server => {
                 }
 
                 // 生成新的 token
-                res.send('your token');
+                let token = auth.issueToken(challengeInfo.wid, address);
+
+                res.send(_.extend(token, {
+                    success: true
+                }));
             } else {
                 res.send({
                     success: false,

@@ -10,6 +10,7 @@ var Random = require('bitcore').crypto.Random;
 var log = require('debug')('wallet:lib:auth');
 var bitcoind = require('./bitcoind');
 var Address = require('bitcore').Address;
+var config = require('config');
 
 if (_.isUndefined(process.env.SECRET_KEY)) {
     log('[WARN] 没有指定 secret key');
@@ -26,11 +27,37 @@ module.exports = {
     },
 
     issueToken(wid, address) {
+        var now = moment.utc().unix();
+        var token = {
+            expired_at: now + config.get('tokenExpiredOffset'),
+            wid: wid,
+            address: address
+        };
 
+        return {
+            token: module.exports.base64Encode(JSON.stringify(token)),
+            expired_at: token.expired_at
+        };
     },
 
-    verifyToken() {
+    verifyToken(tokenEncoded) {
+        var now = moment.utc().unix();
+        var decoded = module.exports.base64Decode(tokenEncoded);
+        if (decoded === false) {
+            return false;
+        }
+        var token;
+        try {
+            token = JSON.parse(decoded);
+        } catch (err) {
+            return false;
+        }
 
+        if (token.expired_at <= now) {
+            return false;
+        }
+
+        return token;
     },
 
     verifyHamc(str, signature) {

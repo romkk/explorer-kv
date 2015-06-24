@@ -111,6 +111,11 @@ class AddressTxList {
         var end = this._addr.end_tx_ymd;
         var start = this._addr.begin_tx_ymd;
         var table = Address.getAddressToTxTable(this._order === 'desc' ? Math.min(end, date) : Math.max(start, date));
+
+        if (table == null) {        // 不存在
+            return null;
+        }
+
         var sql;
 
         var height = await this.findHeight();

@@ -110,7 +110,7 @@ int main(int argc, char **argv) {
   }
 
   // 打印bitcoin network防止配置错误。N秒钟的倒计时显示
-  for (int i = 9; i >= 0; i--) {
+  for (int i = 4; i >= 0; i--) {
     string s = Strings::Format("\rbitcoin network: %s, %02d...",
                                Config::GConfig.getBool("testnet", false) ? "testnet3" : "main",
                                i);

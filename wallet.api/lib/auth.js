@@ -17,14 +17,6 @@ if (_.isUndefined(process.env.SECRET_KEY)) {
 
 var secretKey = new Buffer(process.env.SECRET_KEY || 'my mysterious key', 'utf8');
 
-function base64Encode(str) {
-    return _.trimRight(new Buffer(str, 'utf8').toString('base64'), '=');
-}
-
-function base64Decode(str) {
-    return new Buffer(str, 'base64').toString('utf8');
-}
-
 module.exports = {
     findIP(req, res, next) {
         var info = getIP(req);
@@ -41,67 +33,50 @@ module.exports = {
 
     },
 
-    makeChallenge(did, wid) {
+    verifyHamc(str, signature) {
+        return Hash.sha256hmac(new Buffer(str, 'utf8'), secretKey).toString('utf8') === signature;
+    },
+
+    async makeChallenge(wid) {
         var now = moment.utc().unix();
         var challenge = {
-            did: did,
             wid: wid,
             expired_at: now + 300,
-            nonce: Random.getRandomBuffer(3).toString('hex')
+            nonce: Random.getRandomBuffer(5).toString('hex')
         };
+
+        // 检查是否已注册过
+        var sql = `select address_bind from wallet where wid = ? limit 1`;
+        var addressBind = await mysql.pluck(sql, 'address_bind', [wid]);
+        if (!_.isNull(addressBind)) {
+            challenge.address = addressBind;
+        }
 
         challenge = JSON.stringify(challenge);
 
         var hmac = Hash.sha256hmac(new Buffer(challenge, 'utf8'), secretKey);
 
-        return {
-            challenge: base64Encode(challenge) + '.' + base64Encode(hmac),
+        var ret = {
+            challenge: module.exports.base64Encode(challenge) + '.' + module.exports.base64Encode(hmac),
             expired_at: now + 300
         };
+
+        if (!_.isNull(addressBind)) {
+            ret.address = addressBind;
+        }
+
+        return ret;
     },
 
-    decodeChallengeString(challengeStr) {
-        if (_.isUndefined(challengeStr)) {
-            return false;
-        }
-
-        try {
-            console.log(JSON.parse(base64Decode(challengeStr)));
-            return JSON.parse(base64Decode(challengeStr));
-        } catch (err) {
-            return false;
-        }
+    base64Encode(str) {
+        return _.trimRight(new Buffer(str, 'utf8').toString('base64'), '=');
     },
 
-    async verifyChallenge(signature, address, challengeString) {
-        var challenge = module.exports.decodeChallengeString(challengeString);
-        if (challenge === false) {
-            let e = new Error('invalid challenge string, parse error');
-            e.code = 'AuthInvalidChallenge';
-            return e;
-        }
-        var now = moment.utc().unix();
-        if (challenge.expired_at <= now) {
-            let e = new Error('invalid challenge string, timeout');
-            e.code = 'AuthInvalidChallenge';
-            return e;
-        }
-
+    base64Decode(str) {
         try {
-            var valid = await bitcoind('verifymessage', address, signature, challengeString);
-            if (valid) {
-                return {
-                    token: 'token',
-                    expired_at: '12345'
-                };
-            } else {
-                let e = new Error('invalid signature');
-                e.code = 'AuthInvalidSignature';
-                return e;
-            }
+            return new Buffer(str, 'base64').toString('utf8');
         } catch (err) {
-            log(`与 bitcoind 通信失败，error = ${JSON.stringify(err.error)}`);
-            throw err;
+            return false;
         }
     }
 };

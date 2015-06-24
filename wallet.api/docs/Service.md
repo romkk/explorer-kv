@@ -21,9 +21,7 @@
   'w_' + sha256(sha256($private_key))
   ```
 
-  服务端根据 walletid 来区分用户、保存备份、推送消息等。
-
-  以下以`wid`表示。
+  服务端根据 walletid 来区分用户、保存备份、推送消息等，以下以`wid`表示。
   
 ## 设备管理
 
@@ -80,7 +78,7 @@ DELETE /device/$wid/$did
     **Request**
 
     ```
-    GET /auth?device_id=$did&wid=$wid
+    GET /auth/:wid
     ```
 
     **Response**
@@ -88,7 +86,8 @@ DELETE /device/$wid/$did
     ```
     {
         "challenge": "ZGZkZmRmZA.ZGZkZmRmZA",
-        "expired_at": 1434360774
+        "expired_at": 1434360774,
+        "address": "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR"     -- 注意: 如果是初次登录，用任意地址签名即可；否则需要对指定地址做签名
     }
     ```
 
@@ -108,7 +107,7 @@ DELETE /device/$wid/$did
     {
         "challenge": "ZGZkZmRmZA.ZGZkZmRmZA",
         "signature": "signature",
-        "public_key": "my_pubkey"
+        "address": "address"
     }
     ```
 
@@ -133,7 +132,11 @@ DELETE /device/$wid/$did
     *   AuthInvalidChallenge
 
         待签名字符串过期或不存在。
-
+        
+    *   AuthNeedBindAddress
+        
+        待签名字符串已经被其他请求通过验证并处理，客户端重试认证流程即可。
+        
     *   AuthDenied
 
         其他原因导致的服务器拒绝登录。

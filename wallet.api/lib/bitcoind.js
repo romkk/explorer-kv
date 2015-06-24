@@ -18,8 +18,18 @@ module.exports = async (method, ...params) => {
                 sendImmediately: false
             }
         });
-        log(`RPC 调用完成: ${Date.now() - start} ms`);
-        return JSON.parse(response);
+        log(`RPC 调用完成: ${Date.now() - start} ms, response = ${JSON.stringify(response)}`);
+
+        if (response.error) {
+            let e = new Error('bitcoind RPC failed');
+            e.message = response.error.message;
+            e.code = response.error.code;
+            e.name = 'RPC failed';
+            e.error = response;
+            throw e;
+        }
+
+        return response.result;
     } catch (err) {
         log(`RPC 调用失败，message = ${err.message}, err = ${err.name}`);
         throw err;

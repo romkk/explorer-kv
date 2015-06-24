@@ -18,7 +18,7 @@
 
 -   name: rsync source code
     synchronize:
-        src: ..
+        src: ../../../../daoru/
         dest: /work/Explorer/daoru
     tags: sync
 

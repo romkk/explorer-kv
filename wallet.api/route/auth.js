@@ -40,11 +40,7 @@ module.exports = server => {
             return next();
         }
 
-        challengeStr = auth.base64Decode(challengeStr);
-        selfSignature = auth.base64Decode(selfSignature);
-
-        if (challengeStr === false || selfSignature === false ||
-                !auth.verifyHamc(challengeStr, selfSignature)) {
+        if (!auth.verifyHmac(challengeStr, selfSignature)) {
             res.send({
                 success: false,
                 code: 'AuthInvalidChallenge',
@@ -53,7 +49,7 @@ module.exports = server => {
             return next();
         }
 
-        var challengeInfo = JSON.parse(challengeStr);
+        var challengeInfo = JSON.parse(auth.base64Decode(challengeStr));
 
         if (challengeInfo.address && challengeInfo.address != address) {
             res.send({

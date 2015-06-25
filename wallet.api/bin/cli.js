@@ -40,6 +40,8 @@ server.use(restify.bodyParser());
 server.use(expressValidator());
 server.use(restify.gzipResponse());
 
+server.use(auth.tokenMiddleware());
+
 server.on('after', restify.auditLogger({
     log: bunyan.createLogger({
         name: 'Audit',

@@ -29,26 +29,33 @@ module.exports = {
     issueToken(wid, address) {
         var now = moment.utc().unix();
         var token = {
-            expired_at: now + config.get('tokenExpiredOffset'),
             wid: wid,
-            address: address
+            expired_at: now + config.get('tokenExpiredOffset')
         };
 
+        var l = JSON.stringify(token);
+        var r = Hash.sha256hmac(new Buffer(l, 'utf8'), secretKey);
+
         return {
-            token: module.exports.base64Encode(JSON.stringify(token)),
+            token: module.exports.base64Encode(l) + '.' + module.exports.base64Encode(r),
             expired_at: token.expired_at
         };
     },
 
-    verifyToken(tokenEncoded) {
+    verifyToken(tokenString) {
         var now = moment.utc().unix();
-        var decoded = module.exports.base64Decode(tokenEncoded);
-        if (decoded === false) {
+        var [tokenEncoded, selfSignature] = tokenString.split('.');
+        if (_.isUndefined(tokenEncoded) || _.isUndefined(selfSignature)) {
             return false;
         }
+
+        if (!module.exports.verifyHmac(tokenEncoded, selfSignature)) {
+            return false;
+        }
+
         var token;
         try {
-            token = JSON.parse(decoded);
+            token = JSON.parse(module.exports.base64Decode(tokenEncoded));
         } catch (err) {
             return false;
         }
@@ -60,8 +67,30 @@ module.exports = {
         return token;
     },
 
-    verifyHamc(str, signature) {
-        return Hash.sha256hmac(new Buffer(str, 'utf8'), secretKey).toString('utf8') === signature;
+    tokenMiddleware() {
+        return async (req, res, next) => {
+            if (req.path().startsWith('/auth')) {
+                return next();
+            }
+
+            var token;
+            if (!(token = req.headers['x-wallet-token'])) {
+                return next(new restify.UnauthorizedError('missing token'));
+            }
+
+            token = module.exports.verifyToken(token);
+
+            if (token === false) {
+                return next(new restify.UnauthorizedError('invalid token'));
+            }
+
+            req.token = token;
+            next();
+        };
+    },
+
+    verifyHmac(str, signature) {
+        return signature === Hash.sha256hmac(new Buffer(str, 'base64'), secretKey).toString('base64');
     },
 
     async makeChallenge(wid) {
@@ -101,6 +130,9 @@ module.exports = {
 
     base64Decode(str) {
         try {
+            if (Buffer.isBuffer(str)) {
+                return str.toString('utf8');
+            }
             return new Buffer(str, 'base64').toString('utf8');
         } catch (err) {
             return false;

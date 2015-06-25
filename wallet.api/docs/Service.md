@@ -143,7 +143,7 @@ DELETE /device/$wid/$did
 
 ### 会话
 
-在登录完成后，与服务器的会话使用`token`认证，即在 HTTP Request Header 中加入以下字段：
+在登录完成后，与服务器的会话使用`token`认证。需在 HTTP Request Header 中加入以下字段：
 
 ```
 X-Wallet-Token: $token
@@ -156,21 +156,9 @@ HTTP/1.1 401 Unauthorized
 
 {
     "message": "Invalid Token",
-    "code": "AUTH_INVALID_TOKEN"
+    "code": "UnauthorizedError"
 }
 ```
-
-可能的错误码：
-
-* AuthTokenExpired
-
-  token 过期。
-
-* AuthInvalidToken
-
-  token 非法。
-
-在鉴权失败后，客户端需要重新发起登录过程。
 
 ## 交易
 

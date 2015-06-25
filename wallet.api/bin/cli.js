@@ -50,6 +50,13 @@ server.on('after', restify.auditLogger({
 }));
 
 server.use((req, res, next) => {
+    if (!req.is('json')) {
+        return next(new restify.BadRequestError('Content-Type need to be "application/json"'));
+    }
+    next();
+});
+
+server.use((req, res, next) => {
     log(`URL: ${req.url}`);
     req.checkParams('skipcache', 'should be boolean').optional().isBoolean();
     req.sanitize('skipcache').toBoolean(true);

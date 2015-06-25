@@ -23,52 +23,6 @@
 
   服务端根据 walletid 来区分用户、保存备份、推送消息等，以下以`wid`表示。
   
-## 设备管理
-
-###  注册
-
-用户使用的设备需要经过注册，以提供信息推送等功能。
-
-**Request**
-
-```
-POST /device/$wid/$did
-```
-
-**Response**
-
-```
-{
-    success: true
-}
-```
-
-可能的错误码：
-
-*   RegisterTooManyDevices
-
-    `wid`对应的已注册的设备过多；当前最多不能超过 16 个。
-    
-*   RegisterDeviceAlreadyTaken
-
-    该`device_id`已经对应一个`wid`。
-    
-### 注销
-
-**Reqeust**
-
-```
-DELETE /device/$wid/$did
-```
-
-**Response**
-
-```
-{
-    success: true
-}
-```
-
 ## 鉴权
 
 ### 登录
@@ -163,6 +117,52 @@ HTTP/1.1 401 Unauthorized
 ### 跳过鉴权
 
 开发时可以跳过鉴权，在 url 中加入`skipauth=1`即可。
+
+## 设备管理
+
+###  注册
+
+用户使用的设备需要经过注册，以提供信息推送等功能。
+
+**Request**
+
+```
+POST /device/$wid/$did
+```
+
+**Response**
+
+```
+{
+    success: true
+}
+```
+
+可能的错误码：
+
+*   RegisterTooManyDevices
+
+    `wid`对应的已注册的设备过多；当前最多不能超过 16 个。
+    
+*   RegisterDeviceAlreadyTaken
+
+    该`device_id`已经对应一个`wid`。
+    
+### 注销
+
+**Reqeust**
+
+```
+DELETE /device/$wid/$did
+```
+
+**Response**
+
+```
+{
+    success: true
+}
+```
 
 ## 交易
 

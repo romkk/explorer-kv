@@ -131,9 +131,10 @@ module.exports = server => {
         var hex = String(req.body.hex);
 
         try {
-            await bitcoind('sendrawtransaction', hex);
+            var txHash = await bitcoind('sendrawtransaction', hex);
             res.send({
-                success: true
+                success: true,
+                tx_hash: txHash
             });
         } catch (err) {
             if (err.name == 'StatusCodeError') {

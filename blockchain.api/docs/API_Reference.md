@@ -256,6 +256,44 @@ TODO
 
 ```
 
+### Unspent
+
+#### Request
+
+```
+GET /unspent
+```
+
+|参数|描述|位置|必须|数据类型|
+|---|---|---|---|---|
+|active|多个比特币地址，使用 <code>&#124;</code> 分隔，最多 128 个地址|Query|√|string|
+|offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
+|limit|返回结果集个数，要求大于`1`小于`200`，默认为`200`|Query|✗|Int|
+
+#### Response
+
+返回的 unspent 按照确认数递减。`n_tx`字段标记了 unspent 的个数，与传入的 address 一一对应。
+
+```JSON
+{
+    "unspent_outputs": [
+        {
+            "address": "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR",
+            "tx_hash": "45cd71ad28c541c4ee507bac39017e89fbc028e11ebaa129c562600a71ded67f",
+            "tx_index": 63000067633,
+            "tx_output_n": 0,
+            "script": "76a914fdb9fb622b0db8d9121475a983288a0876f4de4888ac",
+            "value": 1250120000,
+            "value_hex": "4a835140",
+            "confirmations": 1
+        }
+    ],
+    "n_tx": [
+        61239
+    ]
+}
+```
+
 ### Latest Block
 
 #### Request

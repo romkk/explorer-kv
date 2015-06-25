@@ -44,7 +44,7 @@ module.exports = server => {
             res.send({
                 success: false,
                 code: 'AuthInvalidChallenge',
-                message: 'invalid challenge string or signature, decode error'
+                message: 'invalid challenge string or signature, verify failed'
             });
             return next();
         }

@@ -90,7 +90,7 @@ module.exports = {
     },
 
     verifyHmac(str, signature) {
-        return signature === Hash.sha256hmac(new Buffer(str, 'base64'), secretKey).toString('base64');
+        return signature === module.exports.base64Encode(Hash.sha256hmac(new Buffer(str, 'base64'), secretKey));
     },
 
     async makeChallenge(wid) {
@@ -125,6 +125,9 @@ module.exports = {
     },
 
     base64Encode(str) {
+        if (Buffer.isBuffer(str)) {
+            return _.trimRight(str.toString('base64'), '=');
+        }
         return _.trimRight(new Buffer(str, 'utf8').toString('base64'), '=');
     },
 

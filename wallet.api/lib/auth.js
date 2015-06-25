@@ -67,13 +67,13 @@ module.exports = {
         return token;
     },
 
-    tokenMiddleware() {
+    tokenMiddleware(whitelist = []) {
         return async (req, res, next) => {
             if (process.env.SKIP_AUTH && req.query.skipauth == '1') {
                 return next();
             }
 
-            if (req.path().startsWith('/auth')) {
+            if (whitelist.some(path => req.path().startsWith(path))) {
                 return next();
             }
 

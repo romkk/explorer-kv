@@ -51,7 +51,7 @@ server.on('after', restify.auditLogger({
 
 // 检查 request header
 server.use((req, res, next) => {
-    if (!req.is('json')) {
+    if (req.method != 'GET' && !req.is('json')) {
         return next(new restify.BadRequestError('Content-Type need to be "application/json"'));
     }
     next();

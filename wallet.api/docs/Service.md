@@ -39,9 +39,9 @@
 
     ```
     {
-        "challenge": "ZGZkZmRmZA.ZGZkZmRmZA",
-        "expired_at": 1434360774,
-        "address": "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR"     -- 注意: 如果是初次登录，用任意地址签名即可；否则需要对指定地址做签名
+        "address": "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR",    -- 如果不是初次认证，则需要使用该地址进行签名；否则用任意地址签名即可
+        "challenge": "eyJ3aWQiOiJ3XzJiMWVkZDI1Mzc0MDMzOWM1MWNiYTBkNGQ4NmM3MjNiYjRkMWNiMWNmMzA4ZTE5NzUxODk1ODQ3MzYzNTI2M2QiLCJleHBpcmVkX2F0IjoxNDM1MjE2MTI0LCJub25jZSI6IjUxMjlmNWJiOTIiLCJhZGRyZXNzIjoibXRKTDhLZVR1Z2NmMllDcXZ4YkZhdFViTllEeXdCRmZOUiJ9.c4M9WxmypJQB8pApexRLeQG6kiu1Hdav7G/UzxYIxqE",
+        "expired_at": 1435216124
     }
     ```
 
@@ -59,9 +59,9 @@
     POST /auth
 
     {
-        "challenge": "ZGZkZmRmZA.ZGZkZmRmZA",
-        "signature": "signature",
-        "address": "address"
+        "address": "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR",    -- 如果不是首次认证，需要与指定的地址一致；否则传入任意地址，该 wid 将于该地址绑定
+        "challenge": "eyJ3aWQiOiJ3XzJiMWVkZDI1Mzc0MDMzOWM1MWNiYTBkNGQ4NmM3MjNiYjRkMWNiMWNmMzA4ZTE5NzUxODk1ODQ3MzYzNTI2M2QiLCJleHBpcmVkX2F0IjoxNDM1MjA1ODI3LCJub25jZSI6IjA0MDAxMTE0OTciLCJhZGRyZXNzIjoibXRKTDhLZVR1Z2NmMllDcXZ4YkZhdFViTllEeXdCRmZOUiJ9.4qgCCmDnb03BtA2tMXC9+LJWIgSGGKi2/gM0gtH41+I",
+        "signature": "H5YB9+qSvk1MU3FWrt72VI1qB7MvnRk8NVaIpCeFP2vIAWVdSz99In40o3yJFWY/fTR458xWy8110QmCnjWRjJA="
     }
     ```
 

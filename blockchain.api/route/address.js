@@ -146,7 +146,9 @@ module.exports = (server) => {
             };
         });
 
-        res.send(ret);
+        res.send({
+            addresses: ret
+        });
         next();
     });
 };

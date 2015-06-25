@@ -21,6 +21,8 @@ Log::info(sprintf('初始化：生成块队列完成，长度为 %d', $queue->le
 
 // 3. loop
 while (true) {
+    reportStatus('MAIN.PHP');
+
     Log::info('获取当前最新块信息');
     $latestRemoteBlockInfo = $bitcoinClient->bm_get_best_block();
     Log::info('当前最新块信息', $latestRemoteBlockInfo);

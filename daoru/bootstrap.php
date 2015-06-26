@@ -43,7 +43,8 @@ function reportStatus($value = null) {
             'query' => [
                 'service' => $service,
                 'value' => $value
-            ]
+            ],
+            'timeout' => 3
         ]);
         Log::info('reportStatus: success');
     } catch (GuzzleHttp\Exception\TransferException $e) {

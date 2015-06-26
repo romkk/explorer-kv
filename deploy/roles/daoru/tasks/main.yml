@@ -3,27 +3,40 @@
 -   name: install deps
     apt:
         name: "{{ item }}"
+        update_cache: yes
+        cache_valid_time: 604800
     with_items:
         - php5-mysqlnd
         - php5-curl
         - php5-cli
-        - mysql-client
     tags: install
 
 -   name: ensure dir
     file:
-        path: /work/Explorer/daoru
+        path: /work/Explorer/{{ daoru_name }}
         state: directory
-    tags: install
+    tags: sync
 
 -   name: rsync source code
     synchronize:
         src: ../../../../daoru/
-        dest: /work/Explorer/daoru
+        dest: /work/Explorer/{{ daoru_name }}
+    notify:
+        - Restart supervised process
     tags: sync
 
 -   name: copy env files
     copy:
-        src: "{{ envfile }}"
-        dest: /work/Explorer/daoru/.env
+        src: "{{ daoru_envfile }}"
+        dest: /work/Explorer/{{ daoru_name }}/.env
+    notify:
+        - Restart supervised process
+    tags: sync
+
+-   name: copy supervisord files
+    template:
+        src: supervisor.conf
+        dest: /etc/supervisor/conf.d/{{ daoru_name }}.conf
+    notify:
+        - Restart supervised process
     tags: sync

@@ -9,7 +9,8 @@ class AddressTxList {
 
     constructor(addr, ts = null, order = 'desc') {
         this._addr = addr;
-        this._ts = ts == null ? (order === 'desc' ? moment.utc().unix() : 0) : ts;
+        //如果未指定时间，且为倒排，在使用当前时间做为起点时会漏掉交易
+        this._ts = ts == null ? (order === 'desc' ? moment.utc().add(1, 'y').unix() : 0) : ts;
         this._order = order;
         this._idx = 0;
     }
@@ -18,7 +19,7 @@ class AddressTxList {
         var addrMapTableProp = `${this._order === 'desc' ? 'prev' : 'next'}_ymd`;
 
         var ret = [];
-        var table = await this.findFirstTable(this._ts, this._order);
+        var table = await this.findFirstTable();
 
         if (this._addr.tx_count <= offset) {
             return ret;

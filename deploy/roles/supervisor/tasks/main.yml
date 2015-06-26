@@ -1,8 +1,0 @@
----
-
--   name: install supervisor
-    apt:
-        name: supervisor
-        update_cache: yes
-        cache_valid_time: 604800
-    tags: install

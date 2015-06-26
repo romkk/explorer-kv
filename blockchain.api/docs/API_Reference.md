@@ -52,7 +52,7 @@ TODO
 * Get Block By Block Id
 
         GET /rawblock/${block_id}
-        
+
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |block_id|块内部 id|Path|√|Int|
@@ -63,14 +63,14 @@ TODO
 * Get Block By Hash
 
         GET /rawblock/${block_hash}
-        
+
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |block_hash|块哈希|Path|√|Int|
     |fulltx|是否显示详细的交易信息，默认为`false`|Query|✗|Boolean|
     |offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
     |limit|返回结果集个数，要求大于`1`小于`50`，默认为`50`|Query|✗|Int|
-        
+
 * Get Block By Height
 
         GET /block-height/${block_height}
@@ -78,9 +78,9 @@ TODO
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |block_height|块高度|Path|√|Int|
-    
+
     注意：该接口不支持`fulltx`、`offset`和`limit`。
-           
+
 
 #### Response
 
@@ -123,12 +123,12 @@ TODO
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |tx_id|交易 id|Path|√|String|
-    
+
 * [PRIVATE] Get Multiple Transactions
 
         GET /rawtx/${tx_id},${tx_id}...
-        
-    可以传入多个`tx_id`，使用`,`分隔。    
+
+    可以传入多个`tx_id`，使用`,`分隔。
 
 #### Response
 
@@ -174,7 +174,7 @@ TODO
 #### Request
 
     GET /address/${bitcoin_address}
-    
+
 |参数|描述|位置|必须|数据类型|
 |---|---|---|---|---|
 |bitcoin_address|比特币地址|Path|√|String|
@@ -219,13 +219,13 @@ TODO
     "txs":[--Array of Transactions--]
 }
 ```
-    
+
 ### Multi Address
 
 #### Request
 
     GET /multiaddr
-    
+
 |参数|描述|位置|必须|数据类型|
 |---|---|---|---|---|
 |active|多个比特币地址，使用 <code>&#124;</code> 分隔，最多 128 个地址|Query|√|string|
@@ -255,6 +255,25 @@ TODO
 }
 
 ```
+
+### MultiAddress TxList
+
+#### Request
+
+```
+GET /address-tx/
+```
+
+|参数|描述|位置|必须|数据类型|
+|---|---|---|---|---|
+|active|多个比特币地址，使用 <code>&#124;</code> 分隔，最多 256 个地址|Query|√|string|
+|timestamp|返回结果集开始的时间戳，默认为查询时间|Query|✗|Int|
+|limit|返回结果集个数，要求大于`1`小于`50，默认为`50`|Query|✗|Int|
+|sort|排序方式，可选为`desc`和`asc`，默认为`desc`|Query|✗|String|
+
+#### Response
+
+TODO
 
 ### Unspent
 
@@ -299,7 +318,7 @@ GET /unspent
 #### Request
 
     GET /latestblock
-    
+
 #### Response
 
 ```JSON
@@ -316,7 +335,7 @@ GET /unspent
 #### Request
 
     GET /unconfirmed-transactions
-    
+
 #### Response
 
 ```JSON

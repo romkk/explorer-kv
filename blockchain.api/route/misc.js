@@ -83,7 +83,8 @@ module.exports = (server) => {
         var parts = req.params.active.trim().split('|');
         var offset = req.params.offset || 0;
         var limit = req.params.limit || 200;
-        var ret = [];
+        var unspent = [];
+        var count = [];
 
         var [height, addrs] = await* [Block.getLatestHeight(), Address.multiGrab(parts, !req.params.skipcache)];
 
@@ -92,17 +93,17 @@ module.exports = (server) => {
             if (addr == null) continue;
             let table = sprintf('address_unspent_outputs_%04d', addr.attrs.id % 10);
 
-            if (offset > 0) {
-                let sql = `select count(tx_id) as cnt from ${table} where address_id = ?`;
-                let cnt = await mysql.pluck(sql, 'cnt', [addr.attrs.id]);
-                log(`addr = ${addr.attrs.address}, table = ${table}, cnt = ${cnt}, offset = ${offset}`);
-                if (cnt < offset) {     //直接下一个地址
-                    offset -= cnt;
-                    continue;
-                }
+            let sql = `select count(tx_id) as cnt from ${table} where address_id = ?`;
+            let cnt = await mysql.pluck(sql, 'cnt', [addr.attrs.id]);
+            count.push(cnt);
+            log(`addr = ${addr.attrs.address}, table = ${table}, cnt = ${cnt}, offset = ${offset}`);
+
+            if (cnt < offset) {     //直接下一个地址
+                offset -= cnt;
+                continue;
             }
 
-            let sql = `select tx_id, block_height, value, position
+            sql = `select tx_id, block_height, value, position
                        from ${table}
                        where address_id = ? and value != 0
                        order by block_height asc, position asc
@@ -115,7 +116,7 @@ module.exports = (server) => {
             let txs = await Tx.multiGrab(rows.map(r => r.tx_id), !req.params.skipcache);
 
             rows.every((r, i) => {
-                ret.push({
+                unspent.push({
                     address: addr.attrs.address,
                     tx_hash: txs[i].hash,
                     tx_index: r.tx_id,
@@ -132,7 +133,8 @@ module.exports = (server) => {
         }
 
         res.send({
-            unspent_outputs: ret
+            unspent_outputs: unspent,
+            n_tx: count
         });
         next();
     });

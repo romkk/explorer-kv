@@ -21,10 +21,103 @@
   'w_' + sha256(sha256($private_key))
   ```
 
-  服务端根据 walletid 来区分用户、保存备份、推送消息等。
-
-  以下以`wid`表示。
+  服务端根据 walletid 来区分用户、保存备份、推送消息等，以下以`wid`表示。
   
+## 鉴权
+
+### 登录 √
+
+1.  客户端发起登录请求，服务端返回待签名字符串。待签名字符串在 300 秒后过期，届时需要重新申请。
+
+    **Request**
+
+    ```
+    GET /auth/:wid
+    ```
+
+    **Response**
+
+    ```
+    {
+        "address": "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR",    -- 如果不是初次认证，则需要使用该地址进行签名；否则用任意地址签名即可
+        "challenge": "eyJ3aWQiOiJ3XzJiMWVkZDI1Mzc0MDMzOWM1MWNiYTBkNGQ4NmM3MjNiYjRkMWNiMWNmMzA4ZTE5NzUxODk1ODQ3MzYzNTI2M2QiLCJleHBpcmVkX2F0IjoxNDM1MjE2MTI0LCJub25jZSI6IjUxMjlmNWJiOTIiLCJhZGRyZXNzIjoibXRKTDhLZVR1Z2NmMllDcXZ4YkZhdFViTllEeXdCRmZOUiJ9.c4M9WxmypJQB8pApexRLeQG6kiu1Hdav7G/UzxYIxqE",
+        "expired_at": 1435216124
+    }
+    ```
+
+2.  客户端使用私钥签名，签名方式如下：
+
+    ```
+    signature = sign_by_private_key($challenge, $privateKey)
+    ```
+
+    提交认证字符串：
+
+    **Request**
+
+    ```
+    POST /auth
+
+    {
+        "address": "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR",    -- 如果不是首次认证，需要与指定的地址一致；否则传入任意地址，该 wid 将于该地址绑定
+        "challenge": "eyJ3aWQiOiJ3XzJiMWVkZDI1Mzc0MDMzOWM1MWNiYTBkNGQ4NmM3MjNiYjRkMWNiMWNmMzA4ZTE5NzUxODk1ODQ3MzYzNTI2M2QiLCJleHBpcmVkX2F0IjoxNDM1MjA1ODI3LCJub25jZSI6IjA0MDAxMTE0OTciLCJhZGRyZXNzIjoibXRKTDhLZVR1Z2NmMllDcXZ4YkZhdFViTllEeXdCRmZOUiJ9.4qgCCmDnb03BtA2tMXC9+LJWIgSGGKi2/gM0gtH41+I",
+        "signature": "H5YB9+qSvk1MU3FWrt72VI1qB7MvnRk8NVaIpCeFP2vIAWVdSz99In40o3yJFWY/fTR458xWy8110QmCnjWRjJA="
+    }
+    ```
+
+    **Response**
+
+    成功：
+
+    ```
+    {
+        "success": true,
+        "token": "yourtoken",
+        "expired_at": "1434360614"
+    }
+    ```
+
+    可能的错误码：
+
+    *   AuthInvalidSignature
+
+        无效签名。
+
+    *   AuthInvalidChallenge
+
+        待签名字符串过期或不存在。
+        
+    *   AuthNeedBindAddress
+        
+        待签名字符串已经被其他请求通过验证并处理，客户端重试认证流程即可。
+        
+    *   AuthDenied
+
+        其他原因导致的服务器拒绝登录。
+
+### 会话 √
+
+在登录完成后，与服务器的会话使用`token`认证。需在 HTTP Request Header 中加入以下字段：
+
+```
+X-Wallet-Token: $token
+```
+
+会话请求到达服务器后，会首先经过鉴权模块，如果鉴权失败则有以下错误信息：
+
+```
+HTTP/1.1 401 Unauthorized
+
+{
+    "message": "Invalid Token",
+    "code": "UnauthorizedError"
+}
+```
+
+### 跳过鉴权 √
+
+开发时可以跳过鉴权，在 url 中加入`skipauth=1`即可。
+
 ## 设备管理
 
 ###  注册
@@ -71,104 +164,6 @@ DELETE /device/$wid/$did
 }
 ```
 
-## 鉴权
-
-### 登录
-
-1.  客户端发起登录请求，服务端返回待签名字符串。待签名字符串在 300 秒后过期，届时需要重新申请。
-
-    **Request**
-
-    ```
-    GET /auth?device_id=$did&wid=$wid
-    ```
-
-    **Response**
-
-    ```
-    {
-        "challenge": "ZGZkZmRmZA.ZGZkZmRmZA",
-        "expired_at": 1434360774
-    }
-    ```
-
-2.  客户端使用私钥签名，签名方式如下：
-
-    ```
-    signature = sign_by_private_key($challenge, $privateKey)
-    ```
-
-    提交认证字符串：
-
-    **Request**
-
-    ```
-    POST /auth
-
-    {
-        "challenge": "ZGZkZmRmZA.ZGZkZmRmZA",
-        "signature": "signature",
-        "public_key": "my_pubkey"
-    }
-    ```
-
-    **Response**
-
-    成功：
-
-    ```
-    {
-        "success": true,
-        "token": "yourtoken",
-        "expired_at": "1434360614"
-    }
-    ```
-
-    可能的错误码：
-
-    *   AuthInvalidSignature
-
-        无效签名。
-
-    *   AuthInvalidChallenge
-
-        待签名字符串过期或不存在。
-
-    *   AuthDenied
-
-        其他原因导致的服务器拒绝登录。
-
-### 会话
-
-在登录完成后，与服务器的会话使用`token`认证，即在 HTTP Request Header 中加入以下字段：
-
-```
-X-Wallet-Token: $token
-```
-
-会话请求到达服务器后，会首先经过鉴权模块，如果鉴权失败则有以下错误信息：
-
-```
-HTTP/1.1 401 Unauthorized
-
-{
-    "message": "Invalid Token",
-    "code": "AUTH_INVALID_TOKEN"
-}
-```
-
-可能的错误码：
-
-* AuthTokenExpired
-
-  token 过期。
-
-* AuthInvalidToken
-
-  token 非法。
-
-在鉴权失败后，客户端需要重新发起登录过程。
-
 ## 交易
 
 ### 查询交易记录
@@ -179,7 +174,7 @@ HTTP/1.1 401 Unauthorized
 
 请使用数据 API。
 
-### 提交构造交易请求
+### 提交构造交易请求 √
 
 **Request**
 
@@ -241,7 +236,7 @@ POST /tx
 
   余额不足。
 
-### 广播交易
+### 广播交易 √
 
 **Request**
 
@@ -267,7 +262,7 @@ POST /tx/publish
 
   发布失败，详细信息请关注`bitcoind`字段，含有调用 bitcoind 返回的错误信息。
 
-### 监控地址余额变动
+### 监控地址余额变动 [暂不实现]
 
 提交地址用于余额变动监控，每次最大 1024 个。
 

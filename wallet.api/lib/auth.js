@@ -10,20 +10,13 @@ var Random = require('bitcore').crypto.Random;
 var log = require('debug')('wallet:lib:auth');
 var bitcoind = require('./bitcoind');
 var Address = require('bitcore').Address;
+var config = require('config');
 
 if (_.isUndefined(process.env.SECRET_KEY)) {
     log('[WARN] 没有指定 secret key');
 }
 
 var secretKey = new Buffer(process.env.SECRET_KEY || 'my mysterious key', 'utf8');
-
-function base64Encode(str) {
-    return _.trimRight(new Buffer(str, 'utf8').toString('base64'), '=');
-}
-
-function base64Decode(str) {
-    return new Buffer(str, 'base64').toString('utf8');
-}
 
 module.exports = {
     findIP(req, res, next) {
@@ -34,74 +27,122 @@ module.exports = {
     },
 
     issueToken(wid, address) {
+        var now = moment.utc().unix();
+        var token = {
+            wid: wid,
+            expired_at: now + config.get('tokenExpiredOffset')
+        };
 
+        var l = JSON.stringify(token);
+        var r = Hash.sha256hmac(new Buffer(l, 'utf8'), secretKey);
+
+        return {
+            token: module.exports.base64Encode(l) + '.' + module.exports.base64Encode(r),
+            expired_at: token.expired_at
+        };
     },
 
-    verifyToken() {
+    verifyToken(tokenString) {
+        var now = moment.utc().unix();
+        var [tokenEncoded, selfSignature] = tokenString.split('.');
+        if (_.isUndefined(tokenEncoded) || _.isUndefined(selfSignature)) {
+            return false;
+        }
 
+        if (!module.exports.verifyHmac(tokenEncoded, selfSignature)) {
+            return false;
+        }
+
+        var token;
+        try {
+            token = JSON.parse(module.exports.base64Decode(tokenEncoded));
+        } catch (err) {
+            return false;
+        }
+
+        if (token.expired_at <= now) {
+            return false;
+        }
+
+        return token;
     },
 
-    makeChallenge(did, wid) {
+    tokenMiddleware(whitelist = []) {
+        return async (req, res, next) => {
+            if (process.env.SKIP_AUTH && req.query.skipauth == '1') {
+                return next();
+            }
+
+            if (whitelist.some(path => req.path().startsWith(path))) {
+                return next();
+            }
+
+            var token;
+            if (!(token = req.headers['x-wallet-token'])) {
+                return next(new restify.UnauthorizedError('missing token'));
+            }
+
+            token = module.exports.verifyToken(token);
+
+            if (token === false) {
+                return next(new restify.UnauthorizedError('invalid token'));
+            }
+
+            req.token = token;
+            next();
+        };
+    },
+
+    verifyHmac(str, signature) {
+        return signature === module.exports.base64Encode(Hash.sha256hmac(new Buffer(str, 'base64'), secretKey));
+    },
+
+    async makeChallenge(wid) {
         var now = moment.utc().unix();
         var challenge = {
-            did: did,
             wid: wid,
             expired_at: now + 300,
-            nonce: Random.getRandomBuffer(3).toString('hex')
+            nonce: Random.getRandomBuffer(5).toString('hex')
         };
+
+        // 检查是否已注册过
+        var sql = `select address_bind from wallet where wid = ? limit 1`;
+        var addressBind = await mysql.pluck(sql, 'address_bind', [wid]);
+        if (!_.isNull(addressBind)) {
+            challenge.address = addressBind;
+        }
 
         challenge = JSON.stringify(challenge);
 
         var hmac = Hash.sha256hmac(new Buffer(challenge, 'utf8'), secretKey);
 
-        return {
-            challenge: base64Encode(challenge) + '.' + base64Encode(hmac),
+        var ret = {
+            challenge: module.exports.base64Encode(challenge) + '.' + module.exports.base64Encode(hmac),
             expired_at: now + 300
         };
+
+        if (!_.isNull(addressBind)) {
+            ret.address = addressBind;
+        }
+
+        return ret;
     },
 
-    decodeChallengeString(challengeStr) {
-        if (_.isUndefined(challengeStr)) {
-            return false;
+    base64Encode(str) {
+        if (Buffer.isBuffer(str)) {
+            return _.trimRight(str.toString('base64'), '=');
         }
-
-        try {
-            console.log(JSON.parse(base64Decode(challengeStr)));
-            return JSON.parse(base64Decode(challengeStr));
-        } catch (err) {
-            return false;
-        }
+        return _.trimRight(new Buffer(str, 'utf8').toString('base64'), '=');
     },
 
-    async verifyChallenge(signature, address, challengeString) {
-        var challenge = module.exports.decodeChallengeString(challengeString);
-        if (challenge === false) {
-            let e = new Error('invalid challenge string, parse error');
-            e.code = 'AuthInvalidChallenge';
-            return e;
-        }
-        var now = moment.utc().unix();
-        if (challenge.expired_at <= now) {
-            let e = new Error('invalid challenge string, timeout');
-            e.code = 'AuthInvalidChallenge';
-            return e;
-        }
-
+    base64Decode(str) {
         try {
-            var valid = await bitcoind('verifymessage', address, signature, challengeString);
-            if (valid) {
-                return {
-                    token: 'token',
-                    expired_at: '12345'
-                };
-            } else {
-                let e = new Error('invalid signature');
-                e.code = 'AuthInvalidSignature';
-                return e;
+            if (Buffer.isBuffer(str)) {
+                return str.toString('utf8');
             }
+            return new Buffer(str, 'base64').toString('utf8');
         } catch (err) {
-            log(`与 bitcoind 通信失败，error = ${JSON.stringify(err.error)}`);
-            throw err;
+            return false;
         }
     }
 };

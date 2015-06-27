@@ -44,7 +44,9 @@ function reportStatus($value = null) {
                 'service' => $service,
                 'value' => $value
             ],
-            'timeout' => 3
+            'timeout' => 3,
+            'connect_timeout' => 3,
+            'version' => 1.0        //set http version to 1.0 to close the tcp connection !!!
         ]);
         Log::info('reportStatus: success');
     } catch (GuzzleHttp\Exception\TransferException $e) {

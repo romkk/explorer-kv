@@ -22,6 +22,12 @@ require __DIR__ . '/bootstrap/database.php';
 
 # util
 function reportStatus($value = null) {
+    static $client = null;
+
+    if (is_null($client)) {
+        $client = new Client();
+    }
+
     $url = Config::get('app.monitor_endpoint');
     $service = Config::get('app.monitor_service_name');
 
@@ -38,15 +44,13 @@ function reportStatus($value = null) {
     Log::info(sprintf('service = %s, value = %s', $service, $value));
 
     try {
-        $client = new Client();
         $client->get($url, [
             'query' => [
                 'service' => $service,
                 'value' => $value
             ],
             'timeout' => 3,
-            'connect_timeout' => 3,
-            'version' => 1.0        //set http version to 1.0 to close the tcp connection !!!
+            'connect_timeout' => 3
         ]);
         Log::info('reportStatus: success');
     } catch (GuzzleHttp\Exception\TransferException $e) {

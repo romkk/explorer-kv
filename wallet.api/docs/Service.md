@@ -298,7 +298,8 @@ POST /address
 POST /multi-signature-addr
 
 {
-    "creator_name": "Bitmain",
+    "account_name": "Bitmain",
+    "creator_name": "hammer",
     "creator_pubkey": "0491bba2510912a5bd37da1fb5b1673010e43d2c6d812c514e91bfa9f2eb129e1c183329db55bd868e209aac2fbc02cb33d98fe74bf23f0c235d6126b1d8334f86",
     "m": 3,
     "n": 2
@@ -309,8 +310,23 @@ POST /multi-signature-addr
 
 ```
 {
-    "success": true,
-    "multi_signature_id": 1
+    "account_name": "Bitmain",
+    "complete": false,
+    "generated_address": null,
+    "id": 17,
+    "m": 2,
+    "n": 1,
+    "participants": [
+        {
+            "is_creator": true,
+            "joined_at": 1435690258,
+            "name": "hammer",
+            "pos": 0,
+            "pubkey": "0491bba2510912a5bd37da1fb5b1673010e43d2c6d812c514e91bfa9f2eb129e1c183329db55bd868e209aac2fbc02cb33d98fe74bf23f0c235d6126b1d8334f86"
+        }
+    ],
+    "redeem_script": null,
+    "success": true
 }
 ```
 
@@ -408,7 +424,7 @@ PUT /multi-signature-addr/:id
 
 *   MultiSignatureAccountDuplicateName
 
-    名称重复。
+    用户名称重复。
 
 *   MultiSignatureAccountJoinCompleted
 

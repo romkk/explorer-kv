@@ -17,22 +17,22 @@ class MultiSig {
         return _.isNull(row);
     }
 
-    static async nameValid(id, name) {
+    static async participantNameValid(id, name) {
         let sql = `select id from multisig_account_participant
                    where multisig_account_id = ? and participant_name = ? limit 1`;
         let row = await mysql.selectOne(sql, [id, name]);
         return _.isNull(row);
     }
 
-    static async createAccount(wid, m, n, creatorPubKey, creatorName) {
+    static async createAccount(wid, accountName, m, n, creatorPubKey, creatorName) {
         let multiAccountId, multiAccountParticipantId;
 
         /**
          * 如有异常，直接抛出
          */
         await mysql.transaction(async conn => {
-            let accountSql = `insert into multisig_account (wid, m, n, created_at, updated_at) values (?, ?, ?, now(), now())`;
-            let result = await conn.query(accountSql, [wid, m, n]);
+            let accountSql = `insert into multisig_account (wid, account_name, m, n, created_at, updated_at) values (?, ?, ?, ?, now(), now())`;
+            let result = await conn.query(accountSql, [wid, accountName, m, n]);
             multiAccountId = result.insertId;
             let participantSql = `insert into multisig_account_participant
                                     (multisig_account_id, role, participant_name, pubkey, pos, created_at, updated_at)
@@ -48,7 +48,7 @@ class MultiSig {
     }
 
     static async getAccountStatus(wid, id) {
-        let sql = `select id, m, n, generated_address, redeem_script
+        let sql = `select id, account_name, m, n, generated_address, redeem_script
                    from multisig_account
                    where wid = ? and id = ? limit 1`;
 

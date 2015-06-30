@@ -12,7 +12,8 @@ module.exports = server => {
     server.post('/multi-signature-addr', validate('createMultiSignatureAccount'), async (req, res, next) => {
         let m = req.body.m, n = req.body.n,
             creatorName = req.body.creator_name,
-            creatorPubkey = req.body.creator_pubkey;
+            creatorPubkey = req.body.creator_pubkey,
+            accountName = req.body.account_name;
 
         if (n > m) {
             res.send({
@@ -34,11 +35,10 @@ module.exports = server => {
         }
 
         try {
-            let result = await MultiSig.createAccount(req.token.wid, m, n, creatorPubkey, creatorName);
-            res.send({
-                success: true,
-                multi_signature_id: result.multiAccountId
-            });
+            let result = await MultiSig.createAccount(req.token.wid, accountName, m, n, creatorPubkey, creatorName);
+            res.send(_.extend({}, await MultiSig.getAccountStatus(req.token.wid, result.multiAccountId), {
+                success: true
+            }));
         } catch (err) {
             res.send({
                 success: false,
@@ -117,7 +117,7 @@ module.exports = server => {
             return next();
         }
 
-        if (!(await MultiSig.nameValid(status.id, participantName))) {
+        if (!(await MultiSig.participantNameValid(status.id, participantName))) {
             res.send({
                 success: false,
                 code: 'MultiSignatureAccountDuplicateName',

@@ -104,7 +104,7 @@ var schema = {
 
     createMultiSignatureAccount: {
         type: 'object',
-        required: ['creator_name', 'creator_pubkey', 'm', 'n'],
+        required: ['creator_name', 'creator_pubkey', 'account_name', 'm', 'n'],
         properties: {
             creator_name: {
                 type: 'string',
@@ -112,6 +112,11 @@ var schema = {
                 maxLength: 256
             },
             creator_pubkey: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 150
+            },
+            account_name: {
                 type: 'string',
                 minLength: 1,
                 maxLength: 150

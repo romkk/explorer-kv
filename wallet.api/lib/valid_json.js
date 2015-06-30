@@ -92,11 +92,56 @@ var schema = {
         required: ['device_id', 'os'],
         properties: {
             device_id: {
-                type: 'string'
+                type: 'string',
+                minLength: 1
             },
             os: {
                 type: 'string',
                 'enum': ['iOS', 'Android', 'Windows', 'Other']
+            }
+        }
+    },
+
+    createMultiSignatureAccount: {
+        type: 'object',
+        required: ['creator_name', 'creator_pubkey', 'm', 'n'],
+        properties: {
+            creator_name: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 256
+            },
+            creator_pubkey: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 150
+            },
+            m: {
+                type: 'integer',
+                maximum: 256,
+                minimum: 2
+            },
+            n: {
+                type: 'integer',
+                maximum: 255,
+                minimum: 1
+            }
+        }
+    },
+
+    updateMultiSignatureAccount: {
+        type: 'object',
+        required: ['name', 'pubkey'],
+        properties: {
+            name: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 256
+            },
+            pubkey: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 150
             }
         }
     }

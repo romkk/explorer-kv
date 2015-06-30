@@ -63,7 +63,8 @@ class MultiSig {
         });
 
         sql = `select * from multisig_account_participant
-               where multisig_account_id = ?`;
+               where multisig_account_id = ?
+               order by pos asc`;
 
         let participants = await mysql.query(sql, [id]);
 

@@ -273,7 +273,62 @@ GET /address-tx/
 
 #### Response
 
-TODO
+```
+[
+    {
+        "ver": 1,
+        "inputs": [
+            {
+                "sequence": 4294967295,
+                "script": "483045022100b9aab6f29265674b99a79adc26e9d4fc443077b1ec33adb682c21493b7bfdf570220173a06f4a3a9b47a8af543f9762fbe52aa39ef3d204ed1ee4f6a49bad2e8d07d012102c2ce65118ca9d9c39ce8e71edc39d17d9800ae3c0089931cb5e7e4a5ac98ff7b",
+                "prev_out": {
+                    "tx_index": 40000046077,
+                    "addr": [
+                        "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR"
+                    ],
+                    "value": 2500000010,
+                    "n": 0
+                }
+            }
+        ],
+        "block_height": 485338,
+        "out": [
+            {
+                "spent": false,
+                "tx_index": 4000068047,
+                "addr": [
+                    "mpZM35ZsEFQ7djDZL4UskcGmrVebsHAm76"
+                ],
+                "value": 100000000,
+                "n": 0,
+                "script": "76a914632cf2a914c58596ab5238c4162fb81a733654ed88ac"
+            },
+            {
+                "spent": false,
+                "tx_index": 4000068047,
+                "addr": [
+                    "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR"
+                ],
+                "value": 2399990010,
+                "n": 1,
+                "script": "76a9148c3673c9d3744197ea3c3f90d5b6437d393764ff88ac"
+            }
+        ],
+        "lock_time": 0,
+        "size": 226,
+        "time": 1435313711,
+        "tx_index": 4000068047,
+        "hash": "dbf23dc6101cafacaf3acec615864b4a82be7fe71802ff0bc19bd0ea01a6e784",
+        "vin_sz": 1,
+        "vout_sz": 2,
+        "is_coinbase": false,
+        "fee": 10000,
+        "total_in_value": 2500000010,
+        "total_out_value": 2499990010,
+        "confirmations": 1376
+    }
+]
+```
 
 ### Unspent
 

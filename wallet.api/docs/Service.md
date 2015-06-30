@@ -294,29 +294,72 @@ POST /address
 
 **Request**
 
-**Request**
-
 ```
 POST /multi-signature-addr
 
+{
+    "creator_name": "Bitmain",
+    "creator_pubkey": "0491bba2510912a5bd37da1fb5b1673010e43d2c6d812c514e91bfa9f2eb129e1c183329db55bd868e209aac2fbc02cb33d98fe74bf23f0c235d6126b1d8334f86",
+    "m": 3,
+    "n": 2
+}
 ```
 
 **Response**
 
 ```
-HTTP/1.1 201 CREATED
-
 {
+    "success": true,
+    "multi_signature_id": 1
 }
 ```
+
+可能的错误码：
+
+*   MultiSignatureAccountInvalidParticipantCount
+
+    指定的 M/N 无效。
+
+*   MultiSignatureAccountInvalidPubkey
+
+    指定的公钥无效，已被使用过或者非法。
+
+*   MultiSignatureAccountCreateFailed
+
+    多重签名账户创建失败，可能是竞态条件冲突等，重试即可。
 
 ### 查询创建状态
 
 **Reqeust**
 
 ```
-GET /multi-signature-addr/:addr
+GET /multi-signature-addr/:id
 ```
+
+**Response**
+
+```
+{
+    "success": true,
+    "complete": false,
+    "generated_address": null,      -- 当 complete 为 true 时，此字段标记了生成的地址
+    "redeem_script": null,          -- 同上
+    "id": 11,
+    "m": 1,
+    "n": 1,
+    "participant": [
+        {
+            "is_creator": true,             -- 接盘身份
+            "joined_at": 1435677824,        -- 接盘时间
+            "name": "haha",                 -- 接盘客名称
+            "pos": 0,                       -- 生成地址时传入的顺序
+            "pubkey": "04865c40293a680cb9c020e7b1e106d8c1916d3cef99aa431a56d253e69256dac09ef122b1a986818a7cb624532f062c1d1f8722084861c5c3291ccffef4ec6874"
+        }
+    ]
+}
+```
+
+如果查询的 id 不存在，则返回 404。
 
 ### 修改创建状态
 

@@ -113,7 +113,8 @@ var schema = {
             },
             creator_pubkey: {
                 type: 'string',
-                minLength: 1
+                minLength: 1,
+                maxLength: 150
             },
             m: {
                 type: 'integer',
@@ -124,6 +125,23 @@ var schema = {
                 type: 'integer',
                 maximum: 255,
                 minimum: 1
+            }
+        }
+    },
+
+    updateMultiSignatureAccount: {
+        type: 'object',
+        required: ['name', 'pubkey'],
+        properties: {
+            name: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 256
+            },
+            pubkey: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 150
             }
         }
     }

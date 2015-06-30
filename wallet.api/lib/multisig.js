@@ -4,17 +4,24 @@ let PublicKey = require('bitcore').PublicKey;
 let restify = require('restify');
 let log = require('debug')('wallet:lib:multisig');
 let moment = require('moment');
+let bitcoind = require('./bitcoind');
 
 class MultiSig {
 
-    static async pubkeyValid(pubKey) {
+    static async pubkeyValid(pubKey, name) {
         if (!PublicKey.isValid(pubKey)) {
             return false;
         }
+        let sql = `select id from multisig_account_participant where pubkey = ? limit 1`;
+        let row = await mysql.selectOne(sql, [pubKey]);
+        return _.isNull(row);
+    }
 
-        let sql = `select id from multisig_account_participant where pubkey = ?`;
-        let row = mysql.selectOne(sql, [pubKey]);
-        return _.isNull(await row);
+    static async nameValid(id, name) {
+        let sql = `select id from multisig_account_participant
+                   where multisig_account_id = ? and participant_name = ? limit 1`;
+        let row = await mysql.selectOne(sql, [id, name]);
+        return _.isNull(row);
     }
 
     static async createAccount(wid, m, n, creatorPubKey, creatorName) {
@@ -60,7 +67,7 @@ class MultiSig {
 
         let participants = await mysql.query(sql, [id]);
 
-        o.participant = participants.map(p => {
+        o.participants = participants.map(p => {
             return {
                 is_creator: p.role == 'Initiator',
                 name: p.participant_name,
@@ -73,8 +80,14 @@ class MultiSig {
         return o;
     }
 
-    static async joinAccount() {
-
+    static async joinAccount(id, name, pubkey, newPos) {
+        let sql = `insert into multisig_account_participant
+                   (multisig_account_id, role, participant_name, pubkey, pos, created_at, updated_at)
+                   values
+                   (?, ?, ?, ?, ?, now(), now())`;
+        //竞态条件冲突的异常抛出
+        let result = await mysql.query(sql, [id, 'Participant', name, pubkey, newPos]);
+        return result.insertId;
     }
 }
 

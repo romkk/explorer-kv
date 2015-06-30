@@ -49,11 +49,11 @@ class Mysql {
         return err;
     }
 
-    query(sql, vars = []) {
+    query(sql, vars = [], conn = this.pool) {
         log(`SQL: ${sql}, bindings: ${vars}`);
         let start = Date.now();
         return new Promise((resolve, reject) => {
-            this.pool.query(sql, vars, (err, rows) => {
+            conn.query(sql, vars, (err, rows) => {
                 if (err) {
                     return reject(this.handleError(err));
                 }
@@ -63,25 +63,88 @@ class Mysql {
         });
     }
 
-    selectOne(sql, vars = []) {
-        return this.query(sql, vars)
+    selectOne(sql, vars = [], conn = this.pool) {
+        return this.query(sql, vars, conn)
             .then(rows => {
                 return rows && rows.length ? rows[0] : null;
             });
     }
 
-    list(sql, key, vars = []) {
-        return this.query(sql, vars)
+    list(sql, key, vars = [], conn = this.pool) {
+        return this.query(sql, vars, conn)
             .then(rows => {
                 return rows.map(r => r[key]);
             });
     }
 
-    pluck(sql, key, vars = []) {
-        return this.selectOne(sql, vars)
+    pluck(sql, key, vars = [], conn = this.pool) {
+        return this.selectOne(sql, vars, conn)
             .then(row => {
                 return row ? row[key] : null;
             });
+    }
+
+    async transaction(cb) {
+        let c;
+
+        let rollback = err => {
+            // 回滚失败无需处理，mysql 会自行处理
+            log(`rollback, message = ${err.message}`);
+            c.conn.rollback(err => {
+                if (err) {
+                    log(`[ERROR] rollback error, message = ${err.message}`);
+                }
+                log(`rollback success`);
+            });
+        };
+
+        try {
+            c = await new Promise((resolve, reject) => {
+                this.pool.getConnection((err, conn) => {
+                    if (err) return reject(err);
+                    conn.beginTransaction(err => {
+                        if (err) return reject(err);
+                        var c = {
+                            conn: conn
+                        };
+                        ['query', 'pluck', 'list', 'selectOne'].forEach(method => {
+                            c[method] = (...args) => {
+                                args.push(conn);
+                                return module.exports[method].apply(module.exports, args);
+                            };
+                        });
+                        resolve(c);
+                    });
+                });
+            });
+        } catch (err) {
+            log(`开启事务失败 message = ${err.message}`);
+            throw err;
+        }
+
+        // execute
+        try {
+            await cb(c);
+        } catch (err) { // rollback
+            rollback(err);
+            throw err;
+        }
+
+        // commit
+        try {
+            await new Promise((resolve, reject) => {
+                c.conn.commit(err => {
+                    if (err) {
+                        rollback(err);
+                        return reject(err);
+                    }
+                    resolve();
+                });
+            });
+        } catch (err) { // rollback
+            rollback(err);
+            throw err;
+        }
     }
 }
 

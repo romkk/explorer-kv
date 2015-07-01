@@ -32,7 +32,7 @@
     **Request**
 
     ```
-    GET /auth/:wid
+    GET /auth/$wid
     ```
 
     **Response**
@@ -56,7 +56,7 @@
     **Request**
 
     ```
-    POST /auth
+    POST /auth/$wid
 
     {
         "address": "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR",    -- 如果不是首次认证，需要与指定的地址一致；否则传入任意地址，该 wid 将于该地址绑定
@@ -349,7 +349,7 @@ POST /multi-signature-addr
 **Reqeust**
 
 ```
-GET /multi-signature-addr/:id
+GET /multi-signature-addr/$id
 ```
 
 **Response**
@@ -382,7 +382,7 @@ GET /multi-signature-addr/:id
 **Request**
 
 ```
-PUT /multi-signature-addr/:id
+PUT /multi-signature-addr/$id
 
 {
     "name": "second",
@@ -441,25 +441,40 @@ PUT /multi-signature-addr/:id
 **Request**
 
 ```
-POST /multi-tx
+POST /multi-signature-tx
+
+{
+    
+}
 ```
 
 **Response**
+
+```
+
+```
 
 ### 查询多重签名交易确认状态
 
 **Request**
 
 ```
-GET /multi-tx/:txid
+GET /multi-signature-tx/$txid
 ```
+
+**Response**
 
 ### 修改多重签名交易确认状态
 
 **Request**
 
 ```
-PUT /multi-tx/:txid
+PUT /multi-signature-tx/$txid
+```
+
+**Response**
+
+```
 ```
 
 ## 用户数据文件的备份与恢复

@@ -138,7 +138,7 @@ module.exports = server => {
         let newPos = _.last(status.participants).pos + 1;
         let insertId;
         try {
-            insertId = await MultiSig.joinAccount(id, participantName, participantPubkey, newPos, status);
+            insertId = await MultiSig.joinAccount(id, req.token.wid, participantName, participantPubkey, newPos, status);
         } catch (err) {
             if (err.code == 'ER_DUP_ENTRY') {       // 竞态条件冲突
                 res.send({

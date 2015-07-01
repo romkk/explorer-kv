@@ -8,7 +8,7 @@ let bitcoind = require('./bitcoind');
 
 class MultiSig {
 
-    static async pubkeyValid(pubKey, name) {
+    static async pubkeyValid(pubKey) {
         if (!PublicKey.isValid(pubKey)) {
             return false;
         }
@@ -31,14 +31,14 @@ class MultiSig {
          * 如有异常，直接抛出
          */
         await mysql.transaction(async conn => {
-            let accountSql = `insert into multisig_account (wid, account_name, m, n, created_at, updated_at) values (?, ?, ?, ?, now(), now())`;
-            let result = await conn.query(accountSql, [wid, accountName, m, n]);
+            let accountSql = `insert into multisig_account (account_name, m, n, created_at, updated_at) values (?, ?, ?, now(), now())`;
+            let result = await conn.query(accountSql, [accountName, m, n]);
             multiAccountId = result.insertId;
             let participantSql = `insert into multisig_account_participant
-                                    (multisig_account_id, role, participant_name, pubkey, pos, created_at, updated_at)
+                                    (multisig_account_id, wid, role, participant_name, pubkey, pos, created_at, updated_at)
                                     values
-                                    (?, ?, ?, ?, ?, now(), now())`;
-            result = await conn.query(participantSql, [multiAccountId, 'Initiator', creatorName, creatorPubKey, 0]);
+                                    (?, ?, ?, ?, ?, ?, now(), now())`;
+            result = await conn.query(participantSql, [multiAccountId, wid, 'Initiator', creatorName, creatorPubKey, 0]);
             multiAccountParticipantId = result.insertId;
         });
         return {
@@ -48,9 +48,12 @@ class MultiSig {
     }
 
     static async getAccountStatus(wid, id) {
-        let sql = `select id, account_name, m, n, generated_address, redeem_script
-                   from multisig_account
-                   where wid = ? and id = ? limit 1`;
+        let sql = `select v1.id, v1.account_name, v1.m, v1.n, v1.generated_address, v1.redeem_script
+                   from multisig_account v1
+                     join multisig_account_participant v2
+                       on v1.id = v2.multisig_account_id
+                   where v2.wid = ? and v1.id = ? and v2.pos = 0
+                   limit 1`;
 
         let account = await mysql.selectOne(sql, [wid, id]);
 
@@ -81,13 +84,13 @@ class MultiSig {
         return o;
     }
 
-    static async joinAccount(id, name, pubkey, newPos) {
+    static async joinAccount(id, wid, name, pubkey, newPos) {
         let sql = `insert into multisig_account_participant
-                   (multisig_account_id, role, participant_name, pubkey, pos, created_at, updated_at)
+                   (multisig_account_id, wid, role, participant_name, pubkey, pos, created_at, updated_at)
                    values
-                   (?, ?, ?, ?, ?, now(), now())`;
+                   (?, ?, ?, ?, ?, ?, now(), now())`;
         //竞态条件冲突的异常抛出
-        let result = await mysql.query(sql, [id, 'Participant', name, pubkey, newPos]);
+        let result = await mysql.query(sql, [id, wid, 'Participant', name, pubkey, newPos]);
         return result.insertId;
     }
 }

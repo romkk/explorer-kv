@@ -152,11 +152,21 @@ module.exports = server => {
             }
         }
 
-        // TODO: push message to master and other slaves
-
         // completed?
-        status = await MultiSig.getAccountStatus(req.token.wid, id);
+        try {
+            status = await MultiSig.getAccountStatus(req.token.wid, id);
+        } catch (err) {
+            if (err instanceof restify.HttpError) {
+                res.send(err);
+            } else {
+                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
+                res.send(new restify.InternalServerError('Internal Error'));
+            }
+            return next();
+        }
+
         if (status.participants.length < status.m) {
+            // TODO: push message to master and other slaves
             res.send(_.extend({}, status, { success: true }));
             return next();
         }
@@ -187,11 +197,65 @@ module.exports = server => {
         }
 
         let sql = `update multisig_account set redeem_script = ?, generated_address = ?, updated_at = now()
-                   where id = ?`;
+                   where id = ? and is_delete = 0`;
         let updateResult = await mysql.query(sql, [result.redeemScript, result.address, id]);
-        assert(updateResult.affectedRows == 1);
 
+        if (updateResult.affectedRows == 0) {   // 更新失败，可能该账户已被取消创建
+            res.send(new restify.NotFoundError('MultiSignatureAccount not found'));
+            return next();
+        }
+
+        // TODO: push message to master and other slaves
         res.send(_.extend({}, await MultiSig.getAccountStatus(req.token.wid, id), { success: true }));
+        next();
+    });
+
+    server.del('/multi-signature-account/:id', async (req, res, next) => {
+        req.checkParams('id', 'Not a valid id').isInt();
+        req.sanitize('id').toInt();
+
+        let errors = req.validationErrors();
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let sql = `select v1.id, v1.is_deleted, v1.generated_address
+                   from multisig_account v1
+                     join multisig_account_participant v2
+                       on v1.id = v2.multisig_account_id
+                   where v1.id = ? and v2.wid = ? and v2.role = 'Initiator'
+                   limit 1`;
+
+        let row = await mysql.selectOne(sql, [req.params.id, req.token.wid]);
+
+        if (_.isNull(row) || !!row.is_deleted) {
+            res.send(new restify.NotFoundError('MultiSignatureAccount not found'));
+            return next();
+        } else if (!_.isNull(row.generated_address)) {
+            res.send({
+                success: false,
+                code: 'MultiSignatureAccountCreated',
+                message: 'the account has been created'
+            });
+            return next();
+        }
+
+        sql = `update multisig_account set is_deleted = 1
+               where id = ? and is_deleted = 0 and generated_address is null`;
+        let result = await mysql.query(sql, [id]);
+        if (result.affectedRows == 0) {
+            res.send({
+                success: false,
+                code: 'MultiSignatureAccountDeleteFailed',
+                message: 'delete failed'
+            });
+            return next();
+        }
+
+        // TODO: push message to slaves
+        res.send({ success: true });
         next();
     });
 };

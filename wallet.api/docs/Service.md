@@ -375,7 +375,7 @@ GET /multi-signature-account/$id
 }
 ```
 
-如果查询的 id 不存在，则返回 404。
+如果查询的账户不存在，则返回 404。
 
 ### 修改创建状态
 
@@ -435,8 +435,40 @@ PUT /multi-signature-account/$id
     多重签名账户更新失败，可能是竞态条件冲突等，重试即可；
     
     如果含有 bitcoind 字段，则为 bitcoind 返回错误，详情参见`bitcoind`字段。
+    
+如果要加入的账户不存在，则返回 404。
 
-### 发起多重签名交易
+### 取消创建
+
+只能取消尚未生成（`complete = false`）的多重签名账户。
+ 
+**Request**
+
+```
+DELETE /multi-signature-account/$id
+```
+
+**Response**
+
+```
+{
+    success: true
+}
+```
+
+可能的错误码：
+
+*   MultiSignatureAccountCreated
+
+    要删除的多重签名账户已经生成，不可被删除
+    
+*   MultiSignatureAccountDeleteFailed
+
+    删除失败，一般是由于竞态条件，重试即可
+    
+如果要删除的账户不存在，则返回 404。
+
+## 发起多重签名交易
 
 **Request**
 

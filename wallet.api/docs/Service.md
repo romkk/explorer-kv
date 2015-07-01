@@ -295,7 +295,7 @@ POST /address
 **Request**
 
 ```
-POST /multi-signature-addr
+POST /multi-signature-account
 
 {
     "account_name": "Bitmain",
@@ -349,7 +349,7 @@ POST /multi-signature-addr
 **Reqeust**
 
 ```
-GET /multi-signature-addr/$id
+GET /multi-signature-account/$id
 ```
 
 **Response**
@@ -382,7 +382,7 @@ GET /multi-signature-addr/$id
 **Request**
 
 ```
-PUT /multi-signature-addr/$id
+PUT /multi-signature-account/$id
 
 {
     "name": "second",

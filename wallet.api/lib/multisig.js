@@ -31,7 +31,10 @@ class MultiSig {
          * 如有异常，直接抛出
          */
         await mysql.transaction(async conn => {
-            let accountSql = `insert into multisig_account (account_name, m, n, created_at, updated_at) values (?, ?, ?, now(), now())`;
+            let accountSql = `insert into multisig_account
+                                    (account_name, m, n, is_deleted, created_at, updated_at)
+                              values
+                                    (?, ?, ?, 0, now(), now())`;
             let result = await conn.query(accountSql, [accountName, m, n]);
             multiAccountId = result.insertId;
             let participantSql = `insert into multisig_account_participant
@@ -52,7 +55,7 @@ class MultiSig {
                    from multisig_account v1
                      join multisig_account_participant v2
                        on v1.id = v2.multisig_account_id
-                   where v2.wid = ? and v1.id = ? and v2.pos = 0
+                   where v2.wid = ? and v1.id = ? and v2.pos = 0 and v1.is_deleted = 0
                    limit 1`;
 
         let account = await mysql.selectOne(sql, [wid, id]);

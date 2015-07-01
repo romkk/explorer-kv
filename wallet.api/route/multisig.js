@@ -9,7 +9,7 @@ let bitcoind = require('../lib/bitcoind');
 let assert = require('assert');
 
 module.exports = server => {
-    server.post('/multi-signature-addr', validate('createMultiSignatureAccount'), async (req, res, next) => {
+    server.post('/multi-signature-account', validate('createMultiSignatureAccount'), async (req, res, next) => {
         let m = req.body.m, n = req.body.n,
             creatorName = req.body.creator_name,
             creatorPubkey = req.body.creator_pubkey,
@@ -49,7 +49,7 @@ module.exports = server => {
         next();
     });
 
-    server.get('/multi-signature-addr/:id', async (req, res, next) => {
+    server.get('/multi-signature-account/:id', async (req, res, next) => {
         req.checkParams('id', 'Not a valid id').isInt();
         req.sanitize('id').toInt();
 
@@ -80,7 +80,7 @@ module.exports = server => {
         }
     });
 
-    server.put('/multi-signature-addr/:id', validate('updateMultiSignatureAccount'), async (req, res, next) => {
+    server.put('/multi-signature-account/:id', validate('updateMultiSignatureAccount'), async (req, res, next) => {
         req.checkParams('id', 'Not a valid id').isInt();
         req.sanitize('id').toInt();
 
@@ -151,6 +151,8 @@ module.exports = server => {
                 throw err;
             }
         }
+
+        // TODO: push message to master and other slaves
 
         // completed?
         status = await MultiSig.getAccountStatus(req.token.wid, id);

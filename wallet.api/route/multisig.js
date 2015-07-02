@@ -7,6 +7,7 @@ let restify = require('restify');
 let log = require('debug')('wallet:route:multisig');
 let bitcoind = require('../lib/bitcoind');
 let assert = require('assert');
+let bitcore = require('bitcore');
 
 module.exports = server => {
     server.post('/multi-signature-account', validate('createMultiSignatureAccount'), async (req, res, next) => {
@@ -257,5 +258,132 @@ module.exports = server => {
         // TODO: push message to slaves
         res.send({ success: true });
         next();
+    });
+
+    server.post('/multi-signature-account/:accountId/tx', validate('createMultiSignatureTx'), async (req, res, next) => {
+        req.checkParams('accountId', 'Not a valid id').isInt();
+        req.sanitize('accountId').toInt();
+
+        let errors = req.validationErrors();
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let accountId = req.params.accountId;
+        let status;
+        try {
+            status = await MultiSig.getAccountStatus(req.token.wid, accountId);
+        } catch (err) {
+            if (err instanceof restify.HttpError) {
+                res.send(err);
+            } else {
+                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
+                res.send(new restify.InternalServerError('Internal Error'));
+            }
+            return next();
+        }
+
+        if (!status.complete) {
+            res.send(new restify.NotFoundError('MultiSignatureAccount not found'));
+            return next();
+        }
+
+        let { rawtx, note } = req.body;
+
+        let tx;
+        try {
+            tx = bitcore.Transaction(rawtx);
+        } catch (err) {
+            res.send({
+                success: false,
+                code: 'MultiSignatureTxInvalidHex',
+                message: err.message
+            });
+            return next();
+        }
+
+        let insertedTxId;
+
+        try {
+            await mysql.transaction(async conn => {
+                let sql = `insert into multisig_tx
+                       (multisig_account_id, hex, complete, note, is_deleted, nonce, created_at, updated_at)
+                       values
+                       (?, ?, ?, ?, ?, ?, now(), now())`;
+                insertedTxId = (await conn.query(sql, [accountId, rawtx, 0, note, 0, 0])).insertId;
+                sql = `insert into multisig_tx_participant
+                   (multisig_tx_id, wid, status, created_at, updated_at)
+                   values
+                   (?, ?, ?, now(), now())`;
+                await conn.query(sql, [insertedTxId, req.token.wid, 1]);
+            });
+        } catch (err) {
+            res.send({
+                success: false,
+                code: 'MultiSignatureTxCreateFailed',
+                message: 'please try again later'
+            });
+            return next();
+        }
+
+        res.send(_.extend(await MultiSig.getTxStatus(req.token.wid, accountId, insertedTxId), {success: true}));
+        next();
+    });
+
+    server.get('/multi-signature-account/:accountId/tx/:txId', async (req, res, next) => {
+        req.checkParams('accountId', 'Not a valid id').isInt();
+        req.sanitize('accountId').toInt();
+
+        req.checkParams('txId', 'Not a valid id').isInt();
+        req.sanitize('txId').toInt();
+
+        let errors = req.validationErrors();
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let accountId = req.params.accountId,
+            txId = req.params.txId;
+        let accountStatus;
+        try {
+            accountStatus = await MultiSig.getAccountStatus(req.token.wid, accountId);
+        } catch (err) {
+            if (err instanceof restify.HttpError) {
+                res.send(err);
+            } else {
+                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
+                res.send(new restify.InternalServerError('Internal Error'));
+            }
+            return next();
+        }
+
+        let status;
+
+        try {
+            status = await MultiSig.getTxStatus(req.token.wid, accountId, txId);
+        } catch (err) {
+            if (err instanceof restify.HttpError) {
+                res.send(err);
+            } else {
+                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
+                res.send(new restify.InternalServerError('Internal Error'));
+            }
+            return next();
+        }
+
+        res.send(_.extend(status, { success: true }));
+        next();
+    });
+
+    server.put('/multi-signature-account/:accountId/tx/:txId', async (req, res, next) => {
+
+    });
+
+    server.del('/multi-signature-account/:accountId/tx/:txId', async (req, res, next) => {
+
     });
 };

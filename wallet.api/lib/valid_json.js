@@ -149,6 +149,23 @@ var schema = {
                 maxLength: 150
             }
         }
+    },
+
+    createMultiSignatureTx: {
+        type: 'object',
+        required: ['rawtx', 'note'],
+        properties: {
+            rawtx: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 65536
+            },
+            note: {
+                type: 'string',
+                minLength: 0,
+                maxLength: 65536
+            }
+        }
     }
 
 };

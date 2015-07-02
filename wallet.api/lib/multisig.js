@@ -55,7 +55,7 @@ class MultiSig {
                    from multisig_account v1
                      join multisig_account_participant v2
                        on v1.id = v2.multisig_account_id
-                   where v2.wid = ? and v1.id = ? and v2.pos = 0 and v1.is_deleted = 0
+                   where v2.wid = ? and v1.id = ? and v1.is_deleted = 0
                    limit 1`;
 
         let account = await mysql.selectOne(sql, [wid, id]);

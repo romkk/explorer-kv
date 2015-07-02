@@ -361,10 +361,10 @@ module.exports = server => {
             return next();
         }
 
-        let status;
+        let txStatus;
 
         try {
-            status = await MultiSig.getTxStatus(req.token.wid, accountId, txId);
+            txStatus = await MultiSig.getTxStatus(req.token.wid, accountId, txId);
         } catch (err) {
             if (err instanceof restify.HttpError) {
                 res.send(err);
@@ -375,7 +375,7 @@ module.exports = server => {
             return next();
         }
 
-        res.send(_.extend(status, { success: true }));
+        res.send(_.extend(txStatus, { success: true }));
         next();
     });
 
@@ -384,6 +384,65 @@ module.exports = server => {
     });
 
     server.del('/multi-signature-account/:accountId/tx/:txId', async (req, res, next) => {
+        req.checkParams('accountId', 'Not a valid id').isInt();
+        req.sanitize('accountId').toInt();
 
+        req.checkParams('txId', 'Not a valid id').isInt();
+        req.sanitize('txId').toInt();
+
+        let errors = req.validationErrors();
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let accountId = req.params.accountId,
+            txId = req.params.txId;
+        let accountStatus;
+        try {
+            accountStatus = await MultiSig.getAccountStatus(req.token.wid, accountId);
+        } catch (err) {
+            if (err instanceof restify.HttpError) {
+                res.send(err);
+            } else {
+                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
+                res.send(new restify.InternalServerError('Internal Error'));
+            }
+            return next();
+        }
+
+        let sql = `select * from multisig_tx where id = ? and multisig_account_id = ? limit 1`;
+        let tx = await mysql.selectOne(sql, [txId, accountId]);
+
+        if (_.isNull(tx)) {
+            res.send(new restify.NotFoundError('MultiSignatureTx not found'));
+            return next();
+        }
+
+        if (!!tx.complete) {
+            res.send({
+                success: false,
+                code: 'MultiSignatureTxCreated',
+                message: 'you are too late'
+            });
+            return next();
+        }
+
+        sql = `update multisig_tx set is_deleted = 1, nonce = ? where id = ? and nonce = ?`;
+        let result = await mysql.query(sql, [tx.nonce + 1, tx.id, tx.nonce]);
+        if (result.affectedRows == 0) {
+            res.send({
+                success: false,
+                code: 'MultiSignatureDeleteFailed',
+                message: 'please try again later'
+            });
+            return next();
+        }
+
+        // TODO: push messages to slaves
+
+        res.send({success: true});
+        next();
     });
 };

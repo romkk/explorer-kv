@@ -560,16 +560,26 @@ PUT /multi-signature-account/$account_id/tx/$tx_id
 **Request**
 
 ```
-{
-}
+DELETE /multi-signature-account/$account_id/tx/$tx_id
 ```
 
 **Response**
 
 ```
 {
+    success: true
 }
 ```
+
+如果指定的账户不存在，则返回 404。
+
+可能的错误码：
+
+*   MultiSignatureTxCreated
+
+    多重签名交易已经完成，不可删除。
+    
+*
 
 ## 用户数据文件的备份与恢复
 

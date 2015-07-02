@@ -245,7 +245,7 @@ module.exports = server => {
 
         sql = `update multisig_account set is_deleted = 1
                where id = ? and is_deleted = 0 and generated_address is null`;
-        let result = await mysql.query(sql, [id]);
+        let result = await mysql.query(sql, [req.params.id]);
         if (result.affectedRows == 0) {
             res.send({
                 success: false,

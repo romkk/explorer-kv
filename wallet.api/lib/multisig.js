@@ -116,6 +116,7 @@ class MultiSig {
 
         let o = _.pick(rows[0], ['hex', 'id', 'multisig_account_id', 'note', 'seq']);
         o.complete = !!rows[0].complete;
+        o.is_deleted = !!rows[0].is_deleted;
         o.created_at = moment.utc(rows[0].created_at).unix();
         o.updated_at = moment.utc(rows[0].updated_at).unix();
         o.participants = rows.map(r => {

@@ -545,6 +545,9 @@ GET /multi-signature-account/$account_id/tx/$tx_id
 PUT /multi-signature-account/$account_id/tx/$tx_id
 
 {
+    "original": "",
+    "signed": "",
+    "status": "DENIED"      -- enum: ["APPROVED", "DENIED"] 
 }
 ```
 
@@ -554,6 +557,16 @@ PUT /multi-signature-account/$account_id/tx/$tx_id
 {
 }
 ```
+
+可能的错误码：
+
+*   MultiSignatureTxDeleted
+
+    多重签名交易已经取消，不能再修改。
+    
+*   MultiSignatureTxHexDismatch
+
+    `original`字段与服务端的`hex`不一致。
 
 ### 取消多重签名交易
 
@@ -579,7 +592,9 @@ DELETE /multi-signature-account/$account_id/tx/$tx_id
 
     多重签名交易已经完成，不可删除。
     
-*
+*   MultiSignatureDeleteFailed
+
+    删除失败，重试即可。
 
 ## 用户数据文件的备份与恢复
 

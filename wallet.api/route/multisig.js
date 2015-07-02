@@ -379,8 +379,84 @@ module.exports = server => {
         next();
     });
 
-    server.put('/multi-signature-account/:accountId/tx/:txId', async (req, res, next) => {
+    server.put('/multi-signature-account/:accountId/tx/:txId', validate('updateMultiSignatureTx'), async (req, res, next) => {
+        req.checkParams('accountId', 'Not a valid id').isInt();
+        req.sanitize('accountId').toInt();
 
+        req.checkParams('txId', 'Not a valid id').isInt();
+        req.sanitize('txId').toInt();
+
+        let errors = req.validationErrors();
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let accountId = req.params.accountId,
+            txId = req.params.txId;
+        let accountStatus;
+        try {
+            accountStatus = await MultiSig.getAccountStatus(req.token.wid, accountId);
+        } catch (err) {
+            if (err instanceof restify.HttpError) {
+                res.send(err);
+            } else {
+                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
+                res.send(new restify.InternalServerError('Internal Error'));
+            }
+            return next();
+        }
+
+        let sql = `select * from multisig_tx where id = ? and multisig_account_id = ? limit 1`;
+        let tx = await mysql.selectOne(sql, [txId, accountId]);
+
+        if (_.isNull(tx)) {
+            res.send(new restify.NotFoundError('MultiSignatureTx not found'));
+            return next();
+        }
+
+        if (!!tx.complete) {
+            res.send({
+                success: false,
+                code: 'MultiSignatureTxCreated',
+                message: 'you are too late'
+            });
+            return next();
+        }
+
+        if (!!tx.is_deleted) {
+            res.send({
+                success: false,
+                code: 'MultiSignatureTxDeleted',
+                message: 'you are too late'
+            });
+            return next();
+        }
+
+        if (tx.hex != req.body.original) {
+            res.send({
+                success: false,
+                code: 'MultiSignatureTxHexDismatch',
+                message: 'please try again later'
+            });
+            return next();
+        }
+
+        try {
+            await mysql.transaction(async conn => {
+                let sql = `insert into multisig_tx_participant
+                           (multisig_tx_id, wid, status, seq, created_at, updated_at)
+                           values
+                           (?, ?, ?, ?, now(), now())`;
+
+                await mysql.query(sql, [accountId, req.token.wid, req.body.status, tx.seq + 1]);
+
+                // complete ?
+            });
+        } catch (err) {
+
+        }
     });
 
     server.del('/multi-signature-account/:accountId/tx/:txId', async (req, res, next) => {

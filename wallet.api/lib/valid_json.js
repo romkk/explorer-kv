@@ -166,6 +166,25 @@ var schema = {
                 maxLength: 65536
             }
         }
+    },
+
+    updateMultiSignatureTx: {
+        type: 'object',
+        required: [],
+        properties: {
+            original: {
+                type: 'string',
+                minLength: 1
+            },
+            signed: {
+                type: 'string',
+                minLength: 1
+            },
+            status: {
+                type: 'string',
+                'enum': ['APPROVED', 'DENIED']
+            }
+        }
     }
 
 };

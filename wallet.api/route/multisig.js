@@ -198,7 +198,7 @@ module.exports = server => {
         }
 
         let sql = `update multisig_account set redeem_script = ?, generated_address = ?, updated_at = now()
-                   where id = ? and is_delete = 0`;
+                   where id = ? and is_deleted = 0`;
         let updateResult = await mysql.query(sql, [result.redeemScript, result.address, id]);
 
         if (updateResult.affectedRows == 0) {   // 更新失败，可能该账户已被取消创建

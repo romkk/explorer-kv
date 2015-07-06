@@ -4,7 +4,7 @@
 
 ## URI
 
-* 协议： `HTTP`
+* 协议： `HTTPS`
 * LiveNet Host： `chain.bitmain.com`
 * Testnet3 Host:   `tchain.bitmain.com`
 * API 版本： `/api/{version}`，当前可选版本为 `v1`

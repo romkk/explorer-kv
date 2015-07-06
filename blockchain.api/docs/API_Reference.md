@@ -6,14 +6,19 @@
 
 * 协议： `HTTPS`
 * Host：
-       * LiveNet: `chain.bitmain.com`   
-       * Testnet3: `tchain.bitmain.com`
+       * Main     Network: `chain.bitmain.com`
+       * Testnet3 Network: `tchain.bitmain.com`
 * Path： `/api/{version}`，当前可选版本为 `v1`
 * 请求类型：`GET`
 
 以下如无特别说明，所有的 API 调用时均使用以上 URI 前缀，如获取最新区块信息：
 
-    GET https://{$host}/${path}/latestblock
+    # 格式：
+    GET https://{host}/api/{version}/{path}
+    # 示例：
+    GET https://chain.bitmain.com/api/v1/latestblock
+
+建议将`https://chain.bitmain.com/api/v1`整字符串做为配置项，与后面的具体路径分离。
 
 ## 访问频率限制
 

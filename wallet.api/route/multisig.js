@@ -8,6 +8,18 @@ let log = require('debug')('wallet:route:multisig');
 let bitcoind = require('../lib/bitcoind');
 let assert = require('assert');
 let bitcore = require('bitcore');
+let moment = require('moment');
+
+
+let formatStatus = (status) => {
+    status.participants = status.participants.map(p => {
+        p.is_creator = p.role == 'Initiator';
+        p.joined_at = moment.utc(p.updated_at).unix();
+        return _.omit(p, ['wid', 'role', 'created_at', 'updated_at']);
+    });
+    status.complete = !_.isNull(status.generated_address);
+    return status;
+};
 
 module.exports = server => {
     server.post('/multi-signature-account', validate('createMultiSignatureAccount'), async (req, res, next) => {
@@ -25,6 +37,15 @@ module.exports = server => {
             return next();
         }
 
+        if (!PublicKey.isValid(creatorPubkey)) {
+            res.send({
+                success: false,
+                code: 'MultiSignatureAccountInvalidPubkey',
+                message: 'Invalid pubkey found'
+            });
+            return next();
+        }
+
         let validateResult = await MultiSig.pubkeyValid(creatorPubkey);
         if (!validateResult) {
             res.send({
@@ -35,18 +56,21 @@ module.exports = server => {
             return next();
         }
 
+        let result;
         try {
-            let result = await MultiSig.createAccount(req.token.wid, accountName, m, n, creatorPubkey, creatorName);
-            res.send(_.extend({}, await MultiSig.getAccountStatus(req.token.wid, result.multiAccountId), {
-                success: true
-            }));
+            result = await MultiSig.createAccount(req.token.wid, accountName, m, n, creatorPubkey, creatorName);
         } catch (err) {
             res.send({
                 success: false,
                 code: 'MultiSignatureAccountCreateFailed',
                 message: 'create failed'
             });
+            return next();
         }
+        let status = await MultiSig.getAccountStatus(result.multiAccountId);
+        res.send(_.extend(formatStatus(status), {
+            success: true
+        }));
         next();
     });
 
@@ -64,21 +88,22 @@ module.exports = server => {
         let id = req.params.id;
 
         // get status
+        let status;
         try {
-            let status = await MultiSig.getAccountStatus(req.token.wid, id);
-            res.send(_.extend(status, {
-                success: true
-            }));
-            next();
+            status = await MultiSig.getAccountStatus(id);
         } catch (err) {
-            if (err instanceof restify.HttpError) {
-                res.send(err);
-            } else {
-                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
-                res.send(new restify.InternalServerError('Internal Error'));
-            }
-            next();
+            res.send(err);
+            return next();
         }
+
+        if (status.participants.some(p => p.wid == req.token.wid)) {
+            status = formatStatus(status);
+            status.success = true;
+            res.send(status);
+        } else {
+            res.send(new restify.NotFoundError('MultiSignatureAccount not found'));
+        }
+        return next();
     });
 
     server.put('/multi-signature-account/:id', validate('updateMultiSignatureAccount'), async (req, res, next) => {
@@ -96,7 +121,7 @@ module.exports = server => {
             participantPubkey = req.body.pubkey,
             id = req.params.id;
 
-        if (!(await MultiSig.pubkeyValid(participantPubkey))) {
+        if (!(await MultiSig.pubkeyValid(participantPubkey, id))) {
             res.send({
                 success: false,
                 code: 'MultiSignatureAccountInvalidPubkey',
@@ -107,14 +132,9 @@ module.exports = server => {
 
         let status;
         try {
-            status = await MultiSig.getAccountStatus(req.token.wid, id);
+            status = await MultiSig.getAccountStatus(id);
         } catch (err) {
-            if (err instanceof restify.HttpError) {
-                res.send(err);
-            } else {
-                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
-                res.send(new restify.InternalServerError('Internal Error'));
-            }
+            res.send(err);
             return next();
         }
 
@@ -127,7 +147,7 @@ module.exports = server => {
             return next();
         }
 
-        if (status.complete || status.participants.length >= status.m) {
+        if (!_.isNull(status.generated_address) || status.participants.length >= status.m) {
             res.send({
                 success: false,
                 code: 'MultiSignatureAccountJoinCompleted',
@@ -136,10 +156,31 @@ module.exports = server => {
             return next();
         }
 
-        let newPos = _.last(status.participants).pos + 1;
-        let insertId;
         try {
-            insertId = await MultiSig.joinAccount(id, req.token.wid, participantName, participantPubkey, newPos, status);
+            await mysql.transaction(async conn => {
+                let newPos = _.last(status.participants).pos + 1;
+                let sql, result;
+                // 加锁
+                sql = `SELECT 1 FROM multisig_account WHERE id = ? GROUP BY 1 FOR UPDATE`;
+                await conn.query(sql, [status.id]);
+
+                sql = `insert into multisig_account_participant
+                   (multisig_account_id, wid, role, participant_name, pubkey, pos, created_at, updated_at)
+                   values
+                   (?, ?, ?, ?, ?, ?, now(), now())`;
+                await conn.query(sql, [id, req.token.wid, 'Participant', participantName, participantPubkey, newPos]);
+
+                status = await MultiSig.getAccountStatus(id, conn);
+                // completed?
+                if (status.participants.length < status.m) return;
+
+                // generate new address
+                result = await bitcoind('createmultisig', status.n, _.pluck(status.participants, 'pubkey'));
+                sql = `update multisig_account set redeem_script = ?, generated_address = ?, updated_at = now()
+                           where id = ? and is_deleted = 0`;
+                await conn.query(sql, [result.redeemScript, result.address, id]);
+                status = await MultiSig.getAccountStatus(id, conn);
+            });
         } catch (err) {
             if (err.code == 'ER_DUP_ENTRY') {       // 竞态条件冲突
                 res.send({
@@ -148,36 +189,7 @@ module.exports = server => {
                     message: 'please try again later'
                 });
                 return next();
-            } else {
-                throw err;
-            }
-        }
-
-        // completed?
-        try {
-            status = await MultiSig.getAccountStatus(req.token.wid, id);
-        } catch (err) {
-            if (err instanceof restify.HttpError) {
-                res.send(err);
-            } else {
-                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
-                res.send(new restify.InternalServerError('Internal Error'));
-            }
-            return next();
-        }
-
-        if (status.participants.length < status.m) {
-            // TODO: push message to master and other slaves
-            res.send(_.extend({}, status, { success: true }));
-            return next();
-        }
-
-        // generate new address
-        let result;
-        try {
-            result = await bitcoind('createmultisig', status.n, _.pluck(status.participants, 'pubkey'));
-        } catch (err) {     //bitcoind error
-            if (err.name == 'StatusCodeError') {
+            } else if (err.name == 'StatusCodeError') {
                 res.send({
                     success: false,
                     bitcoind: {
@@ -188,26 +200,15 @@ module.exports = server => {
                     code: 'MultiSignatureAccountJoinFailed'
                 });
             } else {
-                res.send(new restify.InternalServerError('RPC call error.'));
+                throw err;
             }
-
-            let sql = `delete from multisig_account_participant where id = ?`;
-            mysql.query(sql, [insertId]);
-
-            return next();
-        }
-
-        let sql = `update multisig_account set redeem_script = ?, generated_address = ?, updated_at = now()
-                   where id = ? and is_deleted = 0`;
-        let updateResult = await mysql.query(sql, [result.redeemScript, result.address, id]);
-
-        if (updateResult.affectedRows == 0) {   // 更新失败，可能该账户已被取消创建
-            res.send(new restify.NotFoundError('MultiSignatureAccount not found'));
             return next();
         }
 
         // TODO: push message to master and other slaves
-        res.send(_.extend({}, await MultiSig.getAccountStatus(req.token.wid, id), { success: true }));
+        res.send(_.extend(formatStatus(status), {
+            success: true
+        }));
         next();
     });
 

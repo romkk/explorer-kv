@@ -5,13 +5,14 @@
 ## URI
 
 * 协议： `HTTP`
-* Host： `api.chain.btc.com`
-* API 版本： `/{api_version}`，当前可选版本为 `v1`
+* LiveNet Host： `chain.bitmain.com`
+* Testnet3 Host:   `tchain.bitmain.com`
+* API 版本： `/api/{version}`，当前可选版本为 `v1`
 * 请求类型：`GET`
 
 以下如无特别说明，所有的 API 调用时均使用以上 URI 前缀，如获取最新区块信息：
 
-    GET http://api.chain.btc.com/v1/latestblock
+    GET http://{$host}/${path}/latestblock
 
 ## 访问频率限制
 

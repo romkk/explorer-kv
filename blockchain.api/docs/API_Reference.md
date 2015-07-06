@@ -5,9 +5,10 @@
 ## URI
 
 * 协议： `HTTPS`
-* LiveNet Host： `chain.bitmain.com`
-* Testnet3 Host:   `tchain.bitmain.com`
-* API 版本： `/api/{version}`，当前可选版本为 `v1`
+* Host：
+       * LiveNet: `chain.bitmain.com`   
+       * Testnet3: `tchain.bitmain.com`
+* Path： `/api/{version}`，当前可选版本为 `v1`
 * 请求类型：`GET`
 
 以下如无特别说明，所有的 API 调用时均使用以上 URI 前缀，如获取最新区块信息：

@@ -12,7 +12,7 @@
 
 以下如无特别说明，所有的 API 调用时均使用以上 URI 前缀，如获取最新区块信息：
 
-    GET http://{$host}/${path}/latestblock
+    GET https://{$host}/${path}/latestblock
 
 ## 访问频率限制
 

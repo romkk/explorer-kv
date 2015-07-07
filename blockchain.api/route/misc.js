@@ -8,6 +8,7 @@ var Tx = require('../lib/tx');
 var Address = require('../lib/address');
 var Block = require('../lib/block');
 var validators = require('../lib/custom_validators');
+var sb = require('../lib/ssdb')();
 
 module.exports = (server) => {
     server.get('/unconfirmed-transactions', async (req, res, next) => {
@@ -53,7 +54,10 @@ module.exports = (server) => {
         var id = pool ? bag[pool].id : 0;
         var name = pool || 'Unknown';
 
-        mysql.query(`update 0_blocks set relayed_by = ? where hash = ?`, [id, blk.hash]);
+        if (name != 'Unknown') {
+            mysql.query(`update 0_blocks set relayed_by = ? where hash = ?`, [id, blk.hash]);
+            sb.del(`blk_${blk.hash}`);
+        }
 
         res.send({
             relayedBy: name

@@ -72,39 +72,47 @@ class MultiSig {
 
         return o;
     }
-    
-    static async getTxStatus(wid, accountId, txId) {
-        let sql = `select v1.*, v2.status, v2.seq, v3.participant_name
+
+    static async getTxStatus(accountId, txId, conn = mysql) {
+        let sql = `select v1.*, v2.wid, v2.status, v2.seq, v2.updated_at as joined_at, v3.participant_name
                    from multisig_tx v1
                      join multisig_tx_participant v2
                        on v1.id = v2.multisig_tx_id
-                     join (select multisig_account_id, participant_name
+                     join (select multisig_account_id, participant_name, wid
                            from multisig_account_participant
-                           where multisig_account_id = ? and wid = ?
-                           limit 1) v3
-                       on v1.multisig_account_id = v3.multisig_account_id
+                           where multisig_account_id = ?) v3
+                       on v1.multisig_account_id = v3.multisig_account_id and v2.wid = v3.wid
                    where v1.multisig_account_id = ? and v1.id = ?
                    order by v2.seq asc`;
-        let rows = await mysql.query(sql, [accountId, wid, accountId, txId]);
+        let rows = await conn.query(sql, [accountId, accountId, txId]);
         if (!rows.length) {
             throw new restify.NotFoundError('MultiSignatureTransaction not found');
         }
 
-        let o = _.pick(rows[0], ['hex', 'id', 'multisig_account_id', 'note', 'seq']);
-        o.complete = !!rows[0].complete;
-        o.is_deleted = !!rows[0].is_deleted;
-        o.created_at = moment.utc(rows[0].created_at).unix();
-        o.updated_at = moment.utc(rows[0].updated_at).unix();
-        o.participants = rows.map(r => {
-            let ret = { seq: r.seq };
-            ret.status = ['DENIED', 'APPROVED', 'TBD'][r.status];
-            ret.joined_at = moment.utc(rows[0].created_at).unix();
-            ret.name = r.participant_name;
-            ret.is_creator = ret.seq == 0;
-            return ret;
-        });
+        let o = _.pick(rows[0], ['hex', 'id', 'multisig_account_id', 'note', 'complete', 'note', 'is_deleted', 'nonce', 'created_at', 'updated_at']);
+        o.participants = rows.map(r => _.pick(r, ['status', 'seq', 'wid', 'joined_at', 'participant_name']));
 
         return o;
+    }
+
+    static async sendMultiSigTx(rawhex, txId) {
+        let txHash;
+        try {
+            txHash = await bitcoind('sendrawtransaction', rawhex);
+        } catch (err) {
+            if (err.response.body.error.code == -25) {
+                return false;
+            } else {
+                throw err;
+            }
+        }
+        await mysql.transaction(async conn => {
+            let sql = `select * from multisig_tx where id = ? and is_deleted = 0 for update`;
+            await conn.selectOne(sql, [txId]);
+            sql = `update multisig_tx set complete = ?, updated_at = ? where id = ?`;
+            await conn.query(sql, [1, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
+        });
+        return txHash;
     }
 }
 

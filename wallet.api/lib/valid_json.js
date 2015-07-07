@@ -153,7 +153,7 @@ var schema = {
 
     createMultiSignatureTx: {
         type: 'object',
-        required: ['rawtx', 'note'],
+        required: ['rawtx', 'note', 'complete'],
         properties: {
             rawtx: {
                 type: 'string',
@@ -164,13 +164,16 @@ var schema = {
                 type: 'string',
                 minLength: 0,
                 maxLength: 65536
+            },
+            complete: {
+                type: 'boolean'
             }
         }
     },
 
     updateMultiSignatureTx: {
         type: 'object',
-        required: [],
+        required: ['original', 'signed', 'status', 'complete'],
         properties: {
             original: {
                 type: 'string',
@@ -183,6 +186,9 @@ var schema = {
             status: {
                 type: 'string',
                 'enum': ['APPROVED', 'DENIED']
+            },
+            complete: {
+                type: 'boolean'
             }
         }
     }

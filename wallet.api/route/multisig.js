@@ -11,7 +11,7 @@ let bitcore = require('bitcore');
 let moment = require('moment');
 
 
-let formatStatus = (status) => {
+let formatAccountStatus = (status) => {
     status.participants = status.participants.map(p => {
         p.is_creator = p.role == 'Initiator';
         p.joined_at = moment.utc(p.updated_at).unix();
@@ -19,6 +19,19 @@ let formatStatus = (status) => {
     });
     status.complete = !_.isNull(status.generated_address);
     return status;
+};
+let formatTxStatus = status => {
+    status.complete = !!status.complete;
+    status.is_deleted = !!status.is_deleted;
+    status.created_at = moment.utc(status.created_at).unix();
+    status.updated_at = moment.utc(status.updated_at).unix();
+    status.participants = status.participants.map(p => {
+        p = _.omit(p, ['wid']);
+        p.joined_at = moment.utc(p.joined_at).unix();
+        p.status = ['DENIED', 'APPROVED', 'TBD'][p.status];
+        return p;
+    });
+    return _.omit(status, ['nonce']);
 };
 
 module.exports = server => {
@@ -68,7 +81,7 @@ module.exports = server => {
             return next();
         }
         let status = await MultiSig.getAccountStatus(result.multiAccountId);
-        res.send(_.extend(formatStatus(status), {
+        res.send(_.extend(formatAccountStatus(status), {
             success: true
         }));
         next();
@@ -97,7 +110,7 @@ module.exports = server => {
         }
 
         if (status.participants.some(p => p.wid == req.token.wid)) {
-            status = formatStatus(status);
+            status = formatAccountStatus(status);
             status.success = true;
             res.send(status);
         } else {
@@ -206,7 +219,7 @@ module.exports = server => {
         }
 
         // TODO: push message to master and other slaves
-        res.send(_.extend(formatStatus(status), {
+        res.send(_.extend(formatAccountStatus(status), {
             success: true
         }));
         next();
@@ -275,32 +288,26 @@ module.exports = server => {
         let accountId = req.params.accountId;
         let status;
         try {
-            status = await MultiSig.getAccountStatus(req.token.wid, accountId);
+            status = await MultiSig.getAccountStatus(accountId);
         } catch (err) {
-            if (err instanceof restify.HttpError) {
-                res.send(err);
-            } else {
-                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
-                res.send(new restify.InternalServerError('Internal Error'));
-            }
+            res.send(err);
             return next();
         }
 
-        if (!status.complete) {
+        if (_.isNull(status.generated_address) || !status.participants.some(p => p.wid == req.token.wid)) {
             res.send(new restify.NotFoundError('MultiSignatureAccount not found'));
             return next();
         }
 
-        let { rawtx, note } = req.body;
+        let { rawtx, note, complete } = req.body;
 
-        let tx;
         try {
-            tx = bitcore.Transaction(rawtx);
+            bitcore.Transaction(rawtx);
         } catch (err) {
             res.send({
                 success: false,
                 code: 'MultiSignatureTxInvalidHex',
-                message: err.message
+                message: 'invalid hex string'
             });
             return next();
         }
@@ -315,10 +322,13 @@ module.exports = server => {
                        (?, ?, ?, ?, ?, ?, now(), now())`;
                 insertedTxId = (await conn.query(sql, [accountId, rawtx, 0, note, 0, 0])).insertId;
                 sql = `insert into multisig_tx_participant
-                   (multisig_tx_id, wid, status, created_at, updated_at)
+                   (multisig_tx_id, wid, status, seq, created_at, updated_at)
                    values
-                   (?, ?, ?, now(), now())`;
-                await conn.query(sql, [insertedTxId, req.token.wid, 1]);
+                   ${ status.participants.map(p => `(?, ?, ?, ?, now(), now())`).join(',') }`;
+                let params = [];
+                let pos = 0;
+                status.participants.forEach((p, i) => params.push(insertedTxId, p.wid, p.wid == req.token.wid ? 1 : 2, pos++));
+                await conn.query(sql, params);
             });
         } catch (err) {
             res.send({
@@ -329,7 +339,23 @@ module.exports = server => {
             return next();
         }
 
-        res.send(_.extend(await MultiSig.getTxStatus(req.token.wid, accountId, insertedTxId), {success: true}));
+        if (complete) {
+            let txHash = await MultiSig.sendMultiSigTx(rawtx, insertedTxId);
+            if (txHash == false) {
+                // 删除新建的交易
+                let sql = `update multisig_tx set is_deleted = ?, updated_at = ? where id = ?`;
+                await mysql.query(sql, [1, moment.utc().format('YYYY-MM-DD HH:mm:ss'), insertedTxId]);
+                res.send({
+                    success: false,
+                    code: 'MultiSignatureTxPublishFailed',
+                    message: 'incomplete signature ? '
+                });
+                return next();
+            }
+        }
+
+        // TODO send message to other participants
+        res.send(_.extend(formatTxStatus(await MultiSig.getTxStatus(accountId, insertedTxId)), {success: true}));
         next();
     });
 
@@ -351,32 +377,28 @@ module.exports = server => {
             txId = req.params.txId;
         let accountStatus;
         try {
-            accountStatus = await MultiSig.getAccountStatus(req.token.wid, accountId);
-        } catch (err) {
-            if (err instanceof restify.HttpError) {
-                res.send(err);
-            } else {
-                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
-                res.send(new restify.InternalServerError('Internal Error'));
+            accountStatus = await MultiSig.getAccountStatus(accountId);
+            if (!accountStatus.participants.some(p => p.wid == req.token.wid)) {
+                throw new restify.NotFoundError('MultiSignatureAccount not found');
             }
+        } catch (err) {
+            res.send(err);
             return next();
         }
 
         let txStatus;
 
         try {
-            txStatus = await MultiSig.getTxStatus(req.token.wid, accountId, txId);
-        } catch (err) {
-            if (err instanceof restify.HttpError) {
-                res.send(err);
-            } else {
-                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
-                res.send(new restify.InternalServerError('Internal Error'));
+            txStatus = await MultiSig.getTxStatus(accountId, txId);
+            if (!txStatus.participants.some(p => p.wid == req.token.wid)) {
+                throw new restify.NotFoundError('MultiSignatureTx not found');
             }
+        } catch (err) {
+            res.send(err);
             return next();
         }
 
-        res.send(_.extend(txStatus, { success: true }));
+        res.send(_.extend(formatTxStatus(txStatus), { success: true }));
         next();
     });
 
@@ -398,66 +420,94 @@ module.exports = server => {
             txId = req.params.txId;
         let accountStatus;
         try {
-            accountStatus = await MultiSig.getAccountStatus(req.token.wid, accountId);
-        } catch (err) {
-            if (err instanceof restify.HttpError) {
-                res.send(err);
-            } else {
-                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
-                res.send(new restify.InternalServerError('Internal Error'));
+            accountStatus = await MultiSig.getAccountStatus(accountId);
+            if (!accountStatus.participants.some(p => p.wid == req.token.wid)) {
+                throw new restify.NotFoundError('MultiSignatureAccount not found');
             }
-            return next();
-        }
-
-        let sql = `select * from multisig_tx where id = ? and multisig_account_id = ? limit 1`;
-        let tx = await mysql.selectOne(sql, [txId, accountId]);
-
-        if (_.isNull(tx)) {
-            res.send(new restify.NotFoundError('MultiSignatureTx not found'));
-            return next();
-        }
-
-        if (!!tx.complete) {
-            res.send({
-                success: false,
-                code: 'MultiSignatureTxCreated',
-                message: 'you are too late'
-            });
-            return next();
-        }
-
-        if (!!tx.is_deleted) {
-            res.send({
-                success: false,
-                code: 'MultiSignatureTxDeleted',
-                message: 'you are too late'
-            });
-            return next();
-        }
-
-        if (tx.hex != req.body.original) {
-            res.send({
-                success: false,
-                code: 'MultiSignatureTxHexDismatch',
-                message: 'please try again later'
-            });
+        } catch (err) {
+            res.send(err);
             return next();
         }
 
         try {
             await mysql.transaction(async conn => {
-                let sql = `insert into multisig_tx_participant
-                           (multisig_tx_id, wid, status, seq, created_at, updated_at)
-                           values
-                           (?, ?, ?, ?, now(), now())`;
+                let sql = `select * from multisig_tx where id = ? and multisig_account_id = ? limit 1 for update`;
+                let tx = await conn.selectOne(sql, [txId, accountId]);
 
-                await mysql.query(sql, [accountId, req.token.wid, req.body.status, tx.seq + 1]);
+                if (_.isNull(tx)) {
+                    let e = new Error();
+                    e.code = 'NotFoundError';
+                    e.message = 'MultiSignatureTx not found';
+                    throw e;
+                }
 
-                // complete ?
+                if (!!tx.complete) {
+                    let e = new Error();
+                    e.code = 'MultiSignatureTxCreated';
+                    e.message = 'you are too late';
+                    throw e;
+                }
+
+                if (!!tx.is_deleted) {
+                    let e = new Error();
+                    e.code = 'MultiSignatureTxDeleted';
+                    e.message = 'you are too late';
+                    throw e;
+                }
+
+                if (tx.hex != req.body.original) {
+                    let e = new Error();
+                    e.code = 'MultiSignatureTxHexDismatch';
+                    e.message = 'tx hex dismatch';
+                    throw e;
+                }
+
+                sql = `update multisig_tx set hex = ?, updated_at = ? where id = ?;
+                       update multisig_tx_participant set status = ? where multisig_tx_id = ? and wid = ?`;
+                await conn.query(sql, [ req.body.signed, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId,
+                    ({ 'APPROVED': 1, 'DENIED': 0 })[req.body.status],
+                    txId, req.token.wid]);
             });
-        } catch (err) {
 
+        } catch (err) {
+            if (err.code && err.message) {
+                if (err.code.endsWith('Error')) {
+                    res.send(new restify[err.code](err.message));
+                } else {
+                    res.send({
+                        success: false,
+                        code: err.code,
+                        message: err.message
+                    });
+                }
+                return next();
+            } else {
+                throw err;
+            }
         }
+
+        if (req.body.complete) {
+            let txHash = await MultiSig.sendMultiSigTx(req.body.signed, txId);
+            if (txHash == false) {
+                // 删除新建的交易
+                let sql = `update multisig_tx set is_deleted = ?, updated_at = ? where id = ?`;
+                await mysql.query(sql, [1, moment.utc().format('YYYY-MM-DD HH:mm:ss'), insertedTxId]);
+
+                // TODO send fail message to every one
+
+                res.send({
+                    success: false,
+                    code: 'MultiSignatureTxPublishFailed',
+                    message: 'incomplete signature ? '
+                });
+                return next();
+            }
+
+            // TODO send successful message to every one
+        }
+
+        res.send(_.extend(formatTxStatus(await MultiSig.getTxStatus(accountId, insertedTxId)), {success: true}));
+        return next();
     });
 
     server.del('/multi-signature-account/:accountId/tx/:txId', async (req, res, next) => {
@@ -478,14 +528,12 @@ module.exports = server => {
             txId = req.params.txId;
         let accountStatus;
         try {
-            accountStatus = await MultiSig.getAccountStatus(req.token.wid, accountId);
-        } catch (err) {
-            if (err instanceof restify.HttpError) {
-                res.send(err);
-            } else {
-                log(`get multi-signature-addr by id error, code = ${err.code}, message = ${err.message}`);
-                res.send(new restify.InternalServerError('Internal Error'));
+            accountStatus = await MultiSig.getAccountStatus(accountId);
+            if (!accountStatus.participants.some(p => p.wid == req.token.wid)) {
+                throw new restify.NotFoundError('MultiSignatureAccount not found');
             }
+        } catch (err) {
+            res.send(err);
             return next();
         }
 

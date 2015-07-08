@@ -149,6 +149,48 @@ var schema = {
                 maxLength: 150
             }
         }
+    },
+
+    createMultiSignatureTx: {
+        type: 'object',
+        required: ['rawtx', 'note', 'complete'],
+        properties: {
+            rawtx: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 65536
+            },
+            note: {
+                type: 'string',
+                minLength: 0,
+                maxLength: 65536
+            },
+            complete: {
+                type: 'boolean'
+            }
+        }
+    },
+
+    updateMultiSignatureTx: {
+        type: 'object',
+        required: ['original', 'signed', 'status', 'complete'],
+        properties: {
+            original: {
+                type: 'string',
+                minLength: 1
+            },
+            signed: {
+                type: 'string',
+                minLength: 1
+            },
+            status: {
+                type: 'string',
+                'enum': ['APPROVED', 'DENIED']
+            },
+            complete: {
+                type: 'boolean'
+            }
+        }
     }
 
 };

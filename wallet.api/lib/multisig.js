@@ -8,12 +8,14 @@ let bitcoind = require('./bitcoind');
 
 class MultiSig {
 
-    static async pubkeyValid(pubKey) {
+    static async pubkeyValid(pubKey, id) {
         if (!PublicKey.isValid(pubKey)) {
             return false;
         }
-        let sql = `select id from multisig_account_participant where pubkey = ? limit 1`;
-        let row = await mysql.selectOne(sql, [pubKey]);
+        let sql = `select id from multisig_account_participant
+                   where pubkey = ? and multisig_account_id = ?
+                   limit 1`;
+        let row = await mysql.selectOne(sql, [pubKey, id]);
         return _.isNull(row);
     }
 
@@ -50,51 +52,67 @@ class MultiSig {
         };
     }
 
-    static async getAccountStatus(wid, id) {
-        let sql = `select v1.id, v1.account_name, v1.m, v1.n, v1.generated_address, v1.redeem_script
+    static async getAccountStatus(id, conn = mysql) {
+        let sql = `select v1.id, v1.account_name, v1.m, v1.n, v1.generated_address, v1.redeem_script,
+                          v2.wid, v2.role, v2.participant_name, v2.pubkey, v2.pos, v2.created_at, v2.updated_at
                    from multisig_account v1
                      join multisig_account_participant v2
                        on v1.id = v2.multisig_account_id
-                   where v2.wid = ? and v1.id = ? and v2.pos = 0 and v1.is_deleted = 0
-                   limit 1`;
+                   where v1.id = ? and v1.is_deleted = 0
+                   order by v2.pos asc`;
 
-        let account = await mysql.selectOne(sql, [wid, id]);
+        let account = await conn.query(sql, [id]);
 
         if (_.isNull(account)) {
             throw new restify.NotFoundError('MultiSignatureAccount not found');
         }
 
-        let o = _.extend({}, account, {
-            complete: !_.isNull(account.generated_address)
-        });
-
-        sql = `select * from multisig_account_participant
-               where multisig_account_id = ?
-               order by pos asc`;
-
-        let participants = await mysql.query(sql, [id]);
-
-        o.participants = participants.map(p => {
-            return {
-                is_creator: p.role == 'Initiator',
-                name: p.participant_name,
-                pubkey: p.pubkey,
-                pos: p.pos,
-                joined_at: moment(p.created_at).unix()
-            };
-        });
+        let o = _.pick(account[0], ['id', 'account_name', 'm', 'n', 'generated_address', 'redeem_script']);
+        o.participants = account.map(a => _.pick(a, ['wid', 'role', 'participant_name', 'pubkey', 'pos', 'created_at', 'updated_at']));
 
         return o;
     }
 
-    static async joinAccount(id, wid, name, pubkey, newPos) {
-        let sql = `insert into multisig_account_participant
-                   (multisig_account_id, wid, role, participant_name, pubkey, pos, created_at, updated_at)
-                   values
-                   (?, ?, ?, ?, ?, ?, now(), now())`;
-        //竞态条件冲突的异常抛出
-        let result = await mysql.query(sql, [id, wid, 'Participant', name, pubkey, newPos]);
-        return result.insertId;
+    static async getTxStatus(accountId, txId, conn = mysql) {
+        let sql = `select v1.*, v2.wid, v2.status, v2.seq, v2.updated_at as joined_at, v3.participant_name
+                   from multisig_tx v1
+                     join multisig_tx_participant v2
+                       on v1.id = v2.multisig_tx_id
+                     join (select multisig_account_id, participant_name, wid
+                           from multisig_account_participant
+                           where multisig_account_id = ?) v3
+                       on v1.multisig_account_id = v3.multisig_account_id and v2.wid = v3.wid
+                   where v1.multisig_account_id = ? and v1.id = ?
+                   order by v2.seq asc`;
+        let rows = await conn.query(sql, [accountId, accountId, txId]);
+        if (!rows.length) {
+            throw new restify.NotFoundError('MultiSignatureTransaction not found');
+        }
+
+        let o = _.pick(rows[0], ['hex', 'id', 'multisig_account_id', 'note', 'complete', 'note', 'is_deleted', 'nonce', 'created_at', 'updated_at']);
+        o.participants = rows.map(r => _.pick(r, ['status', 'seq', 'wid', 'joined_at', 'participant_name']));
+
+        return o;
+    }
+
+    static async sendMultiSigTx(rawhex, txId) {
+        let txHash;
+        try {
+            txHash = await bitcoind('sendrawtransaction', rawhex);
+        } catch (err) {
+            if (err.response.body.error.code == -25) {
+                return false;
+            } else {
+                throw err;
+            }
+        }
+        await mysql.transaction(async conn => {
+            let sql = `select * from multisig_tx where id = ? and is_deleted = 0 for update`;
+            await conn.selectOne(sql, [txId]);
+            sql = `update multisig_tx set complete = ?, updated_at = ? where id = ?`;
+            await conn.query(sql, [1, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
+        });
+        return txHash;
     }
 }
 

@@ -120,7 +120,9 @@ void _loadRawBlockFromDisk(map<int32_t, RawBlock*> &blkCache, const int32_t heig
     lastHeight2 = height2;
   }
 
-  string path = Strings::Format("%d_%d", height2, height2 + (KCountPerFile - 1));
+  const int32_t stopHeight  = (int32_t)Config::GConfig.getInt("raw.max.block.height", -1);
+  string path = Strings::Format("%d_%d", height2,
+                                (height2 + (KCountPerFile - 1)) > stopHeight ? stopHeight : (height2 + (KCountPerFile - 1)));
 
   const string fname = Strings::Format("%s%s/0_raw_blocks",
                                        dir.c_str(), path.c_str());
@@ -682,7 +684,7 @@ void _saveBlock(BlockInfo &b, FILE *f, FileWriter *fwriter) {
   // `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
   // `next_block_id`, `next_block_hash`, `chain_id`, `size`,
   // `difficulty`, `tx_count`, `reward_block`, `reward_fees`, `relayed_by`, `created_at`
-  line = Strings::Format("%lld,%d,%s,%d,%s,%u,%lld,%lld,"
+  line = Strings::Format("%lld,%d,%s,%d,%s,%u,%u,%u,"
                          "%lld,%s,%lld,%s,"
                          "%d,%d,%llu,%d,%lld,%lld,0,%s",
                          b.blockId_, b.height_, b.blockHash_.ToString().c_str(),

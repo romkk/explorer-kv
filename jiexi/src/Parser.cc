@@ -663,7 +663,7 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
                                   // 1. `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`
                                   " %lld, %d, '%s', %d, '%s', %u, "
                                   // 2. `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
-                                  " %lld, %lld, %lld, '%s', "
+                                  " %u, %u, %lld, '%s', "
                                   // 3. `next_block_id`, `next_block_hash`, `chain_id`, `size`,
                                   " 0, '', %d, %d, "
                                   // 4. `difficulty`, `tx_count`, `reward_block`, `reward_fees`, `created_at`

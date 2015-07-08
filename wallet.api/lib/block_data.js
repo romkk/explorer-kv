@@ -14,7 +14,8 @@ module.exports = async (path, querySet) => {
     try {
         var result = await request({
             baseUrl: endpoint,
-            uri: `${path}?${querystring}`
+            uri: `${path}?${querystring}`,
+            timeout: 10000
         });
         return JSON.parse(result);
     } catch (err) {

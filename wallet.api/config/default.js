@@ -19,6 +19,6 @@ module.exports = {
         pass: process.env.BITCOIND_PASS
     },
 
-    explorerEndpoint: 'http://123.57.189.199:3000/',
-    tokenExpiredOffset: 10 * 86400,     //token 有效期
+    explorerEndpoint: 'http://tchain.bitmain.com/api/v1/',
+    tokenExpiredOffset: 10 * 86400     //token 有效期
 };

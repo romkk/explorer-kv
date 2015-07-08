@@ -114,6 +114,7 @@ public:
   int64_t txId_;
 
   TxLog();
+  TxLog(const TxLog &t);
   ~TxLog();
 };
 
@@ -183,6 +184,8 @@ private:
   void rollbackTx(class TxLog *txLog);
 
   void writeLastProcessTxlogTime();
+
+  bool tryDeleteTempBlockTxlogs(TxLog &lastTxlog, TxLog &curTxlog);
 
 public:
   Parser();

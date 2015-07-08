@@ -121,6 +121,22 @@ TxLog::TxLog():logId_(0), status_(0), type_(0),
 blkHeight_(-2), txId_(0), blkId_(0), blockTimestamp_(0)
 {
 }
+
+TxLog::TxLog(const TxLog &t) {
+  logId_          = t.logId_;
+  status_         = t.status_;
+  type_           = t.type_;
+  blkHeight_      = t.blkHeight_;
+  blkId_          = t.blkId_;
+  blockTimestamp_ = t.blockTimestamp_;
+  createdAt_      = t.createdAt_;
+
+  txHex_  = t.txHex_;
+  txHash_ = t.txHash_;
+  tx_     = t.tx_;
+  txId_   = t.txId_;
+}
+
 TxLog::~TxLog() {}
 
 
@@ -446,7 +462,7 @@ bool Parser::init() {
 
 
 void Parser::run() {
-  TxLog txlog;
+  TxLog txlog, lastTxlog;
   string blockHash;  // 目前仅用在URL回调上
   int64_t lastTxLogOffset = 0;
 
@@ -471,7 +487,15 @@ void Parser::run() {
       break;
     }
 
+    // 检测 address_txs_<YYYYMM> 是否存在
     checkTableAddressTxs(txlog.blockTimestamp_);
+
+    // 非反向消费模式下，检测是否块中间有临时记录，有则删除中间临时块交易记录，提高解析速度
+    // 仅在短时间大量报块有优化作用，减少无效处理
+    if (!isReverse_ && tryDeleteTempBlockTxlogs(lastTxlog, txlog)) {
+      // 成功移除部分记录，重新获取 txlog
+      continue;
+    }
 
     if (!dbExplorer_.execute("START TRANSACTION")) {
       goto error;
@@ -499,6 +523,7 @@ void Parser::run() {
     if (!dbExplorer_.execute("COMMIT")) {
       goto error;
     }
+    lastTxlog = txlog;
 
     writeLastProcessTxlogTime();
 
@@ -524,6 +549,45 @@ void Parser::run() {
 error:
   dbExplorer_.execute("ROLLBACK");
   return;
+}
+
+// 非反向消费模式下，检测是否块中间有临时记录，有则删除中间临时块交易记录，提高解析速度
+bool Parser::tryDeleteTempBlockTxlogs(TxLog &lastTxlog, TxLog &curTxlog) {
+  if (isReverse_) { return false; }
+
+  // 检测是否进入临时块区域
+  if (lastTxlog.logId_ != 0 &&
+      lastTxlog.blkHeight_ != -1 && curTxlog.blkHeight_ == -1) {
+    MySQLResult res;
+    char **row = nullptr;
+    string sql;
+
+    // 检测后方是否形成临时块区域的终点：探测是否存在正式块
+    sql = Strings::Format("SELECT `id` FROM `txlogs_0000` "
+                          " WHERE `id` > %lld AND `block_height` <> -1 ORDER BY `id` ASC LIMIT 1 ",
+                          curTxlog.logId_);
+    dbExplorer_.query(sql, res);
+    if (res.numRows() != 1) {
+      return false;
+    }
+    
+    // 后方存在正式块，说明形成临时块区间
+    row = res.nextRow();
+    int64_t endId = atoi64(row[0]);
+
+    // 清除临时块区间记录：两个正式块中间的临时 txlogs
+    sql = Strings::Format("DELETE FROM `txlogs_0000` WHERE `id` >= %lld AND `id` < %lld ",
+                          curTxlog.logId_, endId);
+    if (dbExplorer_.update(sql) == 0) {
+      THROW_EXCEPTION_DBEX("delete temp block txlogs failure, id range: [%lld, %lld)",
+                           curTxlog.logId_, endId);
+    }
+    LOG_WARN("delete temp block txlogs, id range: [%lld, %lld), id diff: %lld",
+             curTxlog.logId_, endId, endId - curTxlog.logId_);
+    return true;
+  }
+
+  return false;
 }
 
 void Parser::writeLastProcessTxlogTime() {

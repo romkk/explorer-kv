@@ -143,6 +143,7 @@ module.exports = server => {
             return next();
         }
 
+        // 账户任何人都可以修改，无需鉴别身份
         let status;
         try {
             status = await MultiSig.getAccountStatus(id);
@@ -491,7 +492,7 @@ module.exports = server => {
             if (txHash == false) {
                 // 删除新建的交易
                 let sql = `update multisig_tx set is_deleted = ?, updated_at = ? where id = ?`;
-                await mysql.query(sql, [1, moment.utc().format('YYYY-MM-DD HH:mm:ss'), insertedTxId]);
+                await mysql.query(sql, [1, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
 
                 // TODO send fail message to every one
 

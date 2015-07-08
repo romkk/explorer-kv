@@ -5,11 +5,16 @@ ROOT=$(cd "$(dirname "$0")"; pwd)
 
 cd "$ROOT"
 
-exec 9<>"$HOST".lock
-flock -n 9 || {
-	echo '[ERROR] Another process is running... exit.' >&2
-	exit 1
+usage() {
+	printf '[Usage] %s cache_dir\n' $0
+	exit 0;
 }
+
+if [[ $# -ne 1 ]]; then
+	echo '[ERROR] cache_dir not specified' >&2
+	echo
+	usage
+fi
 
 if [[ -z "$HOST" ]]; then
 	echo '[ERROR] HOST env not set' >&2
@@ -21,16 +26,14 @@ if ! which wget >/dev/null 2>&1; then
 	exit 1
 fi
 
-usage() {
-	printf '[Usage] %s cache_dir\n' $0
-	exit 0;
-}
 
-if [[ $# -ne 1 ]]; then
-	echo '[ERROR] cache_dir not specified' >&2
-	echo
-	usage
-fi
+handler_file=`echo "$HOST" | tr -d '/' `
+
+exec 9<>"$handler_file".lock
+flock -n 9 || {
+	echo '[ERROR] Another process is running... exit.' >&2
+	exit 1
+}
 
 dir="$1"
 
@@ -43,5 +46,5 @@ cd "$dir"
 
 tmp=`mktemp`
 find . -type f -not -name '*.tmp' > "$tmp"
-( cat "$tmp" | xargs cat | sort | uniq | xargs -I{} -P 10 -n 1 wget --timeout 5 --tries 3 -O /dev/null -a "$ROOT"/"$HOST".log "$HOST"{} ) || true
+( cat "$tmp" | xargs cat | sort | uniq | xargs -I{} -P 10 -n 1 wget --timeout 5 --tries 3 -O /dev/null -a "$ROOT"/"$handler_file".log "$HOST"{} ) || true
 cat "$tmp" | xargs rm -f

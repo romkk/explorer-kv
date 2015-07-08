@@ -430,6 +430,24 @@ module.exports = server => {
             return next();
         }
 
+        let txStatus;
+        try {
+            txStatus = await MultiSig.getTxStatus(accountId, txId);
+            if (!txStatus.participants.some(p => p.wid == req.token.wid)) {
+                throw new restify.NotFoundError('MultiSignatureTx not found');
+            }
+            if (txStatus.participants.some(p => p.wid == req.token.wid && p.status != 2)) {
+                throw {
+                    success: false,
+                    code: 'MultiSignatureTxStatusFixed',
+                    message: 'you have approved or denied this tx'
+                };
+            }
+        } catch (err) {
+            res.send(err);
+            return next();
+        }
+
         try {
             await mysql.transaction(async conn => {
                 let sql = `select * from multisig_tx where id = ? and multisig_account_id = ? limit 1 for update`;

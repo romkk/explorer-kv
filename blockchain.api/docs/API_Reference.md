@@ -4,14 +4,21 @@
 
 ## URI
 
-* 协议： `HTTP`
-* Host： `api.chain.btc.com`
-* API 版本： `/{api_version}`，当前可选版本为 `v1`
+* 协议： `HTTPS`
+* Host：
+       * Main     Network: `chain.bitmain.com`
+       * Testnet3 Network: `tchain.bitmain.com`
+* Path： `/api/{version}`，当前可选版本为 `v1`
 * 请求类型：`GET`
 
 以下如无特别说明，所有的 API 调用时均使用以上 URI 前缀，如获取最新区块信息：
 
-    GET http://api.chain.btc.com/v1/latestblock
+    # 格式：
+    GET https://{host}/api/{version}/{path}
+    # 示例：
+    GET https://chain.bitmain.com/api/v1/latestblock
+
+建议将`https://chain.bitmain.com/api/v1`整字符串做为配置项，与后面的具体路径分离。
 
 ## 访问频率限制
 
@@ -52,7 +59,7 @@ TODO
 * Get Block By Block Id
 
         GET /rawblock/${block_id}
-        
+
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |block_id|块内部 id|Path|√|Int|
@@ -63,14 +70,14 @@ TODO
 * Get Block By Hash
 
         GET /rawblock/${block_hash}
-        
+
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |block_hash|块哈希|Path|√|Int|
     |fulltx|是否显示详细的交易信息，默认为`false`|Query|✗|Boolean|
     |offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
     |limit|返回结果集个数，要求大于`1`小于`50`，默认为`50`|Query|✗|Int|
-        
+
 * Get Block By Height
 
         GET /block-height/${block_height}
@@ -78,9 +85,9 @@ TODO
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |block_height|块高度|Path|√|Int|
-    
+
     注意：该接口不支持`fulltx`、`offset`和`limit`。
-           
+
 
 #### Response
 
@@ -123,12 +130,12 @@ TODO
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |tx_id|交易 id|Path|√|String|
-    
+
 * [PRIVATE] Get Multiple Transactions
 
         GET /rawtx/${tx_id},${tx_id}...
-        
-    可以传入多个`tx_id`，使用`,`分隔。    
+
+    可以传入多个`tx_id`，使用`,`分隔。
 
 #### Response
 
@@ -174,7 +181,7 @@ TODO
 #### Request
 
     GET /address/${bitcoin_address}
-    
+
 |参数|描述|位置|必须|数据类型|
 |---|---|---|---|---|
 |bitcoin_address|比特币地址|Path|√|String|
@@ -219,13 +226,13 @@ TODO
     "txs":[--Array of Transactions--]
 }
 ```
-    
+
 ### Multi Address
 
 #### Request
 
     GET /multiaddr
-    
+
 |参数|描述|位置|必须|数据类型|
 |---|---|---|---|---|
 |active|多个比特币地址，使用 <code>&#124;</code> 分隔，最多 128 个地址|Query|√|string|
@@ -256,12 +263,124 @@ TODO
 
 ```
 
+### MultiAddress TxList
+
+#### Request
+
+```
+GET /address-tx/
+```
+
+|参数|描述|位置|必须|数据类型|
+|---|---|---|---|---|
+|active|多个比特币地址，使用 <code>&#124;</code> 分隔，最多 256 个地址|Query|√|string|
+|timestamp|返回结果集开始的时间戳，默认为查询时间|Query|✗|Int|
+|limit|返回结果集个数，要求大于`1`小于`50，默认为`50`|Query|✗|Int|
+|sort|排序方式，可选为`desc`和`asc`，默认为`desc`|Query|✗|String|
+
+#### Response
+
+```
+[
+    {
+        "ver": 1,
+        "inputs": [
+            {
+                "sequence": 4294967295,
+                "script": "483045022100b9aab6f29265674b99a79adc26e9d4fc443077b1ec33adb682c21493b7bfdf570220173a06f4a3a9b47a8af543f9762fbe52aa39ef3d204ed1ee4f6a49bad2e8d07d012102c2ce65118ca9d9c39ce8e71edc39d17d9800ae3c0089931cb5e7e4a5ac98ff7b",
+                "prev_out": {
+                    "tx_index": 40000046077,
+                    "addr": [
+                        "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR"
+                    ],
+                    "value": 2500000010,
+                    "n": 0
+                }
+            }
+        ],
+        "block_height": 485338,
+        "out": [
+            {
+                "spent": false,
+                "tx_index": 4000068047,
+                "addr": [
+                    "mpZM35ZsEFQ7djDZL4UskcGmrVebsHAm76"
+                ],
+                "value": 100000000,
+                "n": 0,
+                "script": "76a914632cf2a914c58596ab5238c4162fb81a733654ed88ac"
+            },
+            {
+                "spent": false,
+                "tx_index": 4000068047,
+                "addr": [
+                    "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR"
+                ],
+                "value": 2399990010,
+                "n": 1,
+                "script": "76a9148c3673c9d3744197ea3c3f90d5b6437d393764ff88ac"
+            }
+        ],
+        "lock_time": 0,
+        "size": 226,
+        "time": 1435313711,
+        "tx_index": 4000068047,
+        "hash": "dbf23dc6101cafacaf3acec615864b4a82be7fe71802ff0bc19bd0ea01a6e784",
+        "vin_sz": 1,
+        "vout_sz": 2,
+        "is_coinbase": false,
+        "fee": 10000,
+        "total_in_value": 2500000010,
+        "total_out_value": 2499990010,
+        "confirmations": 1376
+    }
+]
+```
+
+### Unspent
+
+#### Request
+
+```
+GET /unspent
+```
+
+|参数|描述|位置|必须|数据类型|
+|---|---|---|---|---|
+|active|多个比特币地址，使用 <code>&#124;</code> 分隔，最多 128 个地址|Query|√|string|
+|offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
+|limit|返回结果集个数，要求大于`1`小于`200`，默认为`200`|Query|✗|Int|
+
+#### Response
+
+返回的 unspent 按照确认数递减。`n_tx`字段标记了 unspent 的个数，与传入的 address 一一对应。
+
+```JSON
+{
+    "unspent_outputs": [
+        {
+            "address": "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR",
+            "tx_hash": "45cd71ad28c541c4ee507bac39017e89fbc028e11ebaa129c562600a71ded67f",
+            "tx_index": 63000067633,
+            "tx_output_n": 0,
+            "script": "76a914fdb9fb622b0db8d9121475a983288a0876f4de4888ac",
+            "value": 1250120000,
+            "value_hex": "4a835140",
+            "confirmations": 1
+        }
+    ],
+    "n_tx": [
+        61239
+    ]
+}
+```
+
 ### Latest Block
 
 #### Request
 
     GET /latestblock
-    
+
 #### Response
 
 ```JSON
@@ -278,7 +397,7 @@ TODO
 #### Request
 
     GET /unconfirmed-transactions
-    
+
 #### Response
 
 ```JSON

@@ -10,6 +10,7 @@ var validators = require('../lib/custom_validators');
 var AddressTxList = require('../lib/AddressTxList');
 var Tx = require('../lib/tx');
 var PriorityQueue = require('js-priority-queue');
+var Block = require('../lib/block');
 
 module.exports = (server) => {
     server.get('/address/:addr', async (req, res, next)=> {
@@ -115,7 +116,11 @@ module.exports = (server) => {
             }
         }
 
-        res.send(_.compact(await Tx.multiGrab(ret, !req.params.skipcache)));
+        var [h, txs] = await* [Block.getLatestHeight(), Tx.multiGrab(ret, !req.params.skipcache)];
+        res.send(_.compact(txs).map(tx => {
+            tx.confirmations = tx.block_height == -1 ? 0 : h - tx.block_height + 1;
+            return tx;
+        }));
         next();
     });
 
@@ -146,7 +151,9 @@ module.exports = (server) => {
             };
         });
 
-        res.send(ret);
+        res.send({
+            addresses: ret
+        });
         next();
     });
 };

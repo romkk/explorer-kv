@@ -57,9 +57,10 @@ module.exports = server => {
         // 检查余额是否足够
         var totalUnspentAmount;
         try {
-            totalUnspentAmount = _.sum(await blockData('/multiaddr', {
+            let apiResponse = await blockData('/multiaddr', {
                 active: sentFrom.join('|')
-            }), 'final_balance');
+            });
+            totalUnspentAmount = _.sum(apiResponse.addresses, 'final_balance');
         } catch (err) {
             return next(err);
         }
@@ -87,9 +88,10 @@ module.exports = server => {
             if (curAggregated == 0) {  //没有更多了
                 // balance change ?
                 try {
-                    let currentAmount = _.sum(await blockData('/multiaddr', {
+                    let apiResponse = await blockData('/multiaddr', {
                         active: sentFrom.join('|')
-                    }), 'final_balance');
+                    });
+                    let currentAmount = _.sum(apiResponse.addresses, 'final_balance');
                     if (totalUnspentAmount != currentAmount) {      //余额变动，重新启动
                         log(`检测到 unspent 余额变动, previous = ${totalUnspentAmount}, currentAmount = ${currentAmount}`);
                         totalUnspentAmount = currentAmount;
@@ -131,9 +133,10 @@ module.exports = server => {
         var hex = String(req.body.hex);
 
         try {
-            await bitcoind('sendrawtransaction', hex);
+            var txHash = await bitcoind('sendrawtransaction', hex);
             res.send({
-                success: true
+                success: true,
+                tx_hash: txHash
             });
         } catch (err) {
             if (err.name == 'StatusCodeError') {

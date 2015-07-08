@@ -40,12 +40,25 @@ server.use(restify.bodyParser());
 server.use(expressValidator());
 server.use(restify.gzipResponse());
 
+server.use(auth.tokenMiddleware([
+    '/auth',
+    '/ping'
+]));
+
 server.on('after', restify.auditLogger({
     log: bunyan.createLogger({
         name: 'Audit',
         stream: process.stdout
     })
 }));
+
+// 检查 request header
+server.use((req, res, next) => {
+    if (req.method != 'GET' && !req.is('json')) {
+        return next(new restify.BadRequestError('Content-Type need to be "application/json"'));
+    }
+    next();
+});
 
 server.use((req, res, next) => {
     log(`URL: ${req.url}`);

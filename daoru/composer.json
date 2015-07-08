@@ -8,7 +8,8 @@
         "phpunit/dbunit": "^1.3",
         "symfony/var-dumper": "^2.6",
         "symfony/class-loader": "^2.6",
-        "nesbot/carbon": "^1.18"
+        "nesbot/carbon": "^1.18",
+        "guzzlehttp/guzzle": "^6.0"
     },
     "autoload": {
         "classmap": [ "lib/", "model/" ]

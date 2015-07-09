@@ -19,17 +19,18 @@ module.exports = (server) => {
     });
 
     server.get('/identify-block/:hash', async (req, res, next) => {
-        let rows = await mysql.query('select pool_id, name, key_words from 0_pool');
+        let rows = await mysql.query('select pool_id, name, key_words, coinbase_address from 0_pool');
         var bag = {};
         rows.forEach(r => {
             if (!bag[r.name]) bag[r.name] = [];
             try {
                 bag[r.name] = {
+                    id: r.pool_id,
                     re: new RegExp(r.key_words, 'i'),
-                    id: r.pool_id
-                }
+                    address: r.coinbase_address.split('|')
+                };
             } catch (err) {
-                log(`[WARN] ${r.name} 正则表达式初始化失败，请检查。`);
+                log(`[WARN] ${r.name} 正则表达式或地址初始化失败，请检查。`);
             }
 
         });
@@ -49,8 +50,11 @@ module.exports = (server) => {
 
         var [tx] = blk.tx;
         var text = new Buffer(tx.inputs[0].script, 'hex').toString('utf8');
+        var addr = tx.out[0].addr[0];
 
-        var pool = _.findKey(bag, v => v.re.test(text));
+        // 查找矿池
+        var pool = _.findKey(bag, v => v.re.test(text) || v.address.includes(addr));
+
         var id = pool ? bag[pool].id : 0;
         var name = pool || 'Unknown';
 

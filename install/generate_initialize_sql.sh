@@ -273,30 +273,16 @@ CREATE TABLE `0_unconfirmed_txs` (
 
 echo "$unconfirmed_txs"
 
-pool=`cat <<EOT
-
-DROP TABLE IF EXISTS 0_pool;
-CREATE TABLE 0_pool (
-  pool_id int(11) NOT NULL AUTO_INCREMENT,
-  name varchar(200) NOT NULL,
-  key_words varchar(500) NOT NULL,
-  PRIMARY KEY (pool_id)
-) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8;
-
-INSERT INTO 0_pool (pool_id, name, key_words) VALUES
-(1, 'AntPool', 'antpool'),
-(2, 'Kano CKPool', 'ckpool/Kano'),
-(3, 'BitFury', '/BitFury/'),
-(4, 'BTCChina',	'BTCChina Pool'),
-(5, 'slush', '/slush/'),
-(6, 'BW.com', 'BW Pool'),
-(7, 'KnCMiner', 'KnCminer'),
-(8, 'Eligius', 'Eligius'),
-(9, 'megabigpower', 'megabigpower'),
-(10, 'F2POOL', '七彩神仙鱼');
-
-EOT
-`
+pool='
+CREATE TABLE `0_pool` (
+  `pool_id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(200) NOT NULL,
+  `key_words` varchar(500) NOT NULL,
+  `coinbase_address` char(35) NOT NULL,
+  `link` varchar(200) NOT NULL,
+  PRIMARY KEY (`pool_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+'
 
 echo "$pool"
 

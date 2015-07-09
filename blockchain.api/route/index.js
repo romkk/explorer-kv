@@ -4,6 +4,7 @@ module.exports = function(server) {
     require('./tx')(server);
     require('./address')(server);
     require('./misc')(server);
+    require('./api')(server);
     require('./ping')(server);
 };
 

@@ -26,7 +26,7 @@ module.exports = (server) => {
             try {
                 bag[r.name] = {
                     id: r.pool_id,
-                    re: new RegExp(r.key_words, 'i'),
+                    re: _.isEmpty(r.key_words) ? /\u0000/ : new RegExp(r.key_words, 'i'),
                     address: r.coinbase_address.split('|')
                 };
             } catch (err) {

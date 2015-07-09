@@ -3,9 +3,14 @@ use Illuminate\Support\Collection;
 
 require __DIR__ . '/bootstrap.php';
 
-Log::info('程序启动');
+$opts = getopt('s', ['skipmempool']);
 
-//demo
+$skipmempool = array_key_exists('s', $opts) || array_key_exists('skipmempool', $opts);
+
+Log::info('程序启动', [
+    'skipmempool' => $skipmempool
+]);
+
 $bitcoinClient = Bitcoin::make();
 $pool = new RawMemPool();
 
@@ -77,7 +82,13 @@ while (true) {
 
         $newBlock->insert();
 
-    } else {
+    } else {        //deal with mempool
+        if ($skipmempool) {
+            Log::info('SKIP MEMPOOL');
+            sleep(10);
+            continue;
+        }
+
         $gbt = $bitcoinClient->getblocktemplate();
         $gbtPrevHash = $gbt['previousblockhash'];
 

@@ -20,7 +20,7 @@ module.exports = server => {
             try {
                 bag[r.name] = {
                     id: r.pool_id,
-                    re: _.isEmpty(r.key_words) ? /\u0000/ : new RegExp(r.key_words, 'i'),
+                    re: _.isEmpty(r.key_words) ? /^(\u0000)+$/ : new RegExp(r.key_words, 'i'),  //任何 coinbase 字符串都不可能全部是 0
                     address: r.coinbase_address.split('|')
                 };
             } catch (err) {

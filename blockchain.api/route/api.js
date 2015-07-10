@@ -43,7 +43,12 @@ module.exports = server => {
         }
 
         var [tx] = blk.tx;
-        var text = new Buffer(tx.inputs[0].script, 'hex').toString('utf8');
+        var text;
+        try {
+            text = new Buffer(tx.inputs[0].script, 'hex').toString('utf8');
+        } catch (err) {
+            return next(err);
+        }
         var addr = tx.out[0].addr[0];
 
         // 查找矿池
@@ -52,7 +57,7 @@ module.exports = server => {
         var id = pool ? bag[pool].id : 0;
         var name = pool || 'Unknown';
 
-        if (name != 'Unknown') {
+        if (name != blk.relayed_by) {
             mysql.query(`update 0_blocks set relayed_by = ? where hash = ?`, [id, blk.hash]);
             sb.del(`blk_${blk.hash}`);
         }
@@ -76,7 +81,7 @@ module.exports = server => {
             return next();
         }
 
-        mysql.query('truncate 0_pool');
+        await mysql.query('truncate 0_pool');
 
         let bag = {};
 
@@ -84,7 +89,7 @@ module.exports = server => {
         _.each(blockchain.coinbase_tags, ({ name, link }, re) => {
             let o = (bag[name] || (bag[name] = {}));
             o.name = name;
-            o.re = re;
+            (o.re || (o.re = [])).push(re);
             o.link = link;
         });
 
@@ -92,13 +97,15 @@ module.exports = server => {
         _.each(blockchain.payout_addresses, ({name, link}, addr) => {
             let o = (bag[name] || (bag[name] = {}));
             o.addr = addr;
+            o.name = name;
+            o.link = link;
         });
 
         // insert
         let sql = `insert into 0_pool (name, key_words, coinbase_address, link) values`;
         let params = [];
         _.each(bag, (v, name) => {
-            params.push([ name, v.re || '', v.addr || '', v.link || '']);
+            params.push([ name, v.re && v.re.join('|') || '', v.addr || '', v.link || '']);
         });
 
         mysql.query(sql + params.map(pArr => `(${pArr.map(p => mysql.pool.escape(p)).join(',')})`).join(','));

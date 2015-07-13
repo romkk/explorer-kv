@@ -102,7 +102,7 @@ class Tx {
 
 
         // 获取 outputs
-        sql = `SELECT tx_id, position, address, address_ids, value, output_script_hex, spent_tx_id
+        sql = `SELECT tx_id, position, address, address_ids, value, output_script_asm, output_script_hex, spent_tx_id
                 FROM \`${this.getOutputTable()}\`
                 WHERE \`tx_id\` = ?
                 ORDER BY position asc`;
@@ -117,6 +117,7 @@ class Tx {
                     ret.value = r.value;
                     ret.n = r.position;
                     ret.script = r.output_script_hex;
+                    ret.script_asm = r.output_script_asm;
 
                     if (this.attrs.is_coinbase) {
                         ret.addr_tag_link = null;

@@ -165,12 +165,14 @@ TODO
       {
          "hash" : "29d6a3540acfa0a950bef2bfdc75cd51c24390fd",
          "value" : "98000000",
-         "script" : "76a914641ad5051edd97029a003fe9efb29359fcee409d88ac"
+         "script" : "76a914641ad5051edd97029a003fe9efb29359fcee409d88ac",
+         "script_asm": "02a8bab96afaeb41f6b3a947755c68d57ea11a51dda592d1092b76b61fe4339dbf OP_CHECKSIG"
       },
       {
          "script" : "76a914641ad5051edd97029a003fe9efb29359fcee409d88ac",
          "hash" : "17b5038a413f5c5ee288caa64cfab35a0c01914e",
-         "value" : "2000000"
+         "value" : "2000000",
+         "script_asm": "02a8bab96afaeb41f6b3a947755c68d57ea11a51dda592d1092b76b61fe4339dbf OP_CHECKSIG"
       }
    ],
    "relayed_by" : "64.179.201.80",

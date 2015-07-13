@@ -94,6 +94,8 @@ TODO
 ```JSON
 {
    "main_chain" : true,
+   "chain_id" : 0,  -- 区块链编号， 0 为主链
+   "difficulty": 1,
    "ver" : 1,
    "relayed_by" : "108.60.208.156",
    "n_tx" : 22,
@@ -107,6 +109,7 @@ TODO
    "block_index" : 818044,
    "bits" : 437129626,
    "prev_block" : "00000000000007d0f98d9edca880a6c124e25095712df8952e0439ac7409738a",
+   "next_block" : null,         -- 当前链没有下一个块
    "txs": [-- list of txs --]
 }
 ```

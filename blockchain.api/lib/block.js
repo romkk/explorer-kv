@@ -37,9 +37,11 @@ class Block {
             size: this.attrs.size,
             block_index: this.attrs.block_id,
             main_chain: this.attrs.chain_id === 0,
+            chain_id: this.attrs.chain_id,
             height: this.attrs.height,
             tx: this.txs,
-            relayed_by: this.attrs.relayed_by || 'Unknown'
+            relayed_by: this.attrs.relayed_by || 'Unknown',
+            difficulty: this.attrs.difficulty
         };
     }
 
@@ -64,6 +66,14 @@ class Block {
 
                 return this;
             });
+    }
+
+    static async getNextBlock(currentHeight, chainId, useCache) {
+        let h = currentHeight + 1;
+        let blks = await Block.grabByHeight(h, useCache);
+        if (!blks.length) return null;
+        let next = blks.find(b => b.chain_id == chainId);
+        return next || null;
     }
 
     static make(id) {

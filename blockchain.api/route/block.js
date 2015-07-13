@@ -3,9 +3,10 @@ var Block = require('../lib/block');
 var log = require('debug')('api:route:block');
 var restify = require('restify');
 var sb = require('../lib/ssdb')();
+var _ = require('lodash');
 
 module.exports = (server) => {
-    server.get('/rawblock/:blockIdentifier', (req, res, next) => {
+    server.get('/rawblock/:blockIdentifier', async (req, res, next) => {
         req.checkQuery('fulltx', 'should be boolean').optional().isBoolean();
         req.sanitize('fulltx').toBoolean(true);
 
@@ -23,14 +24,16 @@ module.exports = (server) => {
             }));
         }
 
-        Block.grab(req.params.blockIdentifier, req.params.offset, req.params.limit, req.params.fulltx, !req.params.skipcache)
-            .then(blk => {
-                res.send(blk);
-                next();
-            }, () => {
-                res.send(new restify.ResourceNotFoundError('Block not found'));
-                next();
-            });
+        try {
+            let blk = await Block.grab(req.params.blockIdentifier, req.params.offset, req.params.limit, req.params.fulltx, !req.params.skipcache);
+            let next = await Block.getNextBlock(blk.height, blk.chain_id, !req.params.skipcache);
+            blk.next_block = _.get(next, 'hash', null);
+            res.send(blk);
+        } catch (err) {
+            res.send(new restify.ResourceNotFoundError('Block not found'));
+            throw err;
+        }
+        next();
     });
 
     server.get('/block-height/:height', async (req, res, next) => {

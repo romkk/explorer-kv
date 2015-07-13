@@ -42,7 +42,9 @@ server.use(restify.gzipResponse());
 
 server.use(auth.tokenMiddleware([
     '/auth',
-    '/ping'
+    '/ping',
+    '/tx/publish',
+    '/tx/decode'
 ]));
 
 server.on('after', restify.auditLogger({

@@ -207,7 +207,7 @@ class Block {
         return (await mysql.pluck(sql, 'height', [timestamp]));
     }
 
-    static async getBlockList(timestamp, offset, limit, order, useCache) {
+    static async getBlockList(timestamp, offset, limit, order, useCache = true) {
         let sql = `select hash from 0_blocks
                    where chain_id = 0 and timestamp ${order == 'desc' ? '<=' : '>='} ?
                    order by height ${order}

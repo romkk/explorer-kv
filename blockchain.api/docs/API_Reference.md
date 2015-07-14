@@ -114,6 +114,51 @@ TODO
 }
 ```
 
+### Block List
+
+获取区块列表。
+
+#### Request
+
+```
+GET /block
+```
+
+|参数|描述|位置|必须|数据类型|
+|---|---|---|---|---|
+|timestamp|返回结果集开始的时间戳，默认为查询时间|Query|✗|Int|
+|offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
+|limit|返回结果集个数，要求大于`1`小于`50`，默认为`50`|Query|✗|Int|
+|sort|排序方式，可选为`desc`和`asc`，默认为`desc`|Query|✗|String|
+
+#### Response
+
+```
+[
+    {
+        "hash": "00000000bc45ac875fbd34f43f7732789b6ec4e8b5974b4406664a75d43b21a1",
+        "ver": 1,
+        "prev_block": "000000008b5d0af9ffb1741e38b17b193bd12d7683401cecd2fd94f548b6e5dd",
+        "mrkl_root": "6801cb417573220564c3cec34dd39a0879e24ea75a7ca1ba6a3b8c11c1c6c6b3",
+        "time": 1296689176,
+        "bits": -7250641141534491000,
+        "fee": 0,
+        "nonce": -4840597820635031000,
+        "n_tx": 1,
+        "size": 190,
+        "block_index": 6,
+        "main_chain": true,
+        "chain_id": 0,
+        "height": 5,
+        "tx": [
+            51000000001
+        ],
+        "relayed_by": "Unknown",
+        "difficulty": 1
+    }
+]
+```
+
 ### Transaction
 
 #### Request

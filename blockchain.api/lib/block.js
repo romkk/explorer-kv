@@ -152,6 +152,49 @@ class Block {
         });
     }
 
+    static async multiGrab(idList, useCache) {
+        if (!useCache) {
+            return (await* idList.map(async (id) => {
+                try {
+                    return (await Block.grab(id, 0, 0, false, false));
+                } catch (err) {
+                    return null;
+                }
+            }));
+        }
+
+        let idType = helper.paramType(idList[0]);
+        let bag = _.zipObject(idList);
+        if (idType === helper.constant.ID_IDENTIFIER) {
+            let hashList = sb.multi_get.apply(sb, idList.map(id => `blkid_${id}`));
+            let cachedHash = _.chain(hashList).chunk(2).zipObject().mapKeys((v, k) => k.slice(6)).value();
+            let missedIds = idList.filter(id => !cachedHashList[id]);
+            let p1 = missedIds.map(async (id) => {
+                try {
+                    return (await Block.grab(id, 0, 0, false, true));
+                } catch (err) {
+                    return null;
+                }
+            });
+            let p2 = Block.multiGrab(Object.values(cachedHash), true);
+            _.flatten(await* p1.concat(p2)).forEach(blk => bag[blk.id] = blk);
+            return idList.map(id => bag[id]);
+        } else {    // hash list
+            let cached = await sb.multi_get.apply(sb, idList.map(id => `blk_${id}`));
+            cached = _.chain(cached).chunk(2).zipObject().mapKeys((v, k) => k.slice(4)).mapValues(JSON.parse).value();
+            _.extend(bag, cached);
+            let missed = await* idList.filter(id => !cached[id]).map(async (hash) => {
+                    try {
+                        return (await Block.grab(hash, 0, 0, false, true));
+                    } catch (err) {
+                        return null;
+                    }
+                });
+            missed.forEach(blk => bag[blk.hash] = blk);
+            return idList.map(id => bag[id]);
+        }
+    }
+
     static getBlockTxTableByBlockId(blockId) {
         return sprintf('block_txs_%04d', parseInt(blockId, 10) % 100);
     }
@@ -160,6 +203,23 @@ class Block {
         var sql = `select height from 0_blocks
                    where chain_id = 0 order by height desc limit 1`;
         return mysql.pluck(sql, 'height');
+    }
+
+    static async getBlockHeightByTimestamp(timestamp, order) {
+        let sql = `select height from 0_blocks where
+                    \`timestamp\` ${order === 'desc' ? '<=' : '>='} ?
+                    and chain_id = 0
+                   order by height ${order} limit 1`;
+        return (await mysql.pluck(sql, 'height', [timestamp]));
+    }
+
+    static async getBlockList(timestamp, offset, limit, order, useCache) {
+        let sql = `select hash from 0_blocks
+                   where chain_id = 0 and timestamp ${order == 'desc' ? '<=' : '>='} ?
+                   order by height ${order}
+                   limit ${offset}, ${limit}`;
+        let hashList = await mysql.list(sql, 'hash', [timestamp]);
+        return (await Block.multiGrab(hashList, useCache));
     }
 }
 

@@ -136,22 +136,22 @@ GET /block
 ```
 [
     {
-        "hash": "00000000bc45ac875fbd34f43f7732789b6ec4e8b5974b4406664a75d43b21a1",
+        "hash": "000000000933ea01ad0ee984209779baaec3ced90fa3f408719526f8d77f4943",
         "ver": 1,
-        "prev_block": "000000008b5d0af9ffb1741e38b17b193bd12d7683401cecd2fd94f548b6e5dd",
-        "mrkl_root": "6801cb417573220564c3cec34dd39a0879e24ea75a7ca1ba6a3b8c11c1c6c6b3",
-        "time": 1296689176,
-        "bits": -7250641141534491000,
+        "prev_block": "0000000000000000000000000000000000000000000000000000000000000000",
+        "mrkl_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
+        "time": 1296688602,
+        "bits": 486604799,
         "fee": 0,
-        "nonce": -4840597820635031000,
+        "nonce": 414098458,
         "n_tx": 1,
-        "size": 190,
-        "block_index": 6,
+        "size": 285,
+        "block_index": 1,
         "main_chain": true,
         "chain_id": 0,
-        "height": 5,
+        "height": 0,
         "tx": [
-            51000000001
+            59000000001
         ],
         "relayed_by": "Unknown",
         "difficulty": 1

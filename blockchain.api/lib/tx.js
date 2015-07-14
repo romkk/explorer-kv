@@ -75,8 +75,8 @@ class Tx {
         var sql;
 
         // 获取 inputs
-        sql = `SELECT id, tx_id, position, input_script_hex, sequence,
-                        prev_tx_id, prev_position, prev_value, prev_address,
+        sql = `SELECT id, tx_id, position, input_script_hex, input_script_asm,
+                        sequence, prev_tx_id, prev_position, prev_value, prev_address,
                         prev_address_ids, created_at
                 FROM \`${this.getInputTable()}\`
                 WHERE \`tx_id\` = ?
@@ -87,6 +87,7 @@ class Tx {
                     let ret = {};
                     ret.sequence = r.sequence;
                     ret.script = r.input_script_hex;
+                    ret.script_asm = r.input_script_asm;
                     if (!this.attrs.is_coinbase) {
                         ret.prev_out = {        //omit `spent` and `script`
                             tx_index: r.prev_tx_id,

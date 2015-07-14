@@ -5,7 +5,9 @@ var bitcoind = require('../lib/bitcoind');
 module.exports = server => {
 
     server.get('/ping', async (req, res, next) => {
-        var start = Date.now();
+        let start = Date.now();
+
+        log(`ping`);
 
         try {
             await* [mysql.query("select 1 + 1"), bitcoind('ping')];
@@ -17,9 +19,10 @@ module.exports = server => {
                 name: err.name,
                 stack: err.stack
             });
+            return next();
         }
 
-        var total = Date.now() - start;
+        let total = Date.now() - start;
 
         if (total > 10000) {
             log(`响应时间过长, ${total}ms`);

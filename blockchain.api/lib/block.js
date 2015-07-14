@@ -45,27 +45,21 @@ class Block {
         };
     }
 
-    load() {
+    async load() {
         var table = Block.getBlockTxTableByBlockId(this.attrs.block_id);
-        var sql = `select tx_id
-                   from ${table}
-                   where block_id = ?
-                   order by position asc`;
+        var sql = `select tx_id from ${table}
+                   where block_id = ? order by position asc`;
 
-        return mysql.list(sql, 'tx_id', [ this.attrs.block_id ])
-            .then(txIndexes => {
-                this.txs = txIndexes;
+        this.txs = await mysql.list(sql, 'tx_id', [ this.attrs.block_id ]);
 
-                log(`set cache blk_id = ${this.attrs.block_id}`);
+        log(`set cache blk_id = ${this.attrs.block_id}`);
+        // set cache，对于可能存在的边界情况全部忽略
+        sb.multi_set(
+            `blkid_${this.attrs.block_id}`, this.attrs.hash,    //blkid_{id} => hash
+            `blk_${this.attrs.hash}`, JSON.stringify(this)
+        );
 
-                // set cache，对于可能存在的边界情况全部忽略
-                sb.multi_set(
-                    `blkid_${this.attrs.block_id}`, this.attrs.hash,    //blkid_{id} => hash
-                    `blk_${this.attrs.hash}`, JSON.stringify(this)
-                );
-
-                return this;
-            });
+        return this;
     }
 
     static async getNextBlock(currentHeight, chainId, useCache) {

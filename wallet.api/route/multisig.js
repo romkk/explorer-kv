@@ -59,16 +59,6 @@ module.exports = server => {
             return next();
         }
 
-        let validateResult = await MultiSig.pubkeyValid(creatorPubkey);
-        if (!validateResult) {
-            res.send({
-                success: false,
-                code: 'MultiSignatureAccountInvalidPubkey',
-                message: 'Invalid pubkey found'
-            });
-            return next();
-        }
-
         let result;
         try {
             result = await MultiSig.createAccount(req.token.wid, accountName, m, n, creatorPubkey, creatorName);
@@ -109,13 +99,9 @@ module.exports = server => {
             return next();
         }
 
-        if (status.participants.some(p => p.wid == req.token.wid)) {
-            status = formatAccountStatus(status);
-            status.success = true;
-            res.send(status);
-        } else {
-            res.send(new restify.NotFoundError('MultiSignatureAccount not found'));
-        }
+        status = formatAccountStatus(status);
+        status.success = true;
+        res.send(status);
         return next();
     });
 
@@ -134,11 +120,11 @@ module.exports = server => {
             participantPubkey = req.body.pubkey,
             id = req.params.id;
 
-        if (!(await MultiSig.pubkeyValid(participantPubkey, id))) {
+        if (!(await MultiSig.accountParamsValid(id, participantPubkey, req.token.wid, participantName))) {
             res.send({
                 success: false,
-                code: 'MultiSignatureAccountInvalidPubkey',
-                message: 'Invalid pubkey found'
+                code: 'MultiSignatureAccountInvalidParams',
+                message: 'invalid/duplicate pubkey, wid, or participant name'
             });
             return next();
         }
@@ -149,15 +135,6 @@ module.exports = server => {
             status = await MultiSig.getAccountStatus(id);
         } catch (err) {
             res.send(err);
-            return next();
-        }
-
-        if (!(await MultiSig.participantNameValid(status.id, participantName))) {
-            res.send({
-                success: false,
-                code: 'MultiSignatureAccountDuplicateName',
-                message: 'duplicate name found'
-            });
             return next();
         }
 
@@ -191,7 +168,7 @@ module.exports = server => {
                 // generate new address
                 result = await bitcoind('createmultisig', status.n, _.pluck(status.participants, 'pubkey'));
                 sql = `update multisig_account set redeem_script = ?, generated_address = ?, updated_at = now()
-                           where id = ? and is_deleted = 0`;
+                           where id = ?`;
                 await conn.query(sql, [result.redeemScript, result.address, id]);
                 status = await MultiSig.getAccountStatus(id, conn);
             });
@@ -206,15 +183,14 @@ module.exports = server => {
             } else if (err.name == 'StatusCodeError') {
                 res.send({
                     success: false,
-                    bitcoind: {
-                        statusCode: err.statusCode,
-                        body: err.response.body
-                    },
+                    description: _.get(err, 'response.body.error'),
                     message: 'create multisig failed',
                     code: 'MultiSignatureAccountJoinFailed'
                 });
+                await mysql.query(`update multisig_account set is_deleted = 1, updated_at = now() where id = ?`, [id]);
             } else {
-                throw err;
+                console.log(err);
+                res.send(new restify.InternalServerError('Internal Error'));
             }
             return next();
         }
@@ -237,19 +213,29 @@ module.exports = server => {
             }));
         }
 
-        let sql = `select v1.id, v1.is_deleted, v1.generated_address
-                   from multisig_account v1
-                     join multisig_account_participant v2
-                       on v1.id = v2.multisig_account_id
-                   where v1.id = ? and v2.wid = ? and v2.role = 'Initiator'
-                   limit 1`;
+        let id = req.params.id;
 
-        let row = await mysql.selectOne(sql, [req.params.id, req.token.wid]);
-
-        if (_.isNull(row) || !!row.is_deleted) {
-            res.send(new restify.NotFoundError('MultiSignatureAccount not found'));
+        // get status
+        let status;
+        try {
+            status = await MultiSig.getAccountStatus(id);
+        } catch (err) {
+            res.send(err);
             return next();
-        } else if (!_.isNull(row.generated_address)) {
+        }
+
+        let p = status.participants[0];
+
+        if (p.wid != req.token.wid) {
+            res.send({
+                success: false,
+                message: 'permission denied',
+                code: 'MultiSignatureAccountDenied'
+            });
+            return next();
+        }
+
+        if (!!status.generated_address) {
             res.send({
                 success: false,
                 code: 'MultiSignatureAccountCreated',
@@ -258,7 +244,7 @@ module.exports = server => {
             return next();
         }
 
-        sql = `update multisig_account set is_deleted = 1
+        let sql = `update multisig_account set is_deleted = 1
                where id = ? and is_deleted = 0 and generated_address is null`;
         let result = await mysql.query(sql, [req.params.id]);
         if (result.affectedRows == 0) {

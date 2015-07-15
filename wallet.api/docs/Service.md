@@ -422,9 +422,9 @@ PUT /multi-signature-account/$id
 
 可能的错误码：
 
-*   MultiSignatureAccountDuplicateName
+*   MultiSignatureAccountInvalidParams
 
-    用户名称重复。
+    公钥、用户名或 wid 冲突。正常情况下客户端请求用户重新指定名称即可，公钥和 wid 的冲突避免由客户端保证。
 
 *   MultiSignatureAccountJoinCompleted
 
@@ -434,7 +434,7 @@ PUT /multi-signature-account/$id
 
     多重签名账户更新失败，可能是竞态条件冲突等，重试即可；
     
-    如果含有 bitcoind 字段，则为 bitcoind 返回错误，详情参见`bitcoind`字段。
+    如果含有 description 字段，则为 bitcoind 返回错误；注意：为了维护状态一致，该账户会被删除，需要重复创建流程。
     
 如果要加入的账户不存在，则返回 404。
 
@@ -461,6 +461,10 @@ DELETE /multi-signature-account/$id
 *   MultiSignatureAccountCreated
 
     要删除的多重签名账户已经生成，不可被删除
+    
+*   MultiSignatureAccountDenied
+
+    要删除的多重签名账户并非请求者创建，不可被删除
     
 *   MultiSignatureAccountDeleteFailed
 

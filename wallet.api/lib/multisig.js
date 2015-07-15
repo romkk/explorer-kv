@@ -8,21 +8,24 @@ let bitcoind = require('./bitcoind');
 
 class MultiSig {
 
-    static async pubkeyValid(pubKey, id) {
+    static async accountParamsValid(id, pubKey = null, wid = null, name = null) {
+        if (pubKey == null && wid == null && name == null) {
+            return false;
+        }
+
         if (!PublicKey.isValid(pubKey)) {
             return false;
         }
-        let sql = `select id from multisig_account_participant
-                   where pubkey = ? and multisig_account_id = ?
-                   limit 1`;
-        let row = await mysql.selectOne(sql, [pubKey, id]);
-        return _.isNull(row);
-    }
 
-    static async participantNameValid(id, name) {
+        let condition = [];
+        if (pubKey) condition.push('pubkey = ?');
+        if (wid) condition.push('wid = ?');
+        if (name) condition.push('participant_name = ?');
+
         let sql = `select id from multisig_account_participant
-                   where multisig_account_id = ? and participant_name = ? limit 1`;
-        let row = await mysql.selectOne(sql, [id, name]);
+                   where multisig_account_id = ? and (${condition.join(' or ')})
+                   limit 1`;
+        let row = await mysql.selectOne(sql, [id].concat(_.compact([pubKey, wid, name])));
         return _.isNull(row);
     }
 
@@ -63,7 +66,7 @@ class MultiSig {
 
         let account = await conn.query(sql, [id]);
 
-        if (_.isNull(account)) {
+        if (!account.length) {
             throw new restify.NotFoundError('MultiSignatureAccount not found');
         }
 

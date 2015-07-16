@@ -21,15 +21,15 @@ let formatAccountStatus = (status) => {
     return status;
 };
 let formatTxStatus = status => {
-    status.complete = !!status.complete;
+    status.status = ['DENIED', 'APPROVED', 'TBD'][status.status];
     status.is_deleted = !!status.is_deleted;
     status.created_at = moment.utc(status.created_at).unix();
     status.updated_at = moment.utc(status.updated_at).unix();
     status.participants = status.participants.map(p => {
-        p = _.omit(p, ['wid']);
-        p.joined_at = moment.utc(p.joined_at).unix();
-        p.status = ['DENIED', 'APPROVED', 'TBD'][p.status];
-        return p;
+        let o = _.omit(p, ['wid', 'participant_status']);
+        o.joined_at = moment.utc(p.joined_at).unix();
+        o.status = ['DENIED', 'APPROVED', 'TBD'][p.participant_status];
+        return o;
     });
     return _.omit(status, ['nonce']);
 };
@@ -188,6 +188,7 @@ module.exports = server => {
                     code: 'MultiSignatureAccountJoinFailed'
                 });
                 await mysql.query(`update multisig_account set is_deleted = 1, updated_at = now() where id = ?`, [id]);
+                //TODO push message to all
             } else {
                 console.log(err);
                 res.send(new restify.InternalServerError('Internal Error'));
@@ -304,10 +305,10 @@ module.exports = server => {
         try {
             await mysql.transaction(async conn => {
                 let sql = `insert into multisig_tx
-                       (multisig_account_id, hex, complete, note, is_deleted, nonce, created_at, updated_at)
+                       (multisig_account_id, hex, status, note, is_deleted, nonce, created_at, updated_at)
                        values
                        (?, ?, ?, ?, ?, ?, now(), now())`;
-                insertedTxId = (await conn.query(sql, [accountId, rawtx, 0, note, 0, 0])).insertId;
+                insertedTxId = (await conn.query(sql, [accountId, rawtx, 2, note, 0, 0])).insertId;
                 sql = `insert into multisig_tx_participant
                    (multisig_tx_id, wid, status, seq, created_at, updated_at)
                    values
@@ -326,7 +327,7 @@ module.exports = server => {
             return next();
         }
 
-        if (complete) {
+        if (req.body.complete) {
             let txHash = await MultiSig.sendMultiSigTx(rawtx, insertedTxId);
             if (txHash == false) {
                 // 删除新建的交易
@@ -403,6 +404,16 @@ module.exports = server => {
             }));
         }
 
+        if (req.body.status == 'APPROVED' &&
+            (_.isUndefined(req.body.signed) || _.isUndefined(req.body.complete))) {
+            res.send({
+                success: false,
+                code: 'MultiSignatureTxInvalidParams',
+                message: 'invalid params'
+            });
+            return next();
+        }
+
         let accountId = req.params.accountId,
             txId = req.params.txId;
         let accountStatus;
@@ -422,7 +433,10 @@ module.exports = server => {
             if (!txStatus.participants.some(p => p.wid == req.token.wid)) {
                 throw new restify.NotFoundError('MultiSignatureTx not found');
             }
-            if (txStatus.participants.some(p => p.wid == req.token.wid && p.status != 2)) {
+            if (txStatus.status != 2) {
+
+            }
+            if (txStatus.participants.some(p => p.wid == req.token.wid && p.participant_status != 2)) {
                 throw {
                     success: false,
                     code: 'MultiSignatureTxStatusFixed',
@@ -431,6 +445,17 @@ module.exports = server => {
             }
         } catch (err) {
             res.send(err);
+            return next();
+        }
+
+        try {
+            bitcore.Transaction(req.body.signed);
+        } catch (err) {
+            res.send({
+                success: false,
+                code: 'MultiSignatureTxInvalidHex',
+                message: 'invalid hex string'
+            });
             return next();
         }
 
@@ -446,7 +471,7 @@ module.exports = server => {
                     throw e;
                 }
 
-                if (!!tx.complete) {
+                if (tx.status != 2) {
                     let e = new Error();
                     e.code = 'MultiSignatureTxCreated';
                     e.message = 'you are too late';
@@ -467,11 +492,38 @@ module.exports = server => {
                     throw e;
                 }
 
-                sql = `update multisig_tx set hex = ?, updated_at = ? where id = ?;
-                       update multisig_tx_participant set status = ? where multisig_tx_id = ? and wid = ?`;
-                await conn.query(sql, [ req.body.signed, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId,
-                    ({ 'APPROVED': 1, 'DENIED': 0 })[req.body.status],
-                    txId, req.token.wid]);
+                if (req.body.status == 'APPROVED') {
+                    sql = `update multisig_tx set hex = ?, updated_at = ? where id = ?;`;
+                    await conn.query(sql, [req.body.signed, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
+                }
+
+                sql = `update multisig_tx_participant set status = ? where multisig_tx_id = ? and wid = ?`;
+                await conn.query(sql, [({'APPROVED': 1, 'DENIED': 0 })[req.body.status], txId, req.token.wid]);
+
+                // 是否该交易已被审批为失败
+                sql = `select count(id) as cnt from multisig_tx_participant where status = 0 and multisig_tx_id = ?`;
+                let failed = await conn.pluck(sql, 'cnt', [txId]);
+                if (failed > accountStatus.m - accountStatus.n) {
+                    // TODO send fail message to every one
+                    sql = `update multisig_tx set nonce = nonce + 1, updated_at = ?, status = 0 where id = ?`;
+                    await conn.query(sql, [moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
+                } else if (req.body.complete) {
+                    let txHash = await MultiSig.sendMultiSigTx(req.body.signed, txId, conn);
+                    if (txHash == false) {
+                        // 删除新建的交易
+                        sql = `update multisig_tx set is_deleted = 1, nonce = nonce + 1, updated_at = ? where id = ?`;
+                        await conn.query(sql, [moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
+
+                        // TODO send fail message to every one
+
+                        res.send({
+                            success: false,
+                            code: 'MultiSignatureTxPublishFailed',
+                            message: 'incomplete signature ? '
+                        });
+                        return next();
+                    }
+                }
             });
 
         } catch (err) {
@@ -485,33 +537,15 @@ module.exports = server => {
                         message: err.message
                     });
                 }
-                return next();
             } else {
-                throw err;
+                console.log(err);
+                res.send(new restify.InternalServerError('Internal Error'));
             }
+            return next();
         }
 
-        if (req.body.complete) {
-            let txHash = await MultiSig.sendMultiSigTx(req.body.signed, txId);
-            if (txHash == false) {
-                // 删除新建的交易
-                let sql = `update multisig_tx set is_deleted = ?, updated_at = ? where id = ?`;
-                await mysql.query(sql, [1, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
-
-                // TODO send fail message to every one
-
-                res.send({
-                    success: false,
-                    code: 'MultiSignatureTxPublishFailed',
-                    message: 'incomplete signature ? '
-                });
-                return next();
-            }
-
-            // TODO send successful message to every one
-        }
-
-        res.send(_.extend(formatTxStatus(await MultiSig.getTxStatus(accountId, insertedTxId)), {success: true}));
+        // TODO send successful message to every one
+        res.send(_.extend(formatTxStatus(await MultiSig.getTxStatus(accountId, txId)), {success: true}));
         return next();
     });
 
@@ -550,7 +584,7 @@ module.exports = server => {
             return next();
         }
 
-        if (!!tx.complete) {
+        if (tx.status != 2) {
             res.send({
                 success: false,
                 code: 'MultiSignatureTxCreated',
@@ -559,8 +593,8 @@ module.exports = server => {
             return next();
         }
 
-        sql = `update multisig_tx set is_deleted = 1, nonce = ? where id = ? and nonce = ?`;
-        let result = await mysql.query(sql, [tx.nonce + 1, tx.id, tx.nonce]);
+        sql = `update multisig_tx set is_deleted = 1, nonce = nonce + 1 where id = ? and nonce = ?`;
+        let result = await mysql.query(sql, [tx.id, tx.nonce]);
         if (result.affectedRows == 0) {
             res.send({
                 success: false,

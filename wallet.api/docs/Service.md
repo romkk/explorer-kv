@@ -564,6 +564,14 @@ PUT /multi-signature-account/$account_id/tx/$tx_id
 
 可能的错误码：
 
+*   MultiSignatureTxInvalidParams
+
+    参数错误；如审批状态为批准，但是没有`signed`等字符串。
+
+*   MultiSignatureTxCreated
+
+    多重签名交易已经完成，不能再修改。
+
 *   MultiSignatureTxDeleted
 
     多重签名交易已经取消，不能再修改。

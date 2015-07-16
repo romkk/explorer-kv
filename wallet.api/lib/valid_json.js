@@ -173,7 +173,7 @@ var schema = {
 
     updateMultiSignatureTx: {
         type: 'object',
-        required: ['original', 'signed', 'status', 'complete'],
+        required: ['status', 'original'],
         properties: {
             original: {
                 type: 'string',

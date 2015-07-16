@@ -77,7 +77,7 @@ class MultiSig {
     }
 
     static async getTxStatus(accountId, txId, conn = mysql) {
-        let sql = `select v1.*, v2.wid, v2.status, v2.seq, v2.updated_at as joined_at, v3.participant_name
+        let sql = `select v1.*, v2.wid, v2.status as participant_status, v2.seq, v2.updated_at as joined_at, v3.participant_name
                    from multisig_tx v1
                      join multisig_tx_participant v2
                        on v1.id = v2.multisig_tx_id
@@ -92,29 +92,25 @@ class MultiSig {
             throw new restify.NotFoundError('MultiSignatureTransaction not found');
         }
 
-        let o = _.pick(rows[0], ['hex', 'id', 'multisig_account_id', 'note', 'complete', 'note', 'is_deleted', 'nonce', 'created_at', 'updated_at']);
-        o.participants = rows.map(r => _.pick(r, ['status', 'seq', 'wid', 'joined_at', 'participant_name']));
+        let o = _.pick(rows[0], ['hex', 'id', 'multisig_account_id', 'note', 'status', 'note', 'is_deleted', 'nonce', 'created_at', 'updated_at']);
+        o.participants = rows.map(r => _.pick(r, ['participant_status', 'seq', 'wid', 'joined_at', 'participant_name']));
 
         return o;
     }
 
-    static async sendMultiSigTx(rawhex, txId) {
+    static async sendMultiSigTx(rawhex, txId, conn = mysql) {
         let txHash;
         try {
             txHash = await bitcoind('sendrawtransaction', rawhex);
         } catch (err) {
-            if (err.response.body.error.code == -25) {
+            if (err.response.body.error.code == -25 || err.response.body.error.code == -22) {
                 return false;
             } else {
                 throw err;
             }
         }
-        await mysql.transaction(async conn => {
-            let sql = `select * from multisig_tx where id = ? and is_deleted = 0 for update`;
-            await conn.selectOne(sql, [txId]);
-            sql = `update multisig_tx set complete = ?, updated_at = ? where id = ?`;
-            await conn.query(sql, [1, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
-        });
+        let sql = `update multisig_tx set hex = ?, nonce = nonce + 1, updated_at = ?, status = 1 where id = ?`;
+        await conn.query(sql, [rawhex, 1, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
         return txHash;
     }
 }

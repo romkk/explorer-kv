@@ -52,6 +52,9 @@ module.exports = (server) => {
         req.checkQuery('timestamp', 'should be a valid timestamp').optional().isNumeric({ min: 0, max: moment.utc().unix() + 3600 });    // +3600 以消除误差
         req.sanitize('timestamp').toInt();
 
+        req.checkQuery('offset', 'should be a valid number').optional().isNumeric().isInt({ min: 0});
+        req.sanitize('offset').toInt();
+
         req.checkQuery('limit', 'should be between 1 and 50').optional().isNumeric().isInt({ max: 50, min: 1});
         req.sanitize('limit').toInt();
 
@@ -70,6 +73,7 @@ module.exports = (server) => {
             return next(err);
         }
 
+        var offset = req.params.offset || 0;
         var limit = req.params.limit || 50;
         var sort = req.params.sort || 'desc';
         var parts = req.params.active.trim().split('|');
@@ -87,7 +91,7 @@ module.exports = (server) => {
             if (it == false) return;
 
             var c = it.next();
-            if (it.done) {
+            if (c.done) {
                 its[i] = false;
                 return;
             }
@@ -104,19 +108,21 @@ module.exports = (server) => {
             return push(i);
         });
 
-        var ret = [];
+        var txIdList = [];
 
-        while (limit--) {
+        while ((offset--) > 0 || limit--) {
             try {
                 let [v, i] = pq.dequeue();
-                ret.push(v.tx_id);
                 await push(i);
+                if (offset < 0) {
+                    txIdList.push(v.tx_id);
+                }
             } catch (err) {
                 break;  //no more element
             }
         }
 
-        var [h, txs] = await* [Block.getLatestHeight(), Tx.multiGrab(ret, !req.params.skipcache)];
+        var [h, txs] = await* [Block.getLatestHeight(), Tx.multiGrab(txIdList, !req.params.skipcache)];
         res.send(_.compact(txs).map(tx => {
             tx.confirmations = tx.block_height == -1 ? 0 : h - tx.block_height + 1;
             return tx;

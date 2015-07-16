@@ -325,6 +325,7 @@ GET /address-tx/
 |---|---|---|---|---|
 |active|多个比特币地址，使用 <code>&#124;</code> 分隔，最多 256 个地址|Query|√|string|
 |timestamp|返回结果集开始的时间戳，默认为查询时间|Query|✗|Int|
+|offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
 |limit|返回结果集个数，要求大于`1`小于`50`，默认为`50`|Query|✗|Int|
 |sort|排序方式，可选为`desc`和`asc`，默认为`desc`|Query|✗|String|
 

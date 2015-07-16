@@ -155,7 +155,7 @@ class AddressTxList {
         var table = await this.findFirstTable();
         var height = await this.findHeight();
         var offset = 0;
-        const PAGESIZE = 200;
+        const PAGESIZE = 100;
 
         var pull = () => {
             if (table == null) {

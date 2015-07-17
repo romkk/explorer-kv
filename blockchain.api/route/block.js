@@ -25,15 +25,17 @@ module.exports = (server) => {
             }));
         }
 
+        let blk;
         try {
-            let blk = await Block.grab(req.params.blockIdentifier, req.params.offset, req.params.limit, req.params.fulltx, !req.params.skipcache);
-            let next = await Block.getNextBlock(blk.height, blk.chain_id, !req.params.skipcache);
-            blk.next_block = _.get(next, 'hash', null);
-            res.send(blk);
+            blk = await Block.grab(req.params.blockIdentifier, req.params.offset, req.params.limit, req.params.fulltx, !req.params.skipcache);
         } catch (err) {
             res.send(new restify.ResourceNotFoundError('Block not found'));
-            throw err;
+            console.log(err);
         }
+        
+        let nextBlock = await Block.getNextBlock(blk.height, blk.chain_id, !req.params.skipcache);
+        blk.next_block = _.get(nextBlock, 'hash', null);
+        res.send(blk);
         next();
     });
 

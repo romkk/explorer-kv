@@ -26,12 +26,13 @@ let formatTxStatus = status => {
     status.created_at = moment.utc(status.created_at).unix();
     status.updated_at = moment.utc(status.updated_at).unix();
     status.participants = status.participants.map(p => {
-        let o = _.omit(p, ['wid', 'participant_status']);
+        let o = _.omit(p, ['wid', 'participant_status', 'role']);
         o.joined_at = moment.utc(p.joined_at).unix();
         o.status = ['DENIED', 'APPROVED', 'TBD'][p.participant_status];
+        o.is_creator = p.role === 'Initiator';
         return o;
     });
-    return _.omit(status, ['nonce']);
+    return _.omit(status, ['nonce', 'role']);
 };
 
 module.exports = server => {
@@ -310,12 +311,12 @@ module.exports = server => {
                        (?, ?, ?, ?, ?, ?, now(), now())`;
                 insertedTxId = (await conn.query(sql, [accountId, rawtx, 2, note, 0, 0])).insertId;
                 sql = `insert into multisig_tx_participant
-                   (multisig_tx_id, wid, status, seq, created_at, updated_at)
+                   (multisig_tx_id, role, wid, status, seq, created_at, updated_at)
                    values
-                   ${ status.participants.map(p => `(?, ?, ?, ?, now(), now())`).join(',') }`;
+                   ${ status.participants.map(p => `(?, ?, ?, ?, ?, now(), now())`).join(',') }`;
                 let params = [];
                 let pos = 0;
-                status.participants.forEach((p, i) => params.push(insertedTxId, p.wid, p.wid == req.token.wid ? 1 : 2, pos++));
+                status.participants.forEach((p, i) => params.push(insertedTxId, p.wid == req.token.wid ? 'Initiator' : 'Participant', p.wid, p.wid == req.token.wid ? 1 : 2, pos++));
                 await conn.query(sql, params);
             });
         } catch (err) {
@@ -434,7 +435,11 @@ module.exports = server => {
                 throw new restify.NotFoundError('MultiSignatureTx not found');
             }
             if (txStatus.status != 2) {
-
+                throw {
+                    success: false,
+                    code: 'MultiSignatureTxStatusFixed',
+                    message: 'the tx has been done'
+                };
             }
             if (txStatus.participants.some(p => p.wid == req.token.wid && p.participant_status != 2)) {
                 throw {
@@ -510,23 +515,21 @@ module.exports = server => {
                 } else if (req.body.complete) {
                     let txHash = await MultiSig.sendMultiSigTx(req.body.signed, txId, conn);
                     if (txHash == false) {
-                        // 删除新建的交易
-                        sql = `update multisig_tx set is_deleted = 1, nonce = nonce + 1, updated_at = ? where id = ?`;
-                        await conn.query(sql, [moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
-
                         // TODO send fail message to every one
-
-                        res.send({
+                        throw {
                             success: false,
                             code: 'MultiSignatureTxPublishFailed',
                             message: 'incomplete signature ? '
-                        });
-                        return next();
+                        };
                     }
                 }
             });
 
         } catch (err) {
+            // 删除新建的交易
+            let sql = `update multisig_tx set is_deleted = 1, nonce = nonce + 1, updated_at = ? where id = ?`;
+            await mysql.query(sql, [moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
+
             if (err.code && err.message) {
                 if (err.code.endsWith('Error')) {
                     res.send(new restify[err.code](err.message));
@@ -576,25 +579,33 @@ module.exports = server => {
             return next();
         }
 
-        let sql = `select * from multisig_tx where id = ? and multisig_account_id = ? limit 1`;
-        let tx = await mysql.selectOne(sql, [txId, accountId]);
-
-        if (_.isNull(tx)) {
-            res.send(new restify.NotFoundError('MultiSignatureTx not found'));
+        let txStatus;
+        try {
+            txStatus = await MultiSig.getTxStatus(accountId, txId);
+            if (!txStatus.participants.some(p => p.wid == req.token.wid)) {
+                throw new restify.NotFoundError('MultiSignatureTx not found');
+            }
+            if (txStatus.status != 2) {
+                throw {
+                    success: false,
+                    code: 'MultiSignatureTxCreated',
+                    message: 'you are too late'
+                };
+            }
+            if (txStatus.participants.some(p => p.wid == req.token.wid && p.role != 'Initiator')) {
+                throw {
+                    success: false,
+                    code: 'MultiSignatureTxStatusFixed',
+                    message: 'permission denied'
+                };
+            }
+        } catch (err) {
+            res.send(err);
             return next();
         }
 
-        if (tx.status != 2) {
-            res.send({
-                success: false,
-                code: 'MultiSignatureTxCreated',
-                message: 'you are too late'
-            });
-            return next();
-        }
-
-        sql = `update multisig_tx set is_deleted = 1, nonce = nonce + 1 where id = ? and nonce = ?`;
-        let result = await mysql.query(sql, [tx.id, tx.nonce]);
+        let sql = `update multisig_tx set is_deleted = 1, nonce = nonce + 1 where id = ? and nonce = ?`;
+        let result = await mysql.query(sql, [txStatus.id, txStatus.nonce]);
         if (result.affectedRows == 0) {
             res.send({
                 success: false,

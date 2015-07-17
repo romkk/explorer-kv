@@ -77,7 +77,7 @@ class MultiSig {
     }
 
     static async getTxStatus(accountId, txId, conn = mysql) {
-        let sql = `select v1.*, v2.wid, v2.status as participant_status, v2.seq, v2.updated_at as joined_at, v3.participant_name
+        let sql = `select v1.*, v2.role, v2.wid, v2.status as participant_status, v2.seq, v2.updated_at as joined_at, v3.participant_name
                    from multisig_tx v1
                      join multisig_tx_participant v2
                        on v1.id = v2.multisig_tx_id
@@ -93,7 +93,7 @@ class MultiSig {
         }
 
         let o = _.pick(rows[0], ['hex', 'id', 'multisig_account_id', 'note', 'status', 'note', 'is_deleted', 'nonce', 'created_at', 'updated_at']);
-        o.participants = rows.map(r => _.pick(r, ['participant_status', 'seq', 'wid', 'joined_at', 'participant_name']));
+        o.participants = rows.map(r => _.pick(r, ['participant_status', 'seq', 'role', 'wid', 'joined_at', 'participant_name']));
 
         return o;
     }

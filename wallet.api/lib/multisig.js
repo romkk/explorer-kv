@@ -92,7 +92,7 @@ class MultiSig {
             throw new restify.NotFoundError('MultiSignatureTransaction not found');
         }
 
-        let o = _.pick(rows[0], ['hex', 'id', 'multisig_account_id', 'note', 'status', 'note', 'is_deleted', 'nonce', 'created_at', 'updated_at']);
+        let o = _.pick(rows[0], ['txhash', 'hex', 'id', 'multisig_account_id', 'note', 'status', 'note', 'is_deleted', 'nonce', 'created_at', 'updated_at']);
         o.participants = rows.map(r => _.pick(r, ['participant_status', 'seq', 'role', 'wid', 'joined_at', 'participant_name']));
 
         return o;
@@ -109,8 +109,8 @@ class MultiSig {
                 throw err;
             }
         }
-        let sql = `update multisig_tx set hex = ?, nonce = nonce + 1, updated_at = ?, status = 1 where id = ?`;
-        await conn.query(sql, [rawhex, 1, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
+        let sql = `update multisig_tx set txhash = ?, hex = ?, nonce = nonce + 1, updated_at = ?, status = 1 where id = ?`;
+        await conn.query(sql, [txHash, rawhex, 1, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
         return txHash;
     }
 }

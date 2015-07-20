@@ -5,6 +5,7 @@ let restify = require('restify');
 let log = require('debug')('wallet:lib:multisig');
 let moment = require('moment');
 let bitcoind = require('./bitcoind');
+let blockData = require('./block_data');
 
 class MultiSig {
 
@@ -114,5 +115,77 @@ class MultiSig {
         return txHash;
     }
 }
+
+function* UnApprovedTxLoader(accountId) {
+    let offset = 0, limit = 1000;
+    let sql = `select * from multisig_tx
+               where multisig_account_id = ? and status != 1
+               limit ?, ?`;
+
+    let drain = false;
+    while (!drain) {
+        yield (async function() {
+            let result;
+            result = await mysql.query(sql, [ accountId, offset, limit ]);
+            if (result.length < limit) {
+                drain = true;
+                if (result.length == 0) {
+                    throw new Error('No more tx!');
+                }
+            }
+            return result.map(tx => {
+                let o = _.pick(tx, ['id', 'note', 'txhash']);
+                o.timestamp = moment.utc(tx.created_at).unix();
+                o.status = ['DENIED', 'APPROVED', 'TBD'][tx.status];
+                return o;
+            });
+        })();
+        offset += limit;
+    }
+}
+
+MultiSig.getAccountUnApprovedTx = function* (accountId) {
+    let iter = UnApprovedTxLoader(accountId);
+    let cache = [], drain = false;
+    while (!drain) {
+        yield (async function() {
+            if (!cache.length) {
+                let c = iter.next();
+                if (c.done) {
+                    drain = true;
+                    throw new Error('no more tx!');
+                }
+                cache = await c.value;      // just throw the error
+            }
+            return cache.shift();
+        })();
+    }
+};
+
+MultiSig.getMultiAccountTxList = function* (addr) {
+    let offset = 0;
+    let drain = false;
+    let cache = [];
+    while (!drain) {
+        yield (async () => {
+            if (!cache.length) {
+                let result = await blockData(`/address/${addr}`, {
+                    limit: 50,
+                    offset: offset
+                });
+                cache = result.txs;
+                if (cache.length < 50) {
+                    drain = true;
+                    if (cache.length == 0) {
+                        throw new Error('no more tx!');
+                    }
+                }
+
+            }
+            return cache.shift();
+        })();
+        offset += 50;
+    }
+};
 
 module.exports = MultiSig;

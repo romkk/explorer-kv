@@ -263,6 +263,68 @@ module.exports = server => {
         next();
     });
 
+    /**
+     * 获取多重签名账户交易列表
+     */
+    server.get('/multi-signature-account/:accountId/tx', async (req, res, next) => {
+        req.checkParams('accountId', 'Not a valid id').isInt();
+        req.sanitize('accountId').toInt();
+
+        let errors = req.validationErrors();
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let accountId = req.params.accountId;
+        let status;
+        try {
+            status = await MultiSig.getAccountStatus(accountId);
+        } catch (err) {
+            res.send(err);
+            return next();
+        }
+
+        if (_.isNull(status.generated_address) || !status.participants.some(p => p.wid == req.token.wid)) {
+            res.send(new restify.NotFoundError('MultiSignatureAccount not found'));
+            return next();
+        }
+
+        let ret = {
+            failed: [],
+            success: []
+        };
+        let txIter = MultiSig.getAccountUnApprovedTx(accountId);
+        let c;
+        while ((c = txIter.next()) && !c.done) {
+            try {
+                ret.failed.push(await c.value);
+            } catch (err) {
+                break;
+            }
+        }
+
+        let successTx = MultiSig.getMultiAccountTxList('n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR');
+        while ((c = successTx.next()) && !c.done) {
+            try {
+                ret.success.push(await c.value);
+            } catch (err) {
+                if (err instanceof restify.HttpError) {
+                    res.send(err);
+                    return next();
+                }
+                break;
+            }
+            if (ret.success.length >= 2) {
+                break;
+            }
+        }
+
+        res.send(ret);
+        next();
+    });
+
     server.post('/multi-signature-account/:accountId/tx', validate('createMultiSignatureTx'), async (req, res, next) => {
         req.checkParams('accountId', 'Not a valid id').isInt();
         req.sanitize('accountId').toInt();

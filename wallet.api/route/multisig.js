@@ -270,6 +270,14 @@ module.exports = server => {
         req.checkParams('accountId', 'Not a valid id').isInt();
         req.sanitize('accountId').toInt();
 
+        req.checkQuery('offset', 'should be a valid number').optional().isNumeric();
+        req.sanitize('offset').toInt();
+
+        req.checkQuery('limit', 'should be between 1 and 50').optional().isNumeric().isInt({ max: 50, min: 1});
+        req.sanitize('limit').toInt();
+
+        req.checkQuery('sort', 'should be desc or asc').optional().isIn(['desc', 'asc']);
+
         let errors = req.validationErrors();
         if (errors) {
             return next(new restify.InvalidArgumentError({
@@ -277,49 +285,110 @@ module.exports = server => {
             }));
         }
 
+        let offset = _.get(req, 'params.offset', 0);
+        let limit = _.get(req, 'params.limit', 50);
+
         let accountId = req.params.accountId;
-        let status;
+        let accountStatus;
         try {
-            status = await MultiSig.getAccountStatus(accountId);
+            accountStatus = await MultiSig.getAccountStatus(accountId);
         } catch (err) {
             res.send(err);
             return next();
         }
 
-        if (_.isNull(status.generated_address) || !status.participants.some(p => p.wid == req.token.wid)) {
+        if (_.isNull(accountStatus.generated_address) || !accountStatus.participants.some(p => p.wid == req.token.wid)) {
             res.send(new restify.NotFoundError('MultiSignatureAccount not found'));
             return next();
         }
 
-        let ret = {
-            failed: [],
-            success: []
-        };
-        let txIter = MultiSig.getAccountUnApprovedTx(accountId);
-        let c;
-        while ((c = txIter.next()) && !c.done) {
-            try {
-                ret.failed.push(await c.value);
-            } catch (err) {
+        let ret = [];
+        let failedTxIter = MultiSig.getAccountUnApprovedTx(accountId);
+        let successTxIter = MultiSig.getMultiAccountTxList(accountStatus.generated_address);
+
+        for (let i = failedTxIter.next(), j = successTxIter.next();;) {
+            if (i.done && j.done) {
                 break;
+            } else if (i.done && !j.done) {
+                try {
+                    ret.push(await j.value);
+                } catch (e) {
+                    continue;
+                } finally {
+                    j = successTxIter.next();
+                }
+            } else if (!i.done && j.done) {
+                try {
+                    ret.push(await i.value);
+                } catch (e) {
+                    continue;
+                } finally {
+                    i = failedTxIter.next();
+                }
+            } else {
+                let ii, jj;
+                try {
+                    ii = await i.value;
+                } catch (e) {
+                    i = failedTxIter.next();
+                    continue;
+                }
+
+                try {
+                    jj = await j.value;
+                } catch (e) {
+                    j = successTxIter.next();
+                    continue;
+                }
+
+                if (ii.timestamp >= jj.time) {
+                    ret.push(ii);
+                    i = failedTxIter.next();
+                } else {
+                    ret.push(jj);
+                    j = successTxIter.next();
+                }
             }
+            if (ret.length >= offset + limit) break;
         }
 
-        let successTx = MultiSig.getMultiAccountTxList('n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR');
-        while ((c = successTx.next()) && !c.done) {
-            try {
-                ret.success.push(await c.value);
-            } catch (err) {
-                if (err instanceof restify.HttpError) {
-                    res.send(err);
-                    return next();
-                }
-                break;
-            }
-            if (ret.success.length >= 2) {
-                break;
-            }
+        ret = ret.slice(offset, offset + limit);
+
+        let hashList = _.pluck(ret.filter(r => !_.isUndefined(r.is_coinbase)), 'hash');
+        let result = {};
+        if (hashList.length) {
+            let sql = `select * from multisig_tx where txhash in (${_.fill(new Array(hashList.length), '?').join(', ')})`;
+            result = await mysql.query(sql, _.keys(hashList));
+            result = _.indexBy(result, 'txhash');
         }
+
+        ret = _.compact(ret.map(r => {
+            if (_.isUndefined(r.is_coinbase)) {
+                return r;
+            }
+
+            let p = result[r.hash];
+            if (!p) {
+                return {
+                    id: null,
+                    note: null,
+                    txhash: r.hash,
+                    timestamp: r.time,
+                    status: 'RECEIVED',
+                    amount: 2,
+                    inputs: _(r.inputs.map(i => _.get(i, 'prev_out.addr', []))).flatten().compact().value(),
+                    outputs: _(r.out.map(i => _.get(i, 'addr', []))).flatten().compact().value()
+                };
+            }
+
+            let o = _.pick(p, ['id', 'note', 'txhash']);
+            o.timestamp = r.time;
+            o.status = ['DENIED', 'APPROVED', 'TBD'][p.status] || 'RECEIVED';
+            o.amount = 1;
+            o.inputs = _(r.inputs.map(i => _.get(i, 'prev_out.addr', []))).flatten().compact().value();
+            o.outputs = _(r.out.map(i => _.get(i, 'addr', []))).flatten().compact().value();
+            return o;
+        }));
 
         res.send(ret);
         next();

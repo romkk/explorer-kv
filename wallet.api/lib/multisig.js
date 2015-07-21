@@ -116,75 +116,54 @@ class MultiSig {
     }
 }
 
-function* UnApprovedTxLoader(accountId) {
-    let offset = 0, limit = 1000;
+MultiSig.getAccountUnApprovedTx = function* (accountId) {
     let sql = `select * from multisig_tx
                where multisig_account_id = ? and status != 1
                limit ?, ?`;
-
-    let drain = false;
-    while (!drain) {
-        yield (async function() {
-            let result;
-            result = await mysql.query(sql, [ accountId, offset, limit ]);
-            if (result.length < limit) {
-                drain = true;
-                if (result.length == 0) {
-                    throw new Error('No more tx!');
-                }
-            }
-            return result.map(tx => {
-                let o = _.pick(tx, ['id', 'note', 'txhash']);
-                o.timestamp = moment.utc(tx.created_at).unix();
-                o.status = ['DENIED', 'APPROVED', 'TBD'][tx.status];
-                return o;
-            });
-        })();
-        offset += limit;
-    }
-}
-
-MultiSig.getAccountUnApprovedTx = function* (accountId) {
-    let iter = UnApprovedTxLoader(accountId);
+    let offset = 0, limit = 1000;
     let cache = [], drain = false;
     while (!drain) {
         yield (async function() {
             if (!cache.length) {
-                let c = iter.next();
-                if (c.done) {
+                cache = await mysql.query(sql, [accountId, offset, limit]);
+                if (cache.length == 0) {
                     drain = true;
-                    throw new Error('no more tx!');
+                    throw new Error('[getAccountUnApprovedTx] No more tx!');
                 }
-                cache = await c.value;      // just throw the error
             }
-            return cache.shift();
+
+            let tx = cache.shift();
+            let o = _.pick(tx, ['id', 'note', 'txhash']);
+            o.timestamp = moment.utc(tx.created_at).unix();
+            o.status = ['DENIED', 'APPROVED', 'TBD'][tx.status];
+            o.amount = 0;       //TODO
+            o.inputs = o.outputs = [];
+            return o;
         })();
+        offset += limit;
     }
 };
 
 MultiSig.getMultiAccountTxList = function* (addr) {
-    let offset = 0;
+    let offset = 0, limit = 50;
     let drain = false;
     let cache = [];
     while (!drain) {
         yield (async () => {
             if (!cache.length) {
                 let result = await blockData(`/address/${addr}`, {
-                    limit: 50,
+                    limit: limit,
                     offset: offset
                 });
                 cache = result.txs;
-                if (cache.length < 50) {
+                if (cache.length == 0) {
                     drain = true;
-                    if (cache.length == 0) {
-                        throw new Error('no more tx!');
-                    }
+                    throw new Error('[getMultiAccountTxList] no more tx!');
                 }
-
             }
             return cache.shift();
         })();
-        offset += 50;
+        offset += limit;
     }
 };
 

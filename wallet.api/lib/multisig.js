@@ -116,7 +116,69 @@ class MultiSig {
     }
 }
 
-MultiSig.getAccountUnApprovedTx = function* (accountId) {
+async function getAmountAndRelatedAddress(addr, hex) {
+    let decode;
+    let errorResponse = {
+        amount: null,
+        inputs: null,
+        outputs: null
+    };
+    try {
+        decode = await bitcoind('decoderawtransaction', hex);
+    } catch (e) {
+        console.log(e.stack);     // TODO 细分错误
+        return errorResponse;
+    }
+
+    let inputTxs;
+
+    try {
+        inputTxs = await blockData(`/rawtx/${_.pluck(decode.vin, 'txid').join(',')}`);
+    } catch (e) {
+        console.log(e.stack);
+        return errorResponse;
+    }
+
+    if (!Array.isArray(inputTxs)) inputTxs = [inputTxs];    // 单个地址查询，返回的不是数组
+
+    let inputAddrs = decode.vin.map((input, i) => {
+        let o = _.get(inputTxs, [i, 'out', input.vout], []);
+        return _.pick(o, ['value', 'addr']);
+    });
+    let outputAddrs = decode.vout.map(output => ({
+        value: output.value * 10e8,
+        addr: _.flatten(output.scriptPubKey.addresses)
+    }));
+
+    console.log(inputAddrs, outputAddrs);
+
+    // 计算 amount
+    let amount = 0;
+    if (inputAddrs.some(el => el.addr.includes(addr))) {       // 支出
+        let totalInput = inputAddrs.filter(el => el.addr.includes(addr)).reduce((prev, cur) => {
+            return prev + cur.value;
+        }, 0);
+        let output = outputAddrs.find(el => el.addr.includes(addr));       // 假设只有一个找零
+        let totalOutput = totalInput - (output ? output.value : 0);
+        amount = totalOutput - totalInput;  // 支出为负数
+    } else {        // 收入
+        amount = outputAddrs.filter(el => el.addr.includes(addr) != null).reduce((prev, cur) => prev + cur.value, 0);
+    }
+
+    console.log({
+        amount: amount,
+        inputs: _(inputAddrs).pluck('addr').flatten().uniq().value(),
+        outputs: _(outputAddrs).pluck('addr').flatten().uniq().value()
+    });
+
+    return {
+        amount: amount,
+        inputs: _(inputAddrs).pluck('addr').flatten().uniq().value(),
+        outputs: _(outputAddrs).pluck('addr').flatten().uniq().value()
+    };
+}
+
+MultiSig.getAccountUnApprovedTx = function* (accountId, addr) {
     let sql = `select * from multisig_tx
                where multisig_account_id = ? and status != 1
                limit ?, ?`;
@@ -136,8 +198,11 @@ MultiSig.getAccountUnApprovedTx = function* (accountId) {
             let o = _.pick(tx, ['id', 'note', 'txhash']);
             o.timestamp = moment.utc(tx.created_at).unix();
             o.status = ['DENIED', 'APPROVED', 'TBD'][tx.status];
-            o.amount = 0;       //TODO
-            o.inputs = o.outputs = [];
+            try {
+                _.extend(o, await getAmountAndRelatedAddress(addr, tx.hex));
+            } catch (err) {
+                console.log(err.stack);
+            }
             return o;
         })();
         offset += limit;
@@ -151,10 +216,16 @@ MultiSig.getMultiAccountTxList = function* (addr) {
     while (!drain) {
         yield (async () => {
             if (!cache.length) {
-                let result = await blockData(`/address/${addr}`, {
-                    limit: limit,
-                    offset: offset
-                });
+                let result;
+                try {
+                    result = await blockData(`/address/${addr}`, {
+                        limit: limit,
+                        offset: offset
+                    });
+                } catch (err) {     // http error
+                    drain = true;
+                    throw new Error('[getMultiAccountTxList] http error');
+                }
                 cache = result.txs;
                 if (cache.length == 0) {
                     drain = true;

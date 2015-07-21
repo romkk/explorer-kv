@@ -34,6 +34,9 @@ let formatTxStatus = status => {
     });
     return _.omit(status, ['nonce', 'role']);
 };
+let formatRawTx = async tx => {
+
+};
 
 module.exports = server => {
     server.post('/multi-signature-account', validate('createMultiSignatureAccount'), async (req, res, next) => {
@@ -276,8 +279,6 @@ module.exports = server => {
         req.checkQuery('limit', 'should be between 1 and 50').optional().isNumeric().isInt({ max: 50, min: 1});
         req.sanitize('limit').toInt();
 
-        req.checkQuery('sort', 'should be desc or asc').optional().isIn(['desc', 'asc']);
-
         let errors = req.validationErrors();
         if (errors) {
             return next(new restify.InvalidArgumentError({
@@ -303,9 +304,10 @@ module.exports = server => {
         }
 
         let ret = [];
-        let failedTxIter = MultiSig.getAccountUnApprovedTx(accountId);
+        let failedTxIter = MultiSig.getAccountUnApprovedTx(accountId, accountStatus.generated_address);
         let successTxIter = MultiSig.getMultiAccountTxList(accountStatus.generated_address);
 
+        // TODO 等待重构
         for (let i = failedTxIter.next(), j = successTxIter.next();;) {
             if (i.done && j.done) {
                 break;
@@ -349,7 +351,9 @@ module.exports = server => {
                     j = successTxIter.next();
                 }
             }
-            if (ret.length >= offset + limit) break;
+            if (ret.length >= offset + limit) {
+                break;
+            }
         }
 
         ret = ret.slice(offset, offset + limit);
@@ -358,7 +362,7 @@ module.exports = server => {
         let result = {};
         if (hashList.length) {
             let sql = `select * from multisig_tx where txhash in (${_.fill(new Array(hashList.length), '?').join(', ')})`;
-            result = await mysql.query(sql, _.keys(hashList));
+            result = await mysql.query(sql, hashList);
             result = _.indexBy(result, 'txhash');
         }
 
@@ -368,23 +372,23 @@ module.exports = server => {
             }
 
             let p = result[r.hash];
-            if (!p) {
+            if (!p) {       // 只存在于公网
                 return {
                     id: null,
-                    note: null,
+                    note: '',
                     txhash: r.hash,
                     timestamp: r.time,
                     status: 'RECEIVED',
-                    amount: 2,
+                    amount: 2,      //TODO 根据 tx 计算
                     inputs: _(r.inputs.map(i => _.get(i, 'prev_out.addr', []))).flatten().compact().uniq().value(),
                     outputs: _(r.out.map(i => _.get(i, 'addr', []))).flatten().compact().uniq().value()
                 };
             }
 
-            let o = _.pick(p, ['id', 'note', 'txhash']);
+            let o = _.pick(p, ['id', 'note', 'txhash']);        // 有对应数据库记录的交易
             o.timestamp = r.time;
-            o.status = ['DENIED', 'APPROVED', 'TBD'][p.status] || 'RECEIVED';
-            o.amount = 1;
+            o.status = ['DENIED', 'APPROVED', 'TBD'][p.status];
+            o.amount = r.amount;        //TODO 根据 tx 计算
             o.inputs = _(r.inputs.map(i => _.get(i, 'prev_out.addr', []))).flatten().compact().uniq().value();
             o.outputs = _(r.out.map(i => _.get(i, 'addr', []))).flatten().compact().uniq().value();
             return o;

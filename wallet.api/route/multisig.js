@@ -376,8 +376,8 @@ module.exports = server => {
                     timestamp: r.time,
                     status: 'RECEIVED',
                     amount: 2,
-                    inputs: _(r.inputs.map(i => _.get(i, 'prev_out.addr', []))).flatten().compact().value(),
-                    outputs: _(r.out.map(i => _.get(i, 'addr', []))).flatten().compact().value()
+                    inputs: _(r.inputs.map(i => _.get(i, 'prev_out.addr', []))).flatten().compact().uniq().value(),
+                    outputs: _(r.out.map(i => _.get(i, 'addr', []))).flatten().compact().uniq().value()
                 };
             }
 
@@ -385,8 +385,8 @@ module.exports = server => {
             o.timestamp = r.time;
             o.status = ['DENIED', 'APPROVED', 'TBD'][p.status] || 'RECEIVED';
             o.amount = 1;
-            o.inputs = _(r.inputs.map(i => _.get(i, 'prev_out.addr', []))).flatten().compact().value();
-            o.outputs = _(r.out.map(i => _.get(i, 'addr', []))).flatten().compact().value();
+            o.inputs = _(r.inputs.map(i => _.get(i, 'prev_out.addr', []))).flatten().compact().uniq().value();
+            o.outputs = _(r.out.map(i => _.get(i, 'addr', []))).flatten().compact().uniq().value();
             return o;
         }));
 

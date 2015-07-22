@@ -146,7 +146,7 @@ async function getAmountAndRelatedAddress(addr, hex) {
         return _.pick(o, ['value', 'addr']);
     });
     let outputAddrs = decode.vout.map(output => ({
-        value: output.value * 10e8,
+        value: output.value * 1e8,
         addr: _.flatten(output.scriptPubKey.addresses)
     }));
 
@@ -159,10 +159,9 @@ async function getAmountAndRelatedAddress(addr, hex) {
             return prev + cur.value;
         }, 0);
         let output = outputAddrs.find(el => el.addr.includes(addr));       // 假设只有一个找零
-        let totalOutput = totalInput - (output ? output.value : 0);
-        amount = totalOutput - totalInput;  // 支出为负数
+        amount = (output ? output.value : 0) - totalInput;
     } else {        // 收入
-        amount = outputAddrs.filter(el => el.addr.includes(addr) != null).reduce((prev, cur) => prev + cur.value, 0);
+        amount = outputAddrs.filter(el => el.addr.includes(addr)).reduce((prev, cur) => prev + cur.value, 0);
     }
 
     console.log({

@@ -362,8 +362,7 @@ module.exports = server => {
         let result = {};
         if (hashList.length) {
             let sql = `select * from multisig_tx where txhash in (${_.fill(new Array(hashList.length), '?').join(', ')})`;
-            result = await mysql.query(sql, hashList);
-            result = _.indexBy(result, 'txhash');
+            result = _.indexBy(await mysql.query(sql, hashList), 'txhash');
         }
 
         ret = _.compact(ret.map(r => {

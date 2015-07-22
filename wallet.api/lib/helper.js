@@ -3,14 +3,22 @@ let _ = require('lodash');
 
 module.exports = {
     txAmountSummary(tx, addr) {
-        let inputAddrs = tx.inputs.map(el => ({
-            value: el.prev_out.value,
-            addr: el.prev_out.addr
-        }));
-        let outputAddrs = tx.out.map(el => ({
-            value: el.value,
-            addr: el.addr
-        }));
+        let inputAddrs = [], outputAddrs = [];
+        if (!tx.inputs[0].prev_out) {   // coinbase 交易
+            outputAddrs.push({
+                value: tx.out[0].value,
+                addr: tx.out[0].addr
+            });
+        } else {    // 普通交易
+            inputAddrs = tx.inputs.map(el => ({
+                value: el.prev_out.value,
+                addr: el.prev_out.addr
+            }));
+            outputAddrs = tx.out.map(el => ({
+                value: el.value,
+                addr: el.addr
+            }));
+        }
 
         // 计算 amount
         let amount = 0;

@@ -111,7 +111,7 @@ class MultiSig {
             }
         }
         let sql = `update multisig_tx set txhash = ?, hex = ?, nonce = nonce + 1, updated_at = ?, status = 1 where id = ?`;
-        await conn.query(sql, [txHash, rawhex, 1, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
+        await conn.query(sql, [txHash, rawhex, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
         return txHash;
     }
 }

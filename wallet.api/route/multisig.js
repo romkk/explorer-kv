@@ -9,7 +9,7 @@ let bitcoind = require('../lib/bitcoind');
 let assert = require('assert');
 let bitcore = require('bitcore');
 let moment = require('moment');
-
+let helper = require('../lib/helper');
 
 let formatAccountStatus = (status) => {
     status.participants = status.participants.map(p => {
@@ -33,9 +33,6 @@ let formatTxStatus = status => {
         return o;
     });
     return _.omit(status, ['nonce', 'role']);
-};
-let formatRawTx = async tx => {
-
 };
 
 module.exports = server => {
@@ -372,25 +369,19 @@ module.exports = server => {
 
             let p = result[r.hash];
             if (!p) {       // 只存在于公网
-                return {
+                return _.extend({
                     id: null,
                     note: '',
                     txhash: r.hash,
                     timestamp: r.time,
-                    status: 'RECEIVED',
-                    amount: 2,      //TODO 根据 tx 计算
-                    inputs: _(r.inputs.map(i => _.get(i, 'prev_out.addr', []))).flatten().compact().uniq().value(),
-                    outputs: _(r.out.map(i => _.get(i, 'addr', []))).flatten().compact().uniq().value()
-                };
+                    status: 'RECEIVED'
+                }, helper.txAmountSummary(r, accountStatus.generated_address));
             }
 
             let o = _.pick(p, ['id', 'note', 'txhash']);        // 有对应数据库记录的交易
             o.timestamp = r.time;
             o.status = ['DENIED', 'APPROVED', 'TBD'][p.status];
-            o.amount = r.amount;        //TODO 根据 tx 计算
-            o.inputs = _(r.inputs.map(i => _.get(i, 'prev_out.addr', []))).flatten().compact().uniq().value();
-            o.outputs = _(r.out.map(i => _.get(i, 'addr', []))).flatten().compact().uniq().value();
-            return o;
+            return _.extend(o, helper.txAmountSummary(r, accountStatus.generated_address));
         }));
 
         res.send(ret);

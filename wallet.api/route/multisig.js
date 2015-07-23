@@ -696,7 +696,7 @@ module.exports = server => {
                 }
 
                 if (req.body.status == 'APPROVED') {
-                    sql = `update multisig_tx set hex = ?, updated_at = utc_timestamp(), where id = ?;`;
+                    sql = `update multisig_tx set hex = ?, updated_at = utc_timestamp() where id = ?;`;
                     await conn.query(sql, [req.body.signed, txId]);
                 }
 

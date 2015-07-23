@@ -472,6 +472,38 @@ DELETE /multi-signature-account/$id
     
 如果要删除的账户不存在，则返回 404。
 
+## 获取多重签名交易列表
+
+**Request**
+
+```
+GET /multi-signature-account/$account_id/tx
+```
+
+支持用于分页的`offset`、`limit`参数。
+
+**Response**
+
+```
+[
+    {
+        "amount": -100010000,
+        "id": 57,
+        "inputs": [
+            "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR"
+        ],
+        "note": "",
+        "outputs": [
+            "mpZM35ZsEFQ7djDZL4UskcGmrVebsHAm76",
+            "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR"
+        ],
+        "status": "DENIED",
+        "timestamp": 1435313711,
+        "txhash": "dbf23dc6101cafacaf3acec615864b4a82be7fe71802ff0bc19bd0ea01a6e784"
+    }
+]
+```
+
 ## 发起多重签名交易
 
 **Request**

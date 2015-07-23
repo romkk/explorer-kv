@@ -146,7 +146,7 @@ async function getAmountAndRelatedAddress(addr, hex) {
         return _.pick(o, ['value', 'addr']);
     });
     let outputAddrs = decode.vout.map(output => ({
-        value: output.value * 1e8,
+        value: Math.round(output.value * 1e8),      //ugly hack
         addr: _.flatten(output.scriptPubKey.addresses)
     }));
 

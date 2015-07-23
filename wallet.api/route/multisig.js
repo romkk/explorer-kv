@@ -397,7 +397,7 @@ module.exports = server => {
         next();
     });
 
-    server.get('/multi-signature-account/:accountId/tx/latest', async (req, res, next) => {
+    server.get('/multi-signature-account/:accountId/tx/latestUnfinished', async (req, res, next) => {
         req.checkParams('accountId', 'Not a valid id').isInt();
         req.sanitize('accountId').toInt();
         let errors = req.validationErrors();

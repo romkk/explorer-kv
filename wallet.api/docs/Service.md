@@ -505,7 +505,7 @@ DELETE /multi-signature-account/$id
 **Request**
 
 ```
-GET /multi-signature-account/$account_id/tx/latest
+GET /multi-signature-account/$account_id/tx/latestUnfinished
 ```
 
 **Response**

@@ -472,7 +472,9 @@ DELETE /multi-signature-account/$id
     
 如果要删除的账户不存在，则返回 404。
 
-## 获取多重签名交易列表
+## 多重签名交易
+
+### 获取多重签名交易列表
 
 **Request**
 
@@ -504,7 +506,7 @@ GET /multi-signature-account/$account_id/tx
 ]
 ```
 
-## 发起多重签名交易
+### 发起多重签名交易
 
 **Request**
 

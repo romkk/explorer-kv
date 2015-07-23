@@ -490,7 +490,7 @@ module.exports = server => {
             await mysql.transaction(async conn => {
                 // 检测是否有未完成的交易
                 let sql = `select * from multisig_tx where multisig_account_id = ? and status = 2 and is_deleted = 0 limit 1 for update`;
-                let unfinishedTx = conn.selectOne(sql, [accountId]);
+                let unfinishedTx = await conn.selectOne(sql, [accountId]);
                 if (!_.isNull(unfinishedTx)) {
                     throw {
                         success: false,

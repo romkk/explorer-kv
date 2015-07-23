@@ -164,11 +164,37 @@ DELETE /device/$wid/$did
 }
 ```
 
-## 交易
+## 普通交易
 
 ### 查询交易记录
 
-请使用数据 API。
+**Request**
+
+```
+GET /tx
+```
+
+区块数据 API 的简单封装，使用`active`、`offset`、`limit`、`timestamp`和`sort`参数，具体参考区块数据 API。
+
+**Response**
+
+```
+[
+    {
+        "amount": -100010000,
+        "confirmations": 23132,
+        "inputs": [
+            "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR"
+        ],
+        "outputs": [
+            "mxvXieXAHNHJS6xG1YgKgb2VQhfVrPgjZ5",
+            "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR"
+        ],
+        "time": 1435317403,
+        "txhash": "14655dca122f353c16c547a033d2d1c4129492395eedd90bfc4390ad28cb4bc3"
+    }
+]
+```
 
 ### 查询交易详细信息
 

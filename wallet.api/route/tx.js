@@ -6,6 +6,9 @@ var blockData = require('../lib/block_data');
 var request = require('request-promise');
 var config = require('config');
 var bitcoind = require('../lib/bitcoind');
+var moment = require('moment');
+var helper = require('../lib/helper');
+var assert = require('assert');
 
 // 获取 unspent，找出合适的 unspent
 async function getUnspentTxs(sentFrom, amount, offset) {
@@ -47,6 +50,57 @@ function estimateFee(txSize, amountAvaiable, feePerKB) {
 }
 
 module.exports = server => {
+    server.get('/tx', async (req, res, next) => {
+        req.checkQuery('timestamp', 'should be a valid timestamp').optional().isNumeric({ min: 0, max: moment.utc().unix() + 3600 });    // +3600 以消除误差
+        req.sanitize('timestamp').toInt();
+
+        req.checkQuery('offset', 'should be a valid number').optional().isNumeric().isInt({ min: 0});
+        req.sanitize('offset').toInt();
+
+        req.checkQuery('limit', 'should be between 1 and 50').optional().isNumeric().isInt({ max: 50, min: 1});
+        req.sanitize('limit').toInt();
+
+        req.checkQuery('sort', 'should be desc or asc').optional().isIn(['desc', 'asc']);
+
+        var errors = req.validationErrors();
+
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let params = _.pick(req.params, ['timestamp', 'offset', 'limit', 'sort', 'active']);
+
+        let result;
+        try {
+            result = await blockData(`/address-tx`, params);
+        } catch (err) {
+            res.send(new restify.InternalServerError('Internal Error'));
+            return next();
+        }
+
+        let addrs = _.indexBy(req.params.active.split(','));
+        let ret = [];
+        for (let r of result) {
+            let addr = null;
+
+            r.inputs.find(i => i.prev_out && i.prev_out.addr.some(a => _.has(addrs, a) && (addr = a)));
+            if (!addr) {
+                r.out.find(i => i.addr.some(a => _.has(addrs, a) && (addr = a)));
+            }
+
+            assert(!_.isNull(addr));
+
+            ret.push(_.extend(helper.txAmountSummary(r, addr), _.pick(r, ['confirmations', 'time']), {
+                txhash: r.hash
+            }));
+        }
+
+        res.send(ret);
+        return next();
+    });
+
     server.post('/tx', validate('tx'), async (req, res, next) => {
         var feePerKB = req.body.fee_per_kb,
             sentFrom = req.body.from,

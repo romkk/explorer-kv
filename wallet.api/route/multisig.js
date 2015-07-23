@@ -435,7 +435,18 @@ module.exports = server => {
 
         try {
             await mysql.transaction(async conn => {
-                let sql = `insert into multisig_tx
+                // 检测是否有未完成的交易
+                let sql = `select * from multisig_tx where multisig_account_id = ? and status = 2 and is_deleted = 0 limit 1 for update`;
+                let unfinishedTx = conn.selectOne(sql, [accountId]);
+                if (!_.isNull(unfinishedTx)) {
+                    throw {
+                        success: false,
+                        code: 'MultiSignatureTxUnfinishedExists',
+                        message: 'unfinished tx exists'
+                    };
+                }
+
+                sql = `insert into multisig_tx
                        (multisig_account_id, hex, status, note, is_deleted, nonce, created_at, updated_at)
                        values
                        (?, ?, ?, ?, ?, ?, utc_timestamp(), utc_timestamp())`;
@@ -450,11 +461,15 @@ module.exports = server => {
                 await conn.query(sql, params);
             });
         } catch (err) {
-            res.send({
-                success: false,
-                code: 'MultiSignatureTxCreateFailed',
-                message: 'please try again later'
-            });
+            if (_.isUndefined(err.success)) {
+                res.send({
+                    success: false,
+                    code: 'MultiSignatureTxCreateFailed',
+                    message: 'please try again later'
+                });
+            } else {
+                res.send(err);
+            }
             return next();
         }
 

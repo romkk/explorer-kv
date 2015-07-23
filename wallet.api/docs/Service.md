@@ -531,6 +531,10 @@ POST /multi-signature-account/$account_id/tx
 
 可能的错误码：
 
+*   MultiSignatureTxUnfinishedExists
+
+    账户下有尚未完成的交易
+
 *   MultiSignatureTxInvalidHex
 
     hex 非法

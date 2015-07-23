@@ -25,6 +25,11 @@ let formatTxStatus = status => {
     status.is_deleted = !!status.is_deleted;
     status.created_at = moment.utc(status.created_at).unix();
     status.updated_at = moment.utc(status.updated_at).unix();
+    if (status.deleted_at == '0000-00-00 00:00:00') {
+        status.deleted_at = -1;
+    } else {
+        status.deleted_at = moment.utc(status.deleted_at).unix();
+    }
     status.participants = status.participants.map(p => {
         let o = _.omit(p, ['wid', 'participant_status', 'role']);
         o.joined_at = moment.utc(p.joined_at).unix();
@@ -159,7 +164,7 @@ module.exports = server => {
                 sql = `insert into multisig_account_participant
                    (multisig_account_id, wid, role, participant_name, pubkey, pos, created_at, updated_at)
                    values
-                   (?, ?, ?, ?, ?, ?, now(), now())`;
+                   (?, ?, ?, ?, ?, ?, utc_timestamp(), utc_timestamp())`;
                 await conn.query(sql, [id, req.token.wid, 'Participant', participantName, participantPubkey, newPos]);
 
                 status = await MultiSig.getAccountStatus(id, conn);
@@ -168,7 +173,7 @@ module.exports = server => {
 
                 // generate new address
                 result = await bitcoind('createmultisig', status.n, _.pluck(status.participants, 'pubkey'));
-                sql = `update multisig_account set redeem_script = ?, generated_address = ?, updated_at = now()
+                sql = `update multisig_account set redeem_script = ?, generated_address = ?, updated_at = utc_timestamp()
                            where id = ?`;
                 await conn.query(sql, [result.redeemScript, result.address, id]);
                 status = await MultiSig.getAccountStatus(id, conn);
@@ -188,7 +193,7 @@ module.exports = server => {
                     message: 'create multisig failed',
                     code: 'MultiSignatureAccountJoinFailed'
                 });
-                await mysql.query(`update multisig_account set is_deleted = 1, updated_at = now() where id = ?`, [id]);
+                await mysql.query(`update multisig_account set is_deleted = 1, updated_at = utc_timestamp() where id = ?`, [id]);
                 //TODO push message to all
             } else {
                 console.log(err);
@@ -433,12 +438,12 @@ module.exports = server => {
                 let sql = `insert into multisig_tx
                        (multisig_account_id, hex, status, note, is_deleted, nonce, created_at, updated_at)
                        values
-                       (?, ?, ?, ?, ?, ?, now(), now())`;
+                       (?, ?, ?, ?, ?, ?, utc_timestamp(), utc_timestamp())`;
                 insertedTxId = (await conn.query(sql, [accountId, rawtx, 2, note, 0, 0])).insertId;
                 sql = `insert into multisig_tx_participant
                    (multisig_tx_id, role, wid, status, seq, created_at, updated_at)
                    values
-                   ${ status.participants.map(p => `(?, ?, ?, ?, ?, now(), now())`).join(',') }`;
+                   ${ status.participants.map(p => `(?, ?, ?, ?, ?, utc_timestamp(), utc_timestamp())`).join(',') }`;
                 let params = [];
                 let pos = 0;
                 status.participants.forEach((p, i) => params.push(insertedTxId, p.wid == req.token.wid ? 'Initiator' : 'Participant', p.wid, p.wid == req.token.wid ? 1 : 2, pos++));
@@ -457,8 +462,8 @@ module.exports = server => {
             let txHash = await MultiSig.sendMultiSigTx(rawtx, insertedTxId);
             if (txHash == false) {
                 // 删除新建的交易
-                let sql = `update multisig_tx set is_deleted = ?, updated_at = ? where id = ?`;
-                await mysql.query(sql, [1, moment.utc().format('YYYY-MM-DD HH:mm:ss'), insertedTxId]);
+                let sql = `update multisig_tx set is_deleted = ?, deleted_at = utc_timestamp(), updated_at = utc_timestamp() where id = ?`;
+                await mysql.query(sql, [1, insertedTxId]);
                 res.send({
                     success: false,
                     code: 'MultiSignatureTxPublishFailed',
@@ -623,8 +628,8 @@ module.exports = server => {
                 }
 
                 if (req.body.status == 'APPROVED') {
-                    sql = `update multisig_tx set hex = ?, updated_at = ? where id = ?;`;
-                    await conn.query(sql, [req.body.signed, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
+                    sql = `update multisig_tx set hex = ?, updated_at = utc_timestamp(), where id = ?;`;
+                    await conn.query(sql, [req.body.signed, txId]);
                 }
 
                 sql = `update multisig_tx_participant set status = ? where multisig_tx_id = ? and wid = ?`;
@@ -635,8 +640,8 @@ module.exports = server => {
                 let failed = await conn.pluck(sql, 'cnt', [txId]);
                 if (failed > accountStatus.m - accountStatus.n) {
                     // TODO send fail message to every one
-                    sql = `update multisig_tx set nonce = nonce + 1, updated_at = ?, status = 0 where id = ?`;
-                    await conn.query(sql, [moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
+                    sql = `update multisig_tx set nonce = nonce + 1, updated_at = utc_timestamp(), status = 0 where id = ?`;
+                    await conn.query(sql, [txId]);
                 } else if (req.body.complete) {
                     let txHash = await MultiSig.sendMultiSigTx(req.body.signed, txId, conn);
                     if (txHash == false) {
@@ -652,8 +657,8 @@ module.exports = server => {
 
         } catch (err) {
             // 删除新建的交易
-            let sql = `update multisig_tx set is_deleted = 1, nonce = nonce + 1, updated_at = ? where id = ?`;
-            await mysql.query(sql, [moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
+            let sql = `update multisig_tx set is_deleted = 1, deleted_at = utc_timestamp(), nonce = nonce + 1, updated_at = utc_timestamp() where id = ?`;
+            await mysql.query(sql, [txId]);
 
             if (err.code && err.message) {
                 if (err.code.endsWith('Error')) {
@@ -729,7 +734,7 @@ module.exports = server => {
             return next();
         }
 
-        let sql = `update multisig_tx set is_deleted = 1, nonce = nonce + 1 where id = ? and nonce = ?`;
+        let sql = `update multisig_tx set is_deleted = 1, deleted_at = utc_timestamp(), nonce = nonce + 1 where id = ? and nonce = ?`;
         let result = await mysql.query(sql, [txStatus.id, txStatus.nonce]);
         if (result.affectedRows == 0) {
             res.send({

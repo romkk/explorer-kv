@@ -40,13 +40,13 @@ class MultiSig {
             let accountSql = `insert into multisig_account
                                     (account_name, m, n, is_deleted, created_at, updated_at)
                               values
-                                    (?, ?, ?, 0, now(), now())`;
+                                    (?, ?, ?, 0, utc_timestamp(), utc_timestamp())`;
             let result = await conn.query(accountSql, [accountName, m, n]);
             multiAccountId = result.insertId;
             let participantSql = `insert into multisig_account_participant
                                     (multisig_account_id, wid, role, participant_name, pubkey, pos, created_at, updated_at)
                                     values
-                                    (?, ?, ?, ?, ?, ?, now(), now())`;
+                                    (?, ?, ?, ?, ?, ?, utc_timestamp(), utc_timestamp())`;
             result = await conn.query(participantSql, [multiAccountId, wid, 'Initiator', creatorName, creatorPubKey, 0]);
             multiAccountParticipantId = result.insertId;
         });
@@ -93,7 +93,7 @@ class MultiSig {
             throw new restify.NotFoundError('MultiSignatureTransaction not found');
         }
 
-        let o = _.pick(rows[0], ['txhash', 'hex', 'id', 'multisig_account_id', 'note', 'status', 'note', 'is_deleted', 'nonce', 'created_at', 'updated_at']);
+        let o = _.pick(rows[0], ['txhash', 'hex', 'id', 'multisig_account_id', 'note', 'status', 'note', 'is_deleted', 'nonce', 'created_at', 'updated_at', 'deleted_at']);
         o.participants = rows.map(r => _.pick(r, ['participant_status', 'seq', 'role', 'wid', 'joined_at', 'participant_name']));
 
         return o;
@@ -110,8 +110,8 @@ class MultiSig {
                 throw err;
             }
         }
-        let sql = `update multisig_tx set txhash = ?, hex = ?, nonce = nonce + 1, updated_at = ?, status = 1 where id = ?`;
-        await conn.query(sql, [txHash, rawhex, moment.utc().format('YYYY-MM-DD HH:mm:ss'), txId]);
+        let sql = `update multisig_tx set txhash = ?, hex = ?, nonce = nonce + 1, updated_at = utc_timestamp(), status = 1 where id = ?`;
+        await conn.query(sql, [txHash, rawhex, txId]);
         return txHash;
     }
 }

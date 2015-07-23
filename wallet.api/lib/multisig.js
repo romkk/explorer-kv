@@ -180,6 +180,7 @@ async function getAmountAndRelatedAddress(addr, hex) {
 MultiSig.getAccountUnApprovedTx = function* (accountId, addr) {
     let sql = `select * from multisig_tx
                where multisig_account_id = ? and status != 1
+               order by created_at desc
                limit ?, ?`;
     let offset = 0, limit = 1000;
     let cache = [], drain = false;

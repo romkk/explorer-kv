@@ -423,6 +423,13 @@ module.exports = server => {
                    limit 1`;
         let txId = await mysql.pluck(sql, 'id', [accountId]);
 
+        if (_.isNull(txId)) {
+            res.send({
+                success: false
+            });
+            return next();
+        }
+
         let txStatus;
 
         try {

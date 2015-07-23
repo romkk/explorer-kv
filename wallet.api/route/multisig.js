@@ -397,6 +397,48 @@ module.exports = server => {
         next();
     });
 
+    server.get('/multi-signature-account/:accountId/tx/latest', async (req, res, next) => {
+        req.checkParams('accountId', 'Not a valid id').isInt();
+        req.sanitize('accountId').toInt();
+        let errors = req.validationErrors();
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let accountId = req.params.accountId;
+        try {
+            let accountStatus = await MultiSig.getAccountStatus(accountId);
+            if (!accountStatus.participants.some(p => p.wid == req.token.wid)) {
+                throw new restify.NotFoundError('MultiSignatureAccount not found');
+            }
+        } catch (err) {
+            res.send(err);
+            return next();
+        }
+
+        let sql = `select id from multisig_tx
+                   where multisig_account_id = ? and status = 2 and is_deleted = 0
+                   limit 1`;
+        let txId = await mysql.pluck(sql, 'id', [accountId]);
+
+        let txStatus;
+
+        try {
+            txStatus = await MultiSig.getTxStatus(accountId, txId);
+            if (!txStatus.participants.some(p => p.wid == req.token.wid)) {
+                throw new restify.NotFoundError('MultiSignatureTx not found');
+            }
+        } catch (err) {
+            res.send(err);
+            return next();
+        }
+
+        res.send(_.extend(formatTxStatus(txStatus), { success: true }));
+        next();
+    });
+
     server.post('/multi-signature-account/:accountId/tx', validate('createMultiSignatureTx'), async (req, res, next) => {
         req.checkParams('accountId', 'Not a valid id').isInt();
         req.sanitize('accountId').toInt();

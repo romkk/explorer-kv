@@ -500,6 +500,18 @@ DELETE /multi-signature-account/$id
 
 ## 多重签名交易
 
+### 获取最新的未完成多重签名交易
+
+**Request**
+
+```
+GET /multi-signature-account/$account_id/tx/latest
+```
+
+**Response**
+
+返回值与多重签名交易详情相同。如果该交易不存在，则返回 404。
+
 ### 获取多重签名交易列表
 
 **Request**

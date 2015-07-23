@@ -499,9 +499,11 @@ GET /multi-signature-account/$account_id/tx
             "mpZM35ZsEFQ7djDZL4UskcGmrVebsHAm76",
             "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR"
         ],
-        "status": "DENIED",
+        "status": "TBD",
         "timestamp": 1435313711,
-        "txhash": "dbf23dc6101cafacaf3acec615864b4a82be7fe71802ff0bc19bd0ea01a6e784"
+        "txhash": "dbf23dc6101cafacaf3acec615864b4a82be7fe71802ff0bc19bd0ea01a6e784",
+        "is_deleted": false,
+        "deleted_at": -1
     }
 ]
 ```

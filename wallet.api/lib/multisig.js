@@ -197,6 +197,8 @@ MultiSig.getAccountUnApprovedTx = function* (accountId, addr) {
             let o = _.pick(tx, ['id', 'note', 'txhash']);
             o.timestamp = moment.utc(tx.created_at).unix();
             o.status = ['DENIED', 'APPROVED', 'TBD'][tx.status];
+            o.is_deleted = !!tx.is_deleted;
+            o.deleted_at = !!tx.is_deleted ? moment.utc(tx.deleted_at).unix() : -1;
             try {
                 _.extend(o, await getAmountAndRelatedAddress(addr, tx.hex));
             } catch (err) {

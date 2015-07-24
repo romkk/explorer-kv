@@ -49,6 +49,9 @@ module.exports = (server) => {
     });
 
     server.get('/address-tx/', async (req, res, next) => {
+        req.checkQuery('active', 'should be a \'|\' separated address list').matches(/^([a-zA-Z0-9]{33,35})(\|[a-zA-Z0-9]{33,35})*$/);
+        req.sanitize('active').toString();
+
         req.checkQuery('timestamp', 'should be a valid timestamp').optional().isNumeric({ min: 0, max: moment.utc().unix() + 3600 });    // +3600 以消除误差
         req.sanitize('timestamp').toInt();
 

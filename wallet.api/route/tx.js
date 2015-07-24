@@ -51,6 +51,9 @@ function estimateFee(txSize, amountAvaiable, feePerKB) {
 
 module.exports = server => {
     server.get('/tx', async (req, res, next) => {
+        req.checkQuery('active', 'should be a \'|\' separated address list').matches(/^([a-zA-Z0-9]{33,35})(\|[a-zA-Z0-9]{33,35})*$/);
+        req.sanitize('active').toString();
+
         req.checkQuery('timestamp', 'should be a valid timestamp').optional().isNumeric({ min: 0, max: moment.utc().unix() + 3600 });    // +3600 以消除误差
         req.sanitize('timestamp').toInt();
 
@@ -80,7 +83,7 @@ module.exports = server => {
             return next();
         }
 
-        let addrs = _.indexBy(req.params.active.split(','));
+        let addrs = _.indexBy(req.params.active.split('|'));
         let ret = [];
         for (let r of result) {
             let addr = null;

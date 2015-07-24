@@ -95,8 +95,10 @@ module.exports = server => {
 
             assert(!_.isNull(addr));
 
-            ret.push(_.extend(helper.txAmountSummary(r, addr), _.pick(r, ['confirmations', 'time']), {
-                txhash: r.hash
+            ret.push(_.extend(helper.txAmountSummary(r, addr), {
+                confirmations: r.confirmations,
+                txhash: r.hash,
+                timestamp: r.time
             }));
         }
 

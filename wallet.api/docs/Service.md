@@ -748,7 +748,7 @@ Android SDK：[http://docs.aliyun.com/#/pub/oss/sdk/android-sdk&preface](http://
 **Request**
 
 ```
-GET /oss-token
+GET /sts-token
 ```
 
 **Response**

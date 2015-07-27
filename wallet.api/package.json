@@ -27,6 +27,7 @@
     "lodash": "^3.9.3",
     "moment": "^2.10.3",
     "mysql": "^2.6.2",
+    "node-uuid": "^1.4.3",
     "request-promise": "^0.4.2",
     "restify": "^3.0.3",
     "sprintf": "^0.1.5",

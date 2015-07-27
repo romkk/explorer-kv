@@ -20,5 +20,12 @@ module.exports = {
     },
 
     explorerEndpoint: 'http://tchain.bitmain.com/api/v1/',
-    tokenExpiredOffset: 10 * 86400     //token 有效期
+    tokenExpiredOffset: 10 * 86400,     //token 有效期
+    oss: {
+        bucketOwnerId: '1581108693131087',      // listBucket 获得
+        bucket: 'wallet-user-data',
+        rootAccessKeyId: process.env.OSS_ACCESSKEY_ID,
+        rootAccessKeySecret: process.env.OSS_ACCESSKEY_SECRET,
+        durationSeconds: 900
+    }
 };

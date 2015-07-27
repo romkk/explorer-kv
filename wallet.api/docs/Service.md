@@ -739,12 +739,10 @@ DELETE /multi-signature-account/$account_id/tx/$tx_id
 
 在取得临时密钥后，客户端直接与 OSS 进行通信，进行文件存取。
 
-默认客户端的存储路径为 /wallet-user-data/$wid/wallet.bak。
+默认客户端的存储路径为 `/wallet-user-data/$wid/wallet.bak`。
 
 iOS SDK：[http://docs.aliyun.com/#/pub/oss/sdk/ios-sdk&preface](http://docs.aliyun.com/#/pub/oss/sdk/ios-sdk&preface)
 Android SDK：[http://docs.aliyun.com/#/pub/oss/sdk/android-sdk&preface](http://docs.aliyun.com/#/pub/oss/sdk/android-sdk&preface)
-
-### 获取临时密钥
 
 **Request**
 
@@ -755,6 +753,18 @@ GET /oss-token
 **Response**
 
 ```
+{
+    "Credentials": {
+        "AccessKeyId": "STS.DXVA15L3saBuHaLfNRyJ",
+        "AccessKeySecret": "2bIDcudxSmX1ePRUaB5KS2i1AxPdurHgsWoAn6DF",
+        "Expiration": "2015-07-27T09:40:32.617Z",
+        "SecurityToken": "CAES8AIIARKAAQ/q4dxXHYiac8a+JraoHwTmJY2/szROv9jjp57LkY1iHYbXOy/iRvD/0sw5fRAqdBaXN16sg4iwiOJbB1BM/hR+KSoPap1TJJdZtZk9KBiThRUMZ2uvn4TBaMDIq7XlqKRLjQn7XY13oiBsg5ITivSrOKysMYp6qWWus5QKnqcSGhhTVFMuRFhWQTE1TDNzYUJ1SGFMZk5SeUoiEDE1ODExMDg2OTMxMzEwODcqBG51bGww6amK9+wpOgZSc2FNRDVCpwEKATEaoQEKBUFsbG93EkYKDEFjdGlvbkVxdWFscxIGQWN0aW9uGi4KDW9zczpQdXRPYmplY3QKDW9zczpHZXRPYmplY3QKDm9zczpIZWFkT2JqZWN0ElAKDlJlc291cmNlRXF1YWxzEghSZXNvdXJjZRo0CjJhY3M6b3NzOio6MTU4MTEwODY5MzEzMTA4Nzp3YWxsZXQtdXNlci1kYXRhL251bGwvKg=="
+    },
+    "FederatedUser": {
+        "Arn": "acs:sts::1581108693131087:federated-user/null",
+        "FederatedUserId": "1581108693131087:null"
+    }
+}
 ```
 
 ## 主密钥文件的备份与恢复

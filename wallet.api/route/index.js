@@ -6,4 +6,5 @@ module.exports = server => {
     require('./device')(server);
     require('./multisig')(server);
     require('./ping')(server);
+    require('./sts')(server);
 };

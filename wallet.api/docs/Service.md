@@ -742,6 +742,7 @@ DELETE /multi-signature-account/$account_id/tx/$tx_id
 默认客户端的存储路径为 `/wallet-user-data/$wid/wallet.bak`。
 
 iOS SDK：[http://docs.aliyun.com/#/pub/oss/sdk/ios-sdk&preface](http://docs.aliyun.com/#/pub/oss/sdk/ios-sdk&preface)
+
 Android SDK：[http://docs.aliyun.com/#/pub/oss/sdk/android-sdk&preface](http://docs.aliyun.com/#/pub/oss/sdk/android-sdk&preface)
 
 **Request**

@@ -13,7 +13,7 @@ module.exports = server => {
 
         let result;
         try {
-            result = await STSToken.make(widInternal);
+            result = await STSToken.make(widInternal, wid);
         } catch (err) {
             console.log(err.stack);
             res.send(new restify.InternalServerError('Internal Error'));

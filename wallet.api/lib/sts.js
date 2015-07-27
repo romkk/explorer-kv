@@ -17,8 +17,9 @@ function encode(str) {
 }
 
 class STSToken {
-    constructor(wid_internal) {
-        this.wid_internal = wid_internal;
+    constructor(name, wid) {
+        this.name = name;
+        this.wid = wid;
         this.body = this.signature = null;
     }
 
@@ -32,7 +33,7 @@ class STSToken {
                         'oss:GetObject',
                         'oss:HeadObject'
                     ],
-                    Resource: `acs:oss:*:${config.get('oss.bucketOwnerId')}:${config.get('oss.bucket')}/${this.wid_internal}/*`,
+                    Resource: `acs:oss:*:${config.get('oss.bucketOwnerId')}:${config.get('oss.bucket')}/${this.wid}/*`,
                     Effect: "Allow"
                 }
             ]
@@ -52,7 +53,7 @@ class STSToken {
             //Timestamp: '2015-07-27T09:14:26Z',
             Action: 'GetFederationToken',
             StsVersion: '1',
-            Name: String(this.wid_internal),
+            Name: String(this.name),
             Policy: JSON.stringify(this.policy()),
             DurationSeconds: String(config.get('oss.durationSeconds'))
         };
@@ -75,7 +76,7 @@ class STSToken {
     }
 
     async req() {
-        log(`开始获取 STS Token, wid = ${this.wid_internal}`);
+        log(`开始获取 STS Token, wid = ${this.wid}`);
         let res;
         let body = _.extend({}, this.body, {
             Signature: this.signature
@@ -94,8 +95,8 @@ class STSToken {
         return JSON.parse(res);
     }
 
-    static async make(wid) {
-        let instance = new STSToken(wid);
+    static async make(name, wid) {
+        let instance = new STSToken(name, wid);
         return (await instance.prepareBody().sign().req());
     }
 }

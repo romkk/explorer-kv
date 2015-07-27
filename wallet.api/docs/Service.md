@@ -735,15 +735,27 @@ DELETE /multi-signature-account/$account_id/tx/$tx_id
 
 ## 用户数据文件的备份与恢复
 
-基于阿里云 OSS 存储用户加密后的数据文件。
+基于阿里云 OSS 存储用户加密后的数据文件。客户端程序首先到钱包服务器请求临时密钥，该密钥用于访问读写阿里云的 OSS。
 
-### 备份
+在取得临时密钥后，客户端直接与 OSS 进行通信，进行文件存取。
 
-TODO
+默认客户端的存储路径为 /wallet-user-data/$wid/wallet.bak。
 
-### 恢复
+iOS SDK：[http://docs.aliyun.com/#/pub/oss/sdk/ios-sdk&preface](http://docs.aliyun.com/#/pub/oss/sdk/ios-sdk&preface)
+Android SDK：[http://docs.aliyun.com/#/pub/oss/sdk/android-sdk&preface](http://docs.aliyun.com/#/pub/oss/sdk/android-sdk&preface)
 
-TODO
+### 获取临时密钥
+
+**Request**
+
+```
+GET /oss-token
+```
+
+**Response**
+
+```
+```
 
 ## 主密钥文件的备份与恢复
 

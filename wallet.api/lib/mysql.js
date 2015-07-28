@@ -113,7 +113,6 @@ class Mysql {
                                 return module.exports[method].apply(module.exports, args);
                             };
                         });
-                        console.dir(conn.release);
                         c.release = () => conn.release.call(conn);
                         resolve(c);
                     });

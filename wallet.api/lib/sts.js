@@ -53,7 +53,7 @@ class STSToken {
             //Timestamp: '2015-07-27T09:14:26Z',
             Action: 'GetFederationToken',
             StsVersion: '1',
-            Name: String(this.name),
+            Name: 'bm' + this.name,
             Policy: JSON.stringify(this.policy()),
             DurationSeconds: String(config.get('oss.durationSeconds'))
         };

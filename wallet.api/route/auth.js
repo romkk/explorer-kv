@@ -73,7 +73,10 @@ module.exports = server => {
             var valid = await bitcoind('verifymessage', address, signature, challenge);
             if (valid) {
                 if (_.isUndefined(challengeInfo.address)) {        //新建绑定关系
-                    let sql = `insert into wallet values (?, ?, now(), now())`;
+                    let sql = `insert into wallet
+                               (wid, address_bind, created_at, updated_at)
+                               values
+                               (?, ?, now(), now())`;
                     try {
                         await mysql.query(sql, [challengeInfo.wid, address]);
                     } catch (err) {

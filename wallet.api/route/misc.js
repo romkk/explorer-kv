@@ -59,4 +59,12 @@ module.exports = (server) => {
         res.send(JSON.parse(cache[TICKER_CACHE]));
         next();
     });
+
+    server.get('/timestamp', (req, res, next) => {
+        res.send({
+            success: true,
+            timestamp: ~~(Date.now() / 1000)
+        });
+        return next();
+    });
 };

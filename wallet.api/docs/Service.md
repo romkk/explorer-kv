@@ -764,7 +764,8 @@ GET /sts-token
     "FederatedUser": {
         "Arn": "acs:sts::1581108693131087:federated-user/null",
         "FederatedUserId": "1581108693131087:null"
-    }
+    },
+    "success": true
 }
 ```
 
@@ -780,3 +781,19 @@ TODO
 
 TODO
 
+## 获取时间
+
+**Request**
+
+```
+GET /timestamp
+```
+
+**Response**
+
+```
+{
+    "success": true,
+    "timestamp": 1438053162
+}
+```

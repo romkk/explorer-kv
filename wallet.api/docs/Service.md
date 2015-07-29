@@ -25,7 +25,7 @@
   
 ## 鉴权
 
-### 登录 √
+### 登录
 
 1.  客户端发起登录请求，服务端返回待签名字符串。待签名字符串在 300 秒后过期，届时需要重新申请。
 
@@ -61,7 +61,13 @@
     {
         "address": "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR",    -- 如果不是首次认证，需要与指定的地址一致；否则传入任意地址，该 wid 将于该地址绑定
         "challenge": "eyJ3aWQiOiJ3XzJiMWVkZDI1Mzc0MDMzOWM1MWNiYTBkNGQ4NmM3MjNiYjRkMWNiMWNmMzA4ZTE5NzUxODk1ODQ3MzYzNTI2M2QiLCJleHBpcmVkX2F0IjoxNDM1MjA1ODI3LCJub25jZSI6IjA0MDAxMTE0OTciLCJhZGRyZXNzIjoibXRKTDhLZVR1Z2NmMllDcXZ4YkZhdFViTllEeXdCRmZOUiJ9.4qgCCmDnb03BtA2tMXC9+LJWIgSGGKi2/gM0gtH41+I",
-        "signature": "H5YB9+qSvk1MU3FWrt72VI1qB7MvnRk8NVaIpCeFP2vIAWVdSz99In40o3yJFWY/fTR458xWy8110QmCnjWRjJA="
+        "signature": "H5YB9+qSvk1MU3FWrt72VI1qB7MvnRk8NVaIpCeFP2vIAWVdSz99In40o3yJFWY/fTR458xWy8110QmCnjWRjJA=",
+        "device": {
+            "id": "deviceid",
+            "os": "iOS",      -- enum('iOS','Android','Windows','Other')
+            "version": "9.0",
+            "lang": "zh-CN"        -- enum('en-US','zh-CN') http://www.lingoes.net/en/translator/langcode.htm
+        }
     }
     ```
 
@@ -91,11 +97,19 @@
         
         待签名字符串已经被其他请求通过验证并处理，客户端重试认证流程即可。
         
+    *   RegisterTooManyDevices
+    
+        `wid`对应的已注册的设备过多；当前最多不能超过 10 个。
+        
+    *   RegisterDeviceAlreadyTaken
+    
+        该`device_id`已经对应一个`wid`。
+        
     *   AuthDenied
 
         其他原因导致的服务器拒绝登录。
 
-### 会话 √
+### 会话
 
 在登录完成后，与服务器的会话使用`token`认证。需在 HTTP Request Header 中加入以下字段：
 
@@ -114,55 +128,19 @@ HTTP/1.1 401 Unauthorized
 }
 ```
 
-### 跳过鉴权 √
+### 跳过鉴权
 
 开发时可以跳过鉴权，在 url 中加入`skipauth=1`即可。
 
 ## 设备管理
 
-###  注册
+### 注册
 
-用户使用的设备需要经过注册，以提供信息推送等功能。
-
-**Request**
-
-```
-POST /device/$wid/$did
-```
-
-**Response**
-
-```
-{
-    success: true
-}
-```
-
-可能的错误码：
-
-*   RegisterTooManyDevices
-
-    `wid`对应的已注册的设备过多；当前最多不能超过 16 个。
-    
-*   RegisterDeviceAlreadyTaken
-
-    该`device_id`已经对应一个`wid`。
+设备注册在获取 token 的过程中完成。
     
 ### 注销
 
-**Reqeust**
-
-```
-DELETE /device/$wid/$did
-```
-
-**Response**
-
-```
-{
-    success: true
-}
-```
+TODO
 
 ## 普通交易
 
@@ -200,7 +178,7 @@ GET /tx
 
 请使用数据 API。
 
-### 提交构造交易请求 √
+### 提交构造交易请求
 
 **Request**
 
@@ -262,7 +240,7 @@ POST /tx
 
   余额不足。
 
-### 广播交易 √
+### 广播交易
 
 **Request**
 
@@ -314,7 +292,7 @@ POST /address
 
 ```
 
-## 多重签名账户 √
+## 多重签名账户
 
 ### 发起创建请求
 
@@ -732,6 +710,23 @@ DELETE /multi-signature-account/$account_id/tx/$tx_id
 *   MultiSignatureDeleteFailed
 
     删除失败，重试即可。
+    
+## 获取时间
+
+**Request**
+
+```
+GET /timestamp
+```
+
+**Response**
+
+```
+{
+    "success": true,
+    "timestamp": 1438053162
+}
+```
 
 ## 用户数据文件的备份与恢复
 
@@ -780,20 +775,3 @@ TODO
 ### 恢复
 
 TODO
-
-## 获取时间
-
-**Request**
-
-```
-GET /timestamp
-```
-
-**Response**
-
-```
-{
-    "success": true,
-    "timestamp": 1438053162
-}
-```

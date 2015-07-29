@@ -164,8 +164,8 @@ TODO
     "expireTime": 259200,       // 3 days
     "type": 2,
     "customContent": {
-        "action": "MULTISIG_ACCOUNT_CREATE",
-        "args": "@name|@participant_status|@tx_status",
+        "action": "MULTISIG_TX_CHANGE_APPROVED_APPROVED",
+        "args": "@name",
         "account_id": 18,
         "tx_id": 3
     }

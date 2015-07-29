@@ -88,6 +88,7 @@ module.exports = (server) => {
         var pq = new PriorityQueue({
             comparator: sort == 'desc' ? (a, b) => b[0].tx_height - a[0].tx_height : (a, b) => a[0].tx_height - b[0].tx_height
         });
+        var txInPQ = {};
 
         async function push(i) {
             var it = its[i];
@@ -100,7 +101,10 @@ module.exports = (server) => {
             }
             try {
                 var v = await c.value;
-                pq.queue([v, i]);
+                if (!txInPQ[v.tx_id]) {
+                    pq.queue([v, i]);
+                    txInPQ[v.tx_id] = 1;
+                }
             } catch (err) {
                 its[i] = false;
             }

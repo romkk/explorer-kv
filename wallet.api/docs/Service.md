@@ -266,31 +266,9 @@ POST /tx/publish
 
   发布失败，详细信息请关注`bitcoind`字段，含有调用 bitcoind 返回的错误信息。
 
-### 监控地址余额变动 [暂不实现]
+### 监控地址余额变动
 
-提交地址用于余额变动监控，每次最大 1024 个。
-
-**Request**
-
-```
-POST /address
-
-[
-    "mzZypShcs1B35udnkqeYeJy8rUdgHDDvKG",
-    "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR"
-]
-```
-
-**Response**
-
-成功：
-
-```
-{
-    "success": true
-}
-
-```
+TODO
 
 ## 多重签名账户
 

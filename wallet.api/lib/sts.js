@@ -49,7 +49,7 @@ class STSToken {
             SignatureVersion: '1.0',
             SignatureNonce: uuid.v4(),
             //SignatureNonce: '637465bb-42bf-491c-b9d3-5965c452bb1d',
-            Timestamp: moment.utc().format('YYYY-MM-DDThh:mm:ss[Z]'),
+            Timestamp: moment.utc().format('YYYY-MM-DDTHH:mm:ss[Z]'),
             //Timestamp: '2015-07-27T09:14:26Z',
             Action: 'GetFederationToken',
             StsVersion: '1',

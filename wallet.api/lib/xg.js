@@ -12,8 +12,14 @@ class XG {
         return XG.instance;
     }
 
+    static async send(...args) {
+        let xg = XG.make();
+        return xg.sendMessage.apply(xg, args);
+    }
+
     constructor() {
-        this.xg = new xinge.XingeApp(+config.get('xg.accessId'), config.get('xg.secretKey'));
+        this.androidXG = new xinge.XingeApp(+config.get('xg.android.accessId'), config.get('xg.android.secretKey'));
+        this.iOSXG = new xinge.XingeApp(+config.get('xg.ios.accessId'), config.get('xg.ios.secretKey'));
     }
 
     async sendMessage(receivers, eventType, args, extraKV = {}) {
@@ -26,6 +32,16 @@ class XG {
         }
 
         let eventName = eventType.slice(eventType.indexOf('EVENT_') + 'EVENT_'.length);
+
+        // prepare Android
+        let androidMessage = new xinge.AndroidMessage();
+        androidMessage.content = eventName;
+        androidMessage.expireTime = 259200;
+        androidMessage.type = xinge.MESSAGE_TYPE_MESSAGE;
+        _.extend(androidMessage.customContent, {
+            action: eventName,
+            args: args.join('|')
+        }, extraKV);
 
         // prepare iOS
         let iOSMessage = new xinge.IOSMessage();
@@ -41,25 +57,15 @@ class XG {
             'loc-args': args
         };
 
-        // prepare Android
-        let androidMessage = new xinge.AndroidMessage();
-        androidMessage.content = eventName;
-        androidMessage.expireTime = 259200;
-        androidMessage.type = xinge.MESSAGE_TYPE_MESSAGE;
-        _.extend(androidMessage.customContent, {
-            action: eventName,
-            args: args.join('|')
-        }, extraKV);
-
         let androidPromise = new Promise((resolve, reject) => {
-            this.xg.pushByAccounts(receivers, androidMessage, null, (e, data) => {
+            this.androidXG.pushByAccounts(receivers, androidMessage, null, (e, data) => {
                 if (e) return reject(e);
                 resolve(data);
             });
         });
 
         let iOSPromise = new Promise((resolve, reject) => {
-            this.xg.pushByAccounts(receivers, androidMessage, 2 - (process.env.ENV == 'PRODUCTION'), (e, data) => {
+            this.iOSXG.pushByAccounts(receivers, iOSMessage, xinge.IOS_ENV_PRO, (e, data) => {
                 if (e) return reject(e);
                 resolve(data);
             });

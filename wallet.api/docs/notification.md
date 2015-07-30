@@ -77,6 +77,41 @@ TODO
 }
 ```
 
+### 多重签名账户创建失败
+
+提示信息：多重签名账户 @account 创建失败，请重试
+
+#### iOS
+```
+{
+    "expireTime": 259200,   // 3 days
+    "alert": {
+        "loc-key": "MULTISIG_ACCOUNT_CREATE_FAILED",
+        "loc-args": ["@account"]
+    },
+    "customContent": {
+        "account_id": 3
+    },
+    "badge": 1,
+    "sound": "default"
+}
+```
+
+#### Android
+
+```
+{
+    "content": "MULTISIG_ACCOUNT_CREATE_FAILED",
+    "expireTime": 259200,       // 3 days
+    "type": 2,
+    "customContent": {
+        "action": "MULTISIG_ACCOUNT_CREATE_FAILED",
+        "args": "@account",
+        "account_id": 3
+    }
+}
+```
+
 ## 多重签名交易
 
 ### 新建多重签名交易

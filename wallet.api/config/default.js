@@ -29,7 +29,13 @@ module.exports = {
         durationSeconds: 900
     },
     xg: {       //信鸽推送
-        accessId: process.env.XG_ACCESSID,
-        secretKey: process.env.XG_SECRETKEY
+        android: {
+            accessId: process.env.XG_ANDROID_ACCESSID,
+            secretKey: process.env.XG_ANDROID_SECRETKEY
+        },
+        ios: {
+            accessId: process.env.XG_IOS_ACCESSID,
+            secretKey: process.env.XG_IOS_SECRETKEY
+        }
     }
 };

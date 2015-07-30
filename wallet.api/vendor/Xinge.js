@@ -1244,6 +1244,7 @@ function callAPI(api, params, method, timeout, secretKey, callback){
 		
 		//生成sign
 		params.sign = generateSign(api, params, method, secretKey);
+		console.log(params);
 		var strParams = querystring.stringify(params);
 
 		var urlParams = url.parse(api);

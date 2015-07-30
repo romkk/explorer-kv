@@ -10,6 +10,7 @@ let assert = require('assert');
 let bitcore = require('bitcore');
 let moment = require('moment');
 let helper = require('../lib/helper');
+let xg = require('../lib/xg');
 
 let formatAccountStatus = (status) => {
     status.participants = status.participants.map(p => {
@@ -202,7 +203,13 @@ module.exports = server => {
             return next();
         }
 
-        // TODO: push message to master and other slaves
+        // push message to master and other slaves
+        let receivers = status.participants.map(p => p.wid);
+        xg.send(receivers, xg.EVENT_MULTISIG_ACCOUNT_CHANGE, [
+            participantName,
+            status.account_name
+        ]);
+
         res.send(_.extend(formatAccountStatus(status), {
             success: true
         }));

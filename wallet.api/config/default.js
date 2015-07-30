@@ -27,5 +27,9 @@ module.exports = {
         rootAccessKeyId: process.env.OSS_ACCESSKEY_ID,
         rootAccessKeySecret: process.env.OSS_ACCESSKEY_SECRET,
         durationSeconds: 900
+    },
+    xg: {       //信鸽推送
+        accessId: process.env.XG_ACCESSID,
+        secretKey: process.env.XG_SECRETKEY
     }
 };

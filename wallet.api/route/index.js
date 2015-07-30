@@ -1,4 +1,3 @@
-var mysql = require('../lib/mysql');
 module.exports = server => {
     require('./misc')(server);
     require('./tx')(server);

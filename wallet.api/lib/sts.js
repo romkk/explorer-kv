@@ -31,7 +31,8 @@ class STSToken {
                     Action: [
                         'oss:PutObject',
                         'oss:GetObject',
-                        'oss:HeadObject'
+                        'oss:HeadObject',
+                        'oss:ListObjects'
                     ],
                     Resource: `acs:oss:*:${config.get('oss.bucketOwnerId')}:${config.get('oss.bucket')}/${this.wid}/*`,
                     Effect: "Allow"

@@ -720,6 +720,11 @@ iOS SDK：[http://docs.aliyun.com/#/pub/oss/sdk/ios-sdk&preface](http://docs.ali
 
 Android SDK：[http://docs.aliyun.com/#/pub/oss/sdk/android-sdk&preface](http://docs.aliyun.com/#/pub/oss/sdk/android-sdk&preface)
 
+|类型|路径|鉴权方式|权限|
+|---|---|---|---|---|
+|主备份|`/wallet-user-data/$wid/primary/*`|BM Ticket，设置 Request Header 为`X-Ticket: xxxx`|主备份、次备份文件夹读写|
+|次备份|`/wallet-user-data/$wid/secondary/*`|Wallet Token|次备份文件夹读写|
+
 **Request**
 
 ```
@@ -742,4 +747,3 @@ GET /sts-token
     },
     "success": true
 }
-```

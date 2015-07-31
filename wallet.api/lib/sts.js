@@ -31,11 +31,22 @@ class STSToken {
                     Action: [
                         'oss:PutObject',
                         'oss:GetObject',
-                        'oss:HeadObject',
-                        'oss:ListObjects'
+                        'oss:HeadObject'
                     ],
                     Resource: `acs:oss:*:${config.get('oss.bucketOwnerId')}:${config.get('oss.bucket')}/${this.wid}/*`,
                     Effect: "Allow"
+                },
+                {
+                    Action: [
+                        'oss:ListObjects'
+                    ],
+                    Resource: `acs:oss:*:${config.get('oss.bucketOwnerId')}:${config.get('oss.bucket')}`,
+                    Effect: 'Allow',
+                    Condition: {
+                        StringLike: {
+                            'oss:Prefix': `${this.wid}/*`
+                        }
+                    }
                 }
             ]
         };

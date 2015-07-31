@@ -712,7 +712,9 @@ GET /timestamp
 
 在取得临时密钥后，客户端直接与 OSS 进行通信，进行文件存取。
 
-默认客户端的存储路径为 `/wallet-user-data/$wid/wallet.bak`。
+默认客户端的存储路径为 `/wallet-user-data/$wid/*`。
+
+注意，在使用`GetBucket`接口获取 object list 时，如果 prefix 只指定了`wid`，末尾的`/`不可忽略。
 
 iOS SDK：[http://docs.aliyun.com/#/pub/oss/sdk/ios-sdk&preface](http://docs.aliyun.com/#/pub/oss/sdk/ios-sdk&preface)
 
@@ -741,15 +743,3 @@ GET /sts-token
     "success": true
 }
 ```
-
-## 主密钥文件的备份与恢复
-
-基于阿里云 OSS 存储用户加密后的主密钥文件，需要使用 BM 帐号登录后方可使用。
-
-### 备份
-
-TODO
-
-### 恢复
-
-TODO

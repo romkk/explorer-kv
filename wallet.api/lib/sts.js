@@ -108,8 +108,7 @@ class STSToken {
     }
 
     static async make(name, wid) {
-        let instance = new STSToken(name, wid);
-        return (await instance.prepareBody().sign().req());
+        return (await new STSToken(name, wid).prepareBody().sign().req());
     }
 }
 

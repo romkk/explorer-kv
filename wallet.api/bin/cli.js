@@ -46,7 +46,8 @@ server.use(auth.tokenMiddleware([
     '/tx/publish',
     '/tx/decode',
     '/timestamp',
-    '/ticker'
+    '/ticker',
+    '/sts-token'
 ]));
 
 server.on('after', restify.auditLogger({

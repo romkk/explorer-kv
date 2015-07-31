@@ -706,6 +706,45 @@ GET /timestamp
 }
 ```
 
+## 绑定 BM 账户
+
+用户在登录 BM 账户后，需要将`wid`与`BM`账户建立关联关系，便于恢复主密钥时使用。
+
+当前暂不提供解绑接口，同时限定`BM`账户只能绑定一个`wid`。
+
+**Request**
+
+```
+POST /bm-account/bind
+
+{
+    "bm_account": "myaccount"
+}
+```
+
+**Response**
+
+```
+{
+    "success": true,
+    "account": "myaccount",
+    "wids": [
+        "wid1"      -- 当前是一一对应关系，将来可能会有多个
+    ]
+}
+
+```
+
+可能的错误码：
+
+  * BMAccountUsed
+
+    该 BM 账户已经与某个`wid`绑定。
+    
+  * BMAccountBindFailed
+
+    绑定失败
+
 ## 用户数据文件的备份与恢复
 
 基于阿里云 OSS 存储用户加密后的数据文件。客户端程序首先到钱包服务器请求临时密钥，该密钥用于访问读写阿里云的 OSS。
@@ -747,3 +786,4 @@ GET /sts-token
     },
     "success": true
 }
+```

@@ -191,8 +191,18 @@ var schema = {
                 type: 'boolean'
             }
         }
-    }
+    },
 
+    bindBMAccount: {
+        type: 'object',
+        required: ['bm_account'],
+        properties: {
+            bm_account: {
+                type: 'string',
+                minLength: 1
+            }
+        }
+    }
 };
 
 module.exports = (schemaName) => {

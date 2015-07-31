@@ -37,5 +37,6 @@ module.exports = {
             accessId: process.env.XG_IOS_ACCESSID,
             secretKey: process.env.XG_IOS_SECRETKEY
         }
-    }
+    },
+    userCenter: process.env.UC_ENDPOINT
 };

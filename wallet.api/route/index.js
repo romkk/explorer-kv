@@ -8,6 +8,7 @@ module.exports = server => {
     require('./multisig')(server);
     require('./ping')(server);
     require('./sts')(server);
+    require('./bm_account')(server);
 
     //server.get('/test', async (req, res, next) => {
     //    xg.send(

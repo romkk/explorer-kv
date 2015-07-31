@@ -31,6 +31,8 @@ class XG {
             args = [args];
         }
 
+        extraKV = _.mapValues(extraKV, v => String(v));
+
         let eventName = eventType.slice(eventType.indexOf('EVENT_') + 'EVENT_'.length);
 
         // prepare Android

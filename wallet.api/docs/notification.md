@@ -42,6 +42,42 @@ TODO
 }
 ```
 
+### 多重签名账户创建完成
+
+提示信息：多重签名账户 @account 创建完成
+
+#### iOS
+
+```
+{
+    "expireTime": 259200,   // 3 days
+    "alert": {
+        "loc-key": "MULTISIG_ACCOUNT_CREATED",
+        "loc-args": ["@account"]
+    },
+    "customContent": {
+        "account_id": 3
+    },
+    "badge": 1,
+    "sound": "default"
+}
+```
+
+#### Android
+
+```
+{
+    "content": "MULTISIG_ACCOUNT_CREATED",
+    "expireTime": 259200,       // 3 days
+    "type": 2,
+    "customContent": {
+        "action": "MULTISIG_ACCOUNT_STATUS_CHANGE",
+        "args": "@account",
+        "account_id": 3
+    }
+}
+```
+
 ### 多重签名账户取消
 
 提示信息：@name 取消了多重签名账户 @account
@@ -216,7 +252,7 @@ TODO
 {
     "expireTime": 259200,   // 3 days
     "alert": {
-        "loc-key": "MULTISIG_TX_CANCEL",
+        "loc-key": "MULTISIG_TX_DELETE",
         "loc-args": ["@name"]
     },
     "customContent": {

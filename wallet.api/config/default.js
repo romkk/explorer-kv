@@ -27,5 +27,15 @@ module.exports = {
         rootAccessKeyId: process.env.OSS_ACCESSKEY_ID,
         rootAccessKeySecret: process.env.OSS_ACCESSKEY_SECRET,
         durationSeconds: 900
+    },
+    xg: {       //信鸽推送
+        android: {
+            accessId: process.env.XG_ANDROID_ACCESSID,
+            secretKey: process.env.XG_ANDROID_SECRETKEY
+        },
+        ios: {
+            accessId: process.env.XG_IOS_ACCESSID,
+            secretKey: process.env.XG_IOS_SECRETKEY
+        }
     }
 };

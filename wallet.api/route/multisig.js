@@ -10,6 +10,7 @@ let assert = require('assert');
 let bitcore = require('bitcore');
 let moment = require('moment');
 let helper = require('../lib/helper');
+let xg = require('../lib/xg');
 
 let formatAccountStatus = (status) => {
     status.participants = status.participants.map(p => {
@@ -194,7 +195,12 @@ module.exports = server => {
                     code: 'MultiSignatureAccountJoinFailed'
                 });
                 await mysql.query(`update multisig_account set is_deleted = 1, updated_at = utc_timestamp() where id = ?`, [id]);
-                //TODO push message to all
+
+                //push message to all
+                let receivers = status.participants.filter(p => p.wid != req.token.wid).map(p => p.wid);
+                xg.send(receivers, xg.EVENT_MULTISIG_ACCOUNT_CREATE_FAILED, [status.account_name], {
+                    account_id: status.id
+                });
             } else {
                 console.log(err);
                 res.send(new restify.InternalServerError('Internal Error'));
@@ -202,7 +208,15 @@ module.exports = server => {
             return next();
         }
 
-        // TODO: push message to master and other slaves
+        // push message to master and other slaves
+        let receivers = status.participants.filter(p => p.wid != req.token.wid).map(p => p.wid);
+
+        if (status.participants.length < status.m) {        // 状态变更
+            xg.send(receivers, xg.EVENT_MULTISIG_ACCOUNT_CHANGE, [participantName, status.account_name], {account_id: status.id});
+        } else {    // 创建完成
+            xg.send(receivers, xg.EVENT_MULTISIG_ACCOUNT_CREATED, [status.account_name], {account_id: status.id});
+        }
+
         res.send(_.extend(formatAccountStatus(status), {
             success: true
         }));
@@ -263,7 +277,12 @@ module.exports = server => {
             return next();
         }
 
-        // TODO: push message to slaves
+        //push message to slaves
+        let receivers = status.participants.slice(1).map(p => p.wid);
+        xg.send(receivers, xg.EVENT_MULTISIG_ACCOUNT_DELETE, [p.participant_name, status.account_name], {
+            account_id: status.id
+        });
+
         res.send({ success: true });
         next();
     });
@@ -541,7 +560,14 @@ module.exports = server => {
             }
         }
 
-        // TODO send message to other participants
+        //send message to other participants
+        let creator = status.participants.find(p => p.wid == req.token.wid).participant_name;
+        let receivers = status.participants.filter(p => p.wid != req.token.wid).map(p => p.wid);
+        xg.send(receivers, xg.EVENT_MULTISIG_TX_CREATE, [ creator, note ], {
+            account_id: status.id,
+            tx_id: insertedTxId
+        });
+
         res.send(_.extend(formatTxStatus(await MultiSig.getTxStatus(accountId, insertedTxId)), {success: true}));
         next();
     });
@@ -707,13 +733,11 @@ module.exports = server => {
                 sql = `select count(id) as cnt from multisig_tx_participant where status = 0 and multisig_tx_id = ?`;
                 let failed = await conn.pluck(sql, 'cnt', [txId]);
                 if (failed > accountStatus.m - accountStatus.n) {
-                    // TODO send fail message to every one
                     sql = `update multisig_tx set nonce = nonce + 1, updated_at = utc_timestamp(), status = 0 where id = ?`;
                     await conn.query(sql, [txId]);
                 } else if (req.body.complete) {
                     let txHash = await MultiSig.sendMultiSigTx(req.body.signed, txId, conn);
                     if (txHash == false) {
-                        // TODO send fail message to every one
                         throw {
                             success: false,
                             code: 'MultiSignatureTxPublishFailed',
@@ -745,7 +769,16 @@ module.exports = server => {
             return next();
         }
 
-        // TODO send successful message to every one
+        // send message to others
+        let receivers = accountStatus.participants.filter(p => p.wid != req.token.wid).map(p => p.wid);
+        let creator = accountStatus.participants.find(p => p.wid == req.token.wid).participant_name;
+        txStatus = await MultiSig.getTxStatus(accountId, txId);
+        let eventType = `EVENT_MULTISIG_TX_CHANGE_${req.body.status}_${['DENIED', 'APPROVED', 'TBD'][txStatus.status]}`;
+        xg.send(receivers, xg[eventType], [ creator ], {
+            account_id: accountId,
+            tx_id: txId
+        });
+
         res.send(_.extend(formatTxStatus(await MultiSig.getTxStatus(accountId, txId)), {success: true}));
         return next();
     });
@@ -813,7 +846,13 @@ module.exports = server => {
             return next();
         }
 
-        // TODO: push messages to slaves
+        // push messages to slaves
+        let receivers = accountStatus.participants.filter(p => p.wid != req.token.wid).map(p => p.wid);
+        let creator = accountStatus.participants.find(p => p.wid == req.token.wid).participant_name;
+        xg.send(receivers, xg.EVENT_MULTISIG_TX_DELETE, [ creator ], {
+            account_id: accountId,
+            tx_id: txId
+        });
 
         res.send({success: true});
         next();

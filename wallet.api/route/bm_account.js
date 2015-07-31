@@ -7,9 +7,11 @@ module.exports = server => {
         try {
             await mysql.transaction(async conn => {
                 // 一个 BM 帐号只能对应一个 wid
-                let sql = `select count(id) as cnt from bm_account where account_id = ? LOCK IN SHARE MODE`;
-                let count = await conn.pluck(sql, 'cnt', [accountId]);
-                if (count) {
+                let sql = `select wid, account_id from bm_account where account_id = ? LOCK IN SHARE MODE`;
+                let row = await conn.selectOne(sql, [accountId]);
+                if (row) {
+                    if (row.account_id == accountId && row.wid == req.token.wid) return;
+
                     let e = new Error();
                     e.code = 'BMAccountUsed';
                     e.message = 'this account has been used';
@@ -21,6 +23,14 @@ module.exports = server => {
                        values
                        (?, ?, now(), now())`;
                 await conn.query(sql, [req.token.wid, accountId]);
+            });
+
+            res.send({
+                success: true,
+                account: accountId,
+                wids: [
+                    req.token.wid
+                ]
             });
         } catch (err) {
             if (err.code && err.message) {
@@ -36,17 +46,8 @@ module.exports = server => {
                     message: 'please try again later'
                 });
             }
-
-            return next();
         }
 
-        res.send({
-            success: true,
-            account: accountId,
-            wids: [
-                req.token.wid
-            ]
-        });
-        return next();
+        next();
     });
 };

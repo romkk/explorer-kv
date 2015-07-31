@@ -65,7 +65,7 @@ class XG {
         });
 
         let iOSPromise = new Promise((resolve, reject) => {
-            this.iOSXG.pushByAccounts(receivers, iOSMessage, xinge.IOS_ENV_PRO, (e, data) => {
+            this.iOSXG.pushByAccounts(receivers, iOSMessage, process.env.IOS_ENV && xinge[process.env.IOS_ENV] || xinge.IOS_ENV_DEV, (e, data) => {
                 if (e) return reject(e);
                 resolve(data);
             });

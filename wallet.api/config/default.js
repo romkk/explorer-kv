@@ -38,5 +38,6 @@ module.exports = {
             secretKey: process.env.XG_IOS_SECRETKEY
         }
     },
-    userCenter: process.env.UC_ENDPOINT
+    userCenter: process.env.UC_ENDPOINT,
+    qrCodeEndpoint: process.env.QRCODE_ENDPOINT
 };

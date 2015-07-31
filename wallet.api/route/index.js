@@ -10,6 +10,9 @@ module.exports = server => {
     require('./sts')(server);
     require('./bm_account')(server);
 
+    // with views
+    require('./qr_code')(server);
+
     //server.get('/test', async (req, res, next) => {
     //    xg.send(
     //        'w_43012e84a441a255970fd99b5d90acb0ec1cadee77362f961150433dd0ff8059',

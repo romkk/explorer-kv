@@ -45,7 +45,8 @@ server.use(auth.tokenMiddleware([
     '/ping',
     '/tx/publish',
     '/tx/decode',
-    '/timestamp'
+    '/timestamp',
+    '/ticker'
 ]));
 
 server.on('after', restify.auditLogger({

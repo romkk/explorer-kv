@@ -207,14 +207,17 @@ void CacheManager::insertKV(const string &key) {
   }
 
   string url;
-  if (strncmp(key.c_str(), "blkh_", 5) == 0) {
-    url = Strings::Format("/block-height/%s", key.substr(5).c_str());
-  }
-  else if (strncmp(key.c_str(), "tx_", 3) == 0) {
+  if (strncmp(key.c_str(), "tx_", 3) == 0) {
     url = Strings::Format("/rawtx/%s", key.substr(3).c_str());
   }
   else if (strncmp(key.c_str(), "addr_", 5) == 0) {
     url = Strings::Format("/address/%s", key.substr(5).c_str());
+  }
+  else if (strncmp(key.c_str(), "blkh_", 5) == 0) {
+    url = Strings::Format("/block-height/%s", key.substr(5).c_str());
+  }
+  else if (strncmp(key.c_str(), "blk_", 4) == 0) {
+    url = Strings::Format("/rawblock/%s", key.substr(4).c_str());
   }
   if (url.length() > 0) {
     qUrlTemp_.insert(url);
@@ -1359,6 +1362,8 @@ void Parser::rollbackBlock(TxLog *txlog) {
   if (cacheEnable_) {
     // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
     cache_->insertKV(Strings::Format("blkh_%d", txlog->blkHeight_));
+    cache_->insertKV(Strings::Format("blk_%s",
+                                     header.GetHash().ToString().c_str()));
   }
 }
 

@@ -47,6 +47,7 @@ server.use(auth.tokenMiddleware([
     '/tx/decode',
     '/timestamp',
     '/ticker',
+    '/bm-account',
     '/sts-token',
     '/qr-code'
 ]));

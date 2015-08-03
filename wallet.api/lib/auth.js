@@ -76,8 +76,6 @@ module.exports = {
             let skip = false;
 
             rules.some(rule => {
-                console.log(`rule = ${rule}, path = ${req.path()}`);
-
                 if (!skip && req.path().startsWith(rule)) {
                     skip = true;
                 }

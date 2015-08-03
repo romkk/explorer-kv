@@ -67,15 +67,28 @@ module.exports = {
         return token;
     },
 
-    tokenMiddleware(whitelist = []) {
+    tokenMiddleware(rules = []) {
         return async (req, res, next) => {
             if (process.env.SKIP_AUTH && req.query.skipauth == '1') {
                 return next();
             }
 
-            if (whitelist.some(path => req.path().startsWith(path))) {
-                return next();
-            }
+            let skip = false;
+
+            rules.some(rule => {
+                console.log(`rule = ${rule}, path = ${req.path()}`);
+
+                if (!skip && req.path().startsWith(rule)) {
+                    skip = true;
+                }
+
+                if (skip && rule[0] == '!' && req.path().startsWith(rule.slice(1))) {
+                    skip = false;
+                    return true;
+                }
+            });
+
+            if (skip) return next();
 
             var token;
             if (!(token = req.headers['x-wallet-token'])) {

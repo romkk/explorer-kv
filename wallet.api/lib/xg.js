@@ -23,7 +23,12 @@ class XG {
     }
 
     async sendMessage(receivers, eventType, args, extraKV = {}) {
-        if (!Array.isArray(receivers)) {
+        if (Array.isArray(receivers)) {
+            if (!receivers.length) {
+                log('receivers 为空，处理结束');
+                return true;
+            }
+        } else {
             receivers = [receivers];
         }
         

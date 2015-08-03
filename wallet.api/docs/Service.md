@@ -706,11 +706,15 @@ GET /timestamp
 }
 ```
 
-## 绑定 BM 账户
+## BM 账户
+
+### 绑定 BM 账户
 
 用户在登录 BM 账户后，需要将`wid`与`BM`账户建立关联关系，便于恢复主密钥时使用。
 
 当前暂不提供解绑接口，同时限定`BM`账户只能绑定一个`wid`。
+
+该接口使用 token 认证。
 
 **Request**
 
@@ -718,7 +722,7 @@ GET /timestamp
 POST /bm-account/bind
 
 {
-    "bm_account": "myaccount"
+    "ticket": "myticket"
 }
 ```
 
@@ -737,6 +741,10 @@ POST /bm-account/bind
 
 可能的错误码：
 
+  * BMAccountInvalidTicket
+  
+    Ticket 过期或者非法
+
   * BMAccountUsed
 
     该 BM 账户已经与某个`wid`绑定。
@@ -744,6 +752,34 @@ POST /bm-account/bind
   * BMAccountBindFailed
 
     绑定失败
+    
+### 获取 BM 账户绑定的 wid
+
+该接口使用 ticket 认证。
+
+**Request**
+
+```
+GET /bm-account?ticket=xxxx
+```
+
+**Response**
+
+```
+{
+    "success": true,
+    "account": "myaccount",
+    "wids": [
+        "wid1"      -- 当前是一一对应关系，将来可能会有多个
+    ]
+}
+```
+
+可能的错误码：
+
+  * BMAccountInvalidTicket
+  
+    Ticket 过期或者非法
 
 ## 用户数据文件的备份与恢复
 
@@ -762,8 +798,10 @@ Android SDK：[http://docs.aliyun.com/#/pub/oss/sdk/android-sdk&preface](http://
 **Request**
 
 ```
-GET /sts-token
+GET /sts-token?ticket=xxxx
 ```
+
+使用 token 或者 ticket 认证。
 
 **Response**
 

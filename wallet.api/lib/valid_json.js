@@ -195,9 +195,9 @@ var schema = {
 
     bindBMAccount: {
         type: 'object',
-        required: ['bm_account'],
+        required: ['ticket'],
         properties: {
-            bm_account: {
+            ticket: {
                 type: 'string',
                 minLength: 1
             }

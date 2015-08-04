@@ -716,8 +716,11 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
                         blockId);
   db.query(sql, res);
   if (res.numRows() == 0) {  // 不存在则插入，由于有rollback等行为，块由可能已经存在了
-    uint64_t difficulty = 0;
+    uint64_t difficulty      = 0;
+    double difficulty_double = 0.0;
     BitsToDifficulty(header.nBits, difficulty);
+    BitsToDifficulty(header.nBits, difficulty_double);
+
     const int64_t rewardBlock = GetBlockValue(height, 0);
     const int64_t rewardFees  = blk.vtx[0].GetValueOut() - rewardBlock;
     assert(rewardFees >= 0);
@@ -725,7 +728,8 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
                                   " `version`, `mrkl_root`, `timestamp`, `bits`, `nonce`,"
                                   " `prev_block_id`, `prev_block_hash`, `next_block_id`, "
                                   " `next_block_hash`, `chain_id`, `size`,"
-                                  " `difficulty`, `tx_count`, `reward_block`, `reward_fees`, "
+                                  " `difficulty`, `difficulty_double`, "
+                                  " `tx_count`, `reward_block`, `reward_fees`, "
                                   " `created_at`) VALUES ("
                                   // 1. `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`
                                   " %lld, %d, '%s', %d, '%s', %u, "
@@ -733,8 +737,10 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
                                   " %u, %u, %lld, '%s', "
                                   // 3. `next_block_id`, `next_block_hash`, `chain_id`, `size`,
                                   " 0, '', %d, %d, "
-                                  // 4. `difficulty`, `tx_count`, `reward_block`, `reward_fees`, `created_at`
-                                  "%llu, %d, %lld, %lld, '%s');",
+                                  // 4. `difficulty`, `difficulty_double`, `tx_count`,
+                                  " %llu, %f, %d, "
+                                  // 5. `reward_block`, `reward_fees`, `created_at`
+                                  " %lld, %lld, '%s');",
                                   // 1.
                                   blockId, height,
                                   header.GetHash().ToString().c_str(),
@@ -746,7 +752,9 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
                                   // 3.
                                   0/* chainId */, blockBytes,
                                   // 4.
-                                  difficulty, blk.vtx.size(), rewardBlock, rewardFees, date("%F %T").c_str());
+                                  difficulty, difficulty_double, blk.vtx.size(),
+                                  // 5.
+                                  rewardBlock, rewardFees, date("%F %T").c_str());
     db.updateOrThrowEx(sql1, 1);
   }
 

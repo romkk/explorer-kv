@@ -169,7 +169,8 @@ GET /tx
             "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR"
         ],
         "time": 1435317403,
-        "txhash": "14655dca122f353c16c547a033d2d1c4129492395eedd90bfc4390ad28cb4bc3"
+        "txhash": "14655dca122f353c16c547a033d2d1c4129492395eedd90bfc4390ad28cb4bc3",
+        "fee": 10000
     }
 ]
 ```
@@ -483,7 +484,7 @@ GET /multi-signature-account/$account_id/tx
 ```
 [
     {
-        "amount": -100010000,
+        "amount": -100010000,       -- 包含手续费
         "id": 57,
         "inputs": [
             "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR"
@@ -497,7 +498,8 @@ GET /multi-signature-account/$account_id/tx
         "timestamp": 1435313711,
         "txhash": "dbf23dc6101cafacaf3acec615864b4a82be7fe71802ff0bc19bd0ea01a6e784",
         "is_deleted": false,
-        "deleted_at": -1
+        "deleted_at": -1,
+        "fee": 10000
     }
 ]
 ```

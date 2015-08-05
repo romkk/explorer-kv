@@ -33,7 +33,8 @@ module.exports = {
         return {
             amount: amount,
             inputs: _(inputAddrs).pluck('addr').flatten().uniq().value(),
-            outputs: _(outputAddrs).pluck('addr').flatten().uniq().value()
+            outputs: _(outputAddrs).pluck('addr').flatten().uniq().value(),
+            fee: tx.fee
         };
     }
 };

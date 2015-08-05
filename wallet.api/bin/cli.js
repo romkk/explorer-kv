@@ -48,6 +48,7 @@ server.use(auth.tokenMiddleware([
     '/timestamp',
     '/ticker',
     '/bm-account',
+    '!/bm-account/bind',
     '/sts-token',
     '/qr-code'
 ]));

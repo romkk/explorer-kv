@@ -150,7 +150,7 @@ async function getAmountAndRelatedAddress(addr, hex) {
         addr: _.flatten(output.scriptPubKey.addresses)
     }));
 
-    console.log(inputAddrs, outputAddrs);
+    //console.log(inputAddrs, outputAddrs);
 
     // 计算 amount
     let amount = 0;

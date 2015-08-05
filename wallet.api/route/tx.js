@@ -83,19 +83,10 @@ module.exports = server => {
             return next();
         }
 
-        let addrs = _.indexBy(req.params.active.split('|'));
+        let addrs = req.params.active.split('|');
         let ret = [];
         for (let r of result) {
-            let addr = null;
-
-            r.inputs.find(i => i.prev_out && i.prev_out.addr.some(a => _.has(addrs, a) && (addr = a)));
-            if (!addr) {
-                r.out.find(i => i.addr.some(a => _.has(addrs, a) && (addr = a)));
-            }
-
-            assert(!_.isNull(addr));
-
-            ret.push(_.extend(helper.txAmountSummary(r, addr), {
+            ret.push(_.extend(helper.txAmountSummary(r, addrs), {
                 confirmations: r.confirmations,
                 txhash: r.hash,
                 timestamp: r.time

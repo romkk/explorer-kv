@@ -401,7 +401,7 @@ module.exports = server => {
                     status: 'RECEIVED',
                     is_deleted: false,
                     deleted_at: -1
-                }, helper.txAmountSummary(r, accountStatus.generated_address));
+                }, helper.txAmountSummary(r, [accountStatus.generated_address]));
             }
 
             let o = _.pick(p, ['id', 'note', 'txhash']);        // 有对应数据库记录的交易
@@ -409,7 +409,7 @@ module.exports = server => {
             o.status = ['DENIED', 'APPROVED', 'TBD'][p.status];
             o.is_deleted = !!p.is_deleted;
             o.deleted_at = !!p.is_deleted ? moment.utc(p.deleted_at).unix() : -1;
-            return _.extend(o, helper.txAmountSummary(r, accountStatus.generated_address));
+            return _.extend(o, helper.txAmountSummary(r, [accountStatus.generated_address]));
         }));
 
         res.send(ret);

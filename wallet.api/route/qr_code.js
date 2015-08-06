@@ -49,7 +49,7 @@ module.exports = server => {
         }
 
         let msg = req.params.msg.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        let imageSrc = config.get('qrCodeEndpoint') + '?msg=' + encodeURIComponent(msg) + '&size=10';
+        let imageSrc = config.get('qrCodeEndpoint') + '?msg=' + encodeURIComponent(msg) + '&size=5';
         let html = `<!DOCTYPE html>
         <html>
             <head>
@@ -62,7 +62,7 @@ module.exports = server => {
                     body { margin: 0; }
                     .container { display: table; height: 100%; max-height: 600px; margin-left: auto; margin-right: auto; }
                     .container-inner { display: table-cell; vertical-align: middle; text-align: center; }
-                    .msg { font-size: 16px; font-family: Menlo, Monaco, Consolas, "Andale Mono", "lucida console", "Courier New", monospace; color: #333; }
+                    .msg { font-size: 14px; font-family: Menlo, Monaco, Consolas, "Andale Mono", "lucida console", "Courier New", monospace; color: #333; }
                     .desc { font-size: 12px; color: #999; }
                 </style>
             </head>
@@ -73,7 +73,7 @@ module.exports = server => {
                             <img src="${imageSrc}" alt="${msg}"/>
                         </div>
                         <p class="msg">${msg}</p>
-                        <p class="desc">请使用微信等工具扫描</p>
+                        <p class="desc">请使用 BM Wallet 扫描</p>
                     </div>
                 </div>
             </body>

@@ -48,8 +48,8 @@ module.exports = server => {
             }));
         }
 
-        let msg = req.params.msg;
-        let imageSrc = config.get('qrCodeEndpoint') + '?msg=' + msg + '&size=10';
+        let msg = req.params.msg.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        let imageSrc = config.get('qrCodeEndpoint') + '?msg=' + encodeURIComponent(msg) + '&size=10';
         let html = `<!DOCTYPE html>
         <html>
             <head>
@@ -58,11 +58,12 @@ module.exports = server => {
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>Bitmain QR Code Service</title>
                 <style>
-                    html, body { height: 100%; }
+                    html, body { height: 100%; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
                     body { margin: 0; }
                     .container { display: table; height: 100%; max-height: 600px; margin-left: auto; margin-right: auto; }
                     .container-inner { display: table-cell; vertical-align: middle; text-align: center; }
-                    .desc { font-size: 12px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #666; }
+                    .msg { font-size: 16px; font-family: Menlo, Monaco, Consolas, "Andale Mono", "lucida console", "Courier New", monospace; color: #333; }
+                    .desc { font-size: 12px; color: #999; }
                 </style>
             </head>
             <body>
@@ -71,6 +72,7 @@ module.exports = server => {
                         <div class="img">
                             <img src="${imageSrc}" alt="${msg}"/>
                         </div>
+                        <p class="msg">${msg}</p>
                         <p class="desc">请使用微信等工具扫描</p>
                     </div>
                 </div>

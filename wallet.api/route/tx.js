@@ -38,10 +38,10 @@ async function getUnspentTxs(sentFrom, amount, offset) {
 }
 
 // http://bitcoin.stackexchange.com/questions/1195/how-to-calculate-transaction-size-before-sending
-function estimateFee(txSize, amountAvaiable, feePerKB) {
+function estimateFee(txSize, amountAvailable, feePerKB) {
     var estimatedFee = Math.ceil(txSize / 1000) * feePerKB;
 
-    if (estimatedFee < amountAvaiable) {
+    if (estimatedFee < amountAvailable) {
         txSize += 20 + 4 + 34 + 4;                // Safe upper bound for change address script size in bytes
         estimatedFee = Math.ceil(txSize / 1000) * feePerKB;
     }

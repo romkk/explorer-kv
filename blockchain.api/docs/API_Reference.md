@@ -6,8 +6,8 @@
 
 * 协议： `HTTPS`
 * Host：
-       * Main     Network: `chain.bitmain.com`
-       * Testnet3 Network: `tchain.bitmain.com`
+       * Main     Network: `chain.btc.com`
+       * Testnet3 Network: `tchain.btc.com`
 * Path： `/api/{version}`，当前可选版本为 `v1`
 * 请求类型：`GET`
 
@@ -16,9 +16,9 @@
     # 格式：
     GET https://{host}/api/{version}/{path}
     # 示例：
-    GET https://chain.bitmain.com/api/v1/latestblock
+    GET https://chain.btc.com/api/v1/latestblock
 
-建议将`https://chain.bitmain.com/api/v1`整字符串做为配置项，与后面的具体路径分离。
+建议将`https://chain.btc.com/api/v1`整字符串做为配置项，与后面的具体路径分离。
 
 ## 访问频率限制
 

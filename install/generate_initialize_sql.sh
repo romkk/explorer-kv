@@ -248,6 +248,7 @@ CREATE TABLE `0_blocks` (
   `chain_id` int(11) NOT NULL,
   `size` int(11) NOT NULL,
   `difficulty` bigint(20) NOT NULL,
+  `difficulty_double` decimal(32,4) NOT NULL DEFAULT '0.0',
   `tx_count` int(11) NOT NULL,
   `reward_block` bigint(20) NOT NULL,
   `reward_fees` bigint(20) NOT NULL,

@@ -266,6 +266,61 @@ POST /tx/publish
 * TxPublishFailed
 
   发布失败，详细信息请关注`bitcoind`字段，含有调用 bitcoind 返回的错误信息。
+  
+### 获取交易备注
+
+**Request**
+
+```
+GET /tx/note?txhash=$txhash
+```
+
+**Response**
+
+```
+{
+    "success": true,
+    "note": "i'm rich",
+    "txhash": "87a30bfffcf187d4c745ba201bfd52abc7ee1f87b6a56c5c3068a6c1f79e0da4"
+}
+```
+
+可能的错误码：
+
+  * TxNoteNotFound
+
+    该 txhash 没有 note
+
+### 添加交易备注
+
+**Request**
+
+```
+POST /tx/note
+
+{
+    "txhash": "87a30bfffcf187d4c745ba201bfd52abc7ee1f87b6a56c5c3068a6c1f79e0da4",
+    "note": "I'm Rich"
+}
+```
+
+**Response**
+
+```
+{
+    "success": true
+}
+```
+
+可能的错误码：
+
+  * TxNoteInvalidHash
+  
+    提交的 txhash 不合法
+    
+  * TxNoteCreated
+  
+    该 txhash 已经注册过 note
 
 ### 监控地址余额变动
 

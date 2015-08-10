@@ -202,6 +202,23 @@ var schema = {
                 minLength: 1
             }
         }
+    },
+
+    createTxNote: {
+        type: 'object',
+        required: ['txhash', 'note'],
+        properties: {
+            txhash: {
+                type: 'string',
+                minLength: 64,
+                maxLength: 64
+            },
+            note: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 255
+            }
+        }
     }
 };
 

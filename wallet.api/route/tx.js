@@ -9,6 +9,7 @@ var bitcoind = require('../lib/bitcoind');
 var moment = require('moment');
 var helper = require('../lib/helper');
 var assert = require('assert');
+var txnote = require('../lib/txnote');
 
 // 获取 unspent，找出合适的 unspent
 async function getUnspentTxs(sentFrom, amount, offset) {
@@ -227,5 +228,53 @@ module.exports = server => {
         }
 
         next();
+    });
+
+    server.get('/tx/note', async (req, res, next) => {
+        req.checkQuery('txhash', 'should be a valid hash').isLength(64, 64);
+        req.sanitize('txhash').toString();
+
+        var errors = req.validationErrors();
+
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let txhash = req.params.txhash;
+        let note = await txnote.getNote(txhash);
+        if (note == null) {
+            res.send({
+                success: false,
+                code: 'TxNoteNotFound',
+                message: 'tx note has not been created'
+            });
+        } else {
+            res.send({
+                success: true,
+                note: note,
+                txhash: txhash
+            });
+        }
+        next();
+    });
+
+    server.post('/tx/note', validate('createTxNote'), async (req, res, next) => {
+        let {txhash, note} = req.body;
+        try {
+            await txnote.setNote(txhash, note);
+        } catch (err) {
+            if (err.code && err.message) {
+                res.send(_.extend({success: false}, _.pick(err, ['code', 'message'])));
+            } else {
+                res.send(new restify.InternalServerError('Internal Error'));
+            }
+            return next();
+        }
+        res.send({
+            success: true
+        });
+        return next();
     });
 };

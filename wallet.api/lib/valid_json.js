@@ -24,9 +24,14 @@ var schema = {
             hex: {
                 type: 'string',
                 minLength: 1
+            },
+            note: {
+                type: 'string',
+                minLength: 0,
+                maxLength: 255
             }
         },
-        required: ['hex']
+        required: ['hex', 'note']
     },
 
     tx: {
@@ -200,23 +205,6 @@ var schema = {
             ticket: {
                 type: 'string',
                 minLength: 1
-            }
-        }
-    },
-
-    createTxNote: {
-        type: 'object',
-        required: ['txhash', 'note'],
-        properties: {
-            txhash: {
-                type: 'string',
-                minLength: 64,
-                maxLength: 64
-            },
-            note: {
-                type: 'string',
-                minLength: 1,
-                maxLength: 255
             }
         }
     }

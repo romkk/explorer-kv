@@ -19,7 +19,7 @@ module.exports = server => {
                     success: false,
                     description: _.get(err, 'response.body.error.message', null),
                     message: 'Publish failed',
-                    code: 'TX_PUBLISH_FAILED'
+                    code: 'TxPublishFailed'
                 });
             } else {
                 res.send(new restify.InternalServerError('RPC call error.'));
@@ -44,7 +44,7 @@ module.exports = server => {
                     success: false,
                     description: _.get(err, 'response.body.error.message', null),
                     message: 'Publish failed',
-                    code: 'TX_PUBLISH_FAILED'
+                    code: 'TxPublishFailed'
                 });
             } else {
                 res.send(new restify.InternalServerError('RPC call error.'));

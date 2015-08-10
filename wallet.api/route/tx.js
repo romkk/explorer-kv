@@ -1,15 +1,17 @@
-var restify = require('restify');
-var validate = require('../lib/valid_json');
-var log = require('debug')('wallet:route:tx');
-var _ = require('lodash');
-var blockData = require('../lib/block_data');
-var request = require('request-promise');
-var config = require('config');
-var bitcoind = require('../lib/bitcoind');
-var moment = require('moment');
-var helper = require('../lib/helper');
-var assert = require('assert');
-var txnote = require('../lib/txnote');
+let restify = require('restify');
+let validate = require('../lib/valid_json');
+let log = require('debug')('wallet:route:tx');
+let _ = require('lodash');
+let blockData = require('../lib/block_data');
+let request = require('request-promise');
+let config = require('config');
+let bitcoind = require('../lib/bitcoind');
+let moment = require('moment');
+let helper = require('../lib/helper');
+let assert = require('assert');
+let txnote = require('../lib/txnote');
+let mysql = require('../lib/mysql');
+let Transaction = require('bitcore').Transaction;
 
 // 获取 unspent，找出合适的 unspent
 async function getUnspentTxs(sentFrom, amount, offset) {
@@ -98,7 +100,7 @@ module.exports = server => {
         return next();
     });
 
-    server.post('/tx', validate('tx'), async (req, res, next) => {
+    server.post('/tx/compose', validate('tx'), async (req, res, next) => {
         var feePerKB = req.body.fee_per_kb,
             sentFrom = req.body.from,
             sentTo = req.body.to;
@@ -180,51 +182,104 @@ module.exports = server => {
         next();
     });
 
-    server.get('/tx/note', async (req, res, next) => {
-        req.checkQuery('txhash', 'should be a valid hash').isLength(64, 64);
-        req.sanitize('txhash').toString();
+    server.post('/tx', validate('txPublish'), async (req, res, next) => {
+        let { hex, note } = req.body;
 
-        var errors = req.validationErrors();
-
-        if (errors) {
-            return next(new restify.InvalidArgumentError({
-                message: errors
-            }));
-        }
-
-        let txhash = req.params.txhash;
-        let note = await txnote.getNote(req.token.wid, txhash);
-        if (note == null) {
+        let hash;
+        try {
+            hash = Transaction(hex).hash;
+        } catch (err) {
             res.send({
                 success: false,
-                code: 'TxNoteNotFound',
-                message: 'tx note has not been created'
+                code: 'TxPublishInvalidHex',
+                message: 'invalid hex'
             });
-        } else {
+            return next();
+        }
+
+        try {
+            let txHash;
+            await mysql.transaction(async conn => {
+
+
+                let sql = `select wid, txhash, note from tx_note where txhash = ? lock in share mode`;
+                if (await conn.selectOne(sql, [hash])) {
+                    let e = new Error();
+                    e.code = 'TxPublishDuplicateTx';
+                    e.message = 'this transaction has been published';
+                    throw e;
+                }
+
+                log(`尝试发送交易 hex = ${hex.slice(0, 50)}, note = ${note}`);
+                try {
+                    txHash = await bitcoind('sendrawtransaction', hex);
+                } catch (err) {
+                    log(`发送交易失败 hex = ${hex.slice(0, 50)}, note = ${note}`);
+                    throw err;
+                }
+
+                // 保存
+                sql = `insert into tx_note
+                   (wid, txhash, note, created_at, updated_at)
+                   values
+                   (?, ?, ?, now(), now())`;
+                await conn.query(sql, [req.token.wid, txHash, note]);
+            });
+
             res.send({
                 success: true,
-                note: note,
-                txhash: txhash
+                txhash: txHash,
+                note: note
             });
+        } catch (err) {
+            console.log(err.stack);
+            if (err.code == 'TxPublishDuplicateTx') {
+                res.send({
+                    success: false,
+                    code: err.code,
+                    message: err.message
+                });
+            } else if (err.name == 'StatusCodeError') {
+                res.send({
+                    success: false,
+                    description: _.get(err, 'response.body.error.message', null),
+                    message: 'Publish failed',
+                    code: 'TxPublishBitcoindError'
+                });
+            } else {
+                res.send(new restify.InternalServerError('Internal Error'));
+            }
         }
         next();
     });
 
-    server.post('/tx/note', validate('createTxNote'), async (req, res, next) => {
-        let {txhash, note} = req.body;
-        try {
-            await txnote.setNote(req.token.wid, txhash, note);
-        } catch (err) {
-            if (err.code && err.message) {
-                res.send(_.extend({success: false}, _.pick(err, ['code', 'message'])));
-            } else {
-                res.send(new restify.InternalServerError('Internal Error'));
-            }
-            return next();
-        }
-        res.send({
-            success: true
-        });
-        return next();
-    });
+    //server.get('/tx/note', async (req, res, next) => {
+    //    req.checkQuery('txhash', 'should be a valid hash').isLength(64, 64);
+    //    req.sanitize('txhash').toString();
+    //
+    //    var errors = req.validationErrors();
+    //
+    //    if (errors) {
+    //        return next(new restify.InvalidArgumentError({
+    //            message: errors
+    //        }));
+    //    }
+    //
+    //    let txhash = req.params.txhash;
+    //    let note = await txnote.getNote(req.token.wid, txhash);
+    //    if (note == null) {
+    //        res.send({
+    //            success: false,
+    //            code: 'TxNoteNotFound',
+    //            message: 'tx note has not been created'
+    //        });
+    //    } else {
+    //        res.send({
+    //            success: true,
+    //            note: note,
+    //            txhash: txhash
+    //        });
+    //    }
+    //    next();
+    //});
 };

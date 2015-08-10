@@ -184,7 +184,7 @@ GET /tx
 **Request**
 
 ```
-POST /tx
+POST /tx/compose
 
 {
     "fee_per_kb": 10000,
@@ -243,7 +243,40 @@ POST /tx
 
 ### 广播交易
 
-请使用数据 API。
+**Request**
+
+```
+POST /tx
+
+{
+    "hex": "HEXSTRING",
+    "note": "hello world"
+}
+```
+
+**Response**
+
+```
+{
+    "success": true,
+    "txhash": "HASH",
+    "note": "hello world"
+}
+```
+
+可能的错误码：
+
+  * TxPublishInvalidHex
+  
+    
+
+  * TxPublishBitcoindError
+  
+    bitcoind 报错，请关注 `description` 字段
+    
+  * TxPublishDuplicateTx
+  
+    该交易已经发布过了    
   
 ### 获取交易备注
 

@@ -243,29 +243,7 @@ POST /tx
 
 ### 广播交易
 
-**Request**
-
-```
-POST /tx/publish
-
-{
-    "hex": "HEXSTRING"
-}
-```
-
-**Response**
-
-```
-{
-    "success": true
-}
-```
-
-可能的错误码：
-
-* TxPublishFailed
-
-  发布失败，详细信息请关注`bitcoind`字段，含有调用 bitcoind 返回的错误信息。
+请使用数据 API。
   
 ### 获取交易备注
 

@@ -11,6 +11,7 @@ let helper = require('../lib/helper');
 let assert = require('assert');
 let txnote = require('../lib/txnote');
 let mysql = require('../lib/mysql');
+let m = require('mysql');
 let Transaction = require('bitcore').Transaction;
 
 // 获取 unspent，找出合适的 unspent
@@ -53,53 +54,6 @@ function estimateFee(txSize, amountAvailable, feePerKB) {
 }
 
 module.exports = server => {
-    server.get('/tx', async (req, res, next) => {
-        req.checkQuery('active', 'should be a \'|\' separated address list').matches(/^([a-zA-Z0-9]{33,35})(\|[a-zA-Z0-9]{33,35})*$/);
-        req.sanitize('active').toString();
-
-        req.checkQuery('timestamp', 'should be a valid timestamp').optional().isNumeric({ min: 0, max: moment.utc().unix() + 3600 });    // +3600 以消除误差
-        req.sanitize('timestamp').toInt();
-
-        req.checkQuery('offset', 'should be a valid number').optional().isNumeric().isInt({ min: 0});
-        req.sanitize('offset').toInt();
-
-        req.checkQuery('limit', 'should be between 1 and 50').optional().isNumeric().isInt({ max: 50, min: 1});
-        req.sanitize('limit').toInt();
-
-        req.checkQuery('sort', 'should be desc or asc').optional().isIn(['desc', 'asc']);
-
-        var errors = req.validationErrors();
-
-        if (errors) {
-            return next(new restify.InvalidArgumentError({
-                message: errors
-            }));
-        }
-
-        let params = _.pick(req.params, ['timestamp', 'offset', 'limit', 'sort', 'active']);
-
-        let result;
-        try {
-            result = await blockData(`/address-tx`, params);
-        } catch (err) {
-            res.send(new restify.InternalServerError('Internal Error'));
-            return next();
-        }
-
-        let addrs = req.params.active.split('|');
-        let ret = [];
-        for (let r of result) {
-            ret.push(_.extend(helper.txAmountSummary(r, addrs), {
-                confirmations: r.confirmations,
-                txhash: r.hash,
-                timestamp: r.time
-            }));
-        }
-
-        res.send(ret);
-        return next();
-    });
-
     server.post('/tx/compose', validate('tx'), async (req, res, next) => {
         var feePerKB = req.body.fee_per_kb,
             sentFrom = req.body.from,
@@ -253,33 +207,88 @@ module.exports = server => {
         next();
     });
 
-    //server.get('/tx/note', async (req, res, next) => {
-    //    req.checkQuery('txhash', 'should be a valid hash').isLength(64, 64);
-    //    req.sanitize('txhash').toString();
-    //
-    //    var errors = req.validationErrors();
-    //
-    //    if (errors) {
-    //        return next(new restify.InvalidArgumentError({
-    //            message: errors
-    //        }));
-    //    }
-    //
-    //    let txhash = req.params.txhash;
-    //    let note = await txnote.getNote(req.token.wid, txhash);
-    //    if (note == null) {
-    //        res.send({
-    //            success: false,
-    //            code: 'TxNoteNotFound',
-    //            message: 'tx note has not been created'
-    //        });
-    //    } else {
-    //        res.send({
-    //            success: true,
-    //            note: note,
-    //            txhash: txhash
-    //        });
-    //    }
-    //    next();
-    //});
+    server.get('/tx', async (req, res, next) => {
+        req.checkQuery('active', 'should be a \'|\' separated address list').matches(/^([a-zA-Z0-9]{33,35})(\|[a-zA-Z0-9]{33,35})*$/);
+        req.sanitize('active').toString();
+
+        req.checkQuery('timestamp', 'should be a valid timestamp').optional().isNumeric({ min: 0, max: moment.utc().unix() + 3600 });    // +3600 以消除误差
+        req.sanitize('timestamp').toInt();
+
+        req.checkQuery('offset', 'should be a valid number').optional().isNumeric().isInt({ min: 0});
+        req.sanitize('offset').toInt();
+
+        req.checkQuery('limit', 'should be between 1 and 50').optional().isNumeric().isInt({ max: 50, min: 1});
+        req.sanitize('limit').toInt();
+
+        req.checkQuery('sort', 'should be desc or asc').optional().isIn(['desc', 'asc']);
+
+        var errors = req.validationErrors();
+
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let params = _.pick(req.params, ['timestamp', 'offset', 'limit', 'sort', 'active']);
+
+        let result;
+        try {
+            result = await blockData(`/address-tx`, params);
+        } catch (err) {
+            res.send(new restify.InternalServerError('Internal Error'));
+            return next();
+        }
+
+        let sql = `select txhash, note from tx_note where txhash in (${ result.map(r => '?').join(', ') })`;
+        let noteMap = {};
+        (await mysql.query(sql, result.map(r => r.hash))).forEach(r => noteMap[r.txhash] = r.note);
+
+        let addrs = req.params.active.split('|');
+        let ret = [];
+        for (let r of result) {
+            ret.push(_.extend(helper.txAmountSummary(r, addrs), {
+                confirmations: r.confirmations,
+                txhash: r.hash,
+                note: noteMap[r.hash] || '',
+                timestamp: r.time
+            }));
+        }
+
+        res.send(ret);
+        return next();
+    });
+
+    server.get('/tx/:txhash', async (req, res, next) => {
+        req.checkParams('txhash', 'should be a valid txhash').isLength(64, 64);
+        var errors = req.validationErrors();
+
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let tx, latestBlock, note;
+
+        let sql = `select note from tx_note where txhash = ? and wid = ?`;
+        try {
+            [tx, latestBlock, note] = await* [
+                blockData(`/rawtx/${req.params.txhash}`),
+                blockData('/latestblock'),
+                mysql.pluck(sql, 'note', [req.params.txhash, req.token.wid])
+            ];
+        } catch (err) {
+            res.send(new restify.InternalServerError('Internal Error'));
+            return next();
+        }
+
+        res.send(_.extend(helper.txAmountSummary(tx, []), {
+            confirmations: latestBlock.height == -1 ? 0 : latestBlock.height - tx.block_height + 1,
+            txhash: tx.hash,
+            note: note || '',
+            timestamp: tx.time
+        }));
+        return next();
+    });
 };

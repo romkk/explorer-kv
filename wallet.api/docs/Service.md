@@ -170,14 +170,37 @@ GET /tx
         ],
         "time": 1435317403,
         "txhash": "14655dca122f353c16c547a033d2d1c4129492395eedd90bfc4390ad28cb4bc3",
-        "fee": 10000
+        "fee": 10000,
+        "note": "i'm rich"
     }
 ]
 ```
 
 ### 查询交易详细信息
 
-请使用数据 API。
+
+**Request**
+
+```
+GET /tx/:txhash
+```
+
+**Response**
+
+```
+{
+    "amount": 0,
+    "confirmations": 135,
+    "fee": 71000,
+    "inputs": [],
+    "note": "",
+    "outputs": [
+        "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR"
+    ],
+    "timestamp": 1439176519,
+    "txhash": "87a30bfffcf187d4c745ba201bfd52abc7ee1f87b6a56c5c3068a6c1f79e0da4"
+}
+```
 
 ### 提交构造交易请求
 
@@ -268,7 +291,7 @@ POST /tx
 
   * TxPublishInvalidHex
   
-    
+    hex 无效
 
   * TxPublishBitcoindError
   

@@ -243,7 +243,7 @@ module.exports = server => {
         }
 
         let txhash = req.params.txhash;
-        let note = await txnote.getNote(txhash);
+        let note = await txnote.getNote(req.token.wid, txhash);
         if (note == null) {
             res.send({
                 success: false,
@@ -263,7 +263,7 @@ module.exports = server => {
     server.post('/tx/note', validate('createTxNote'), async (req, res, next) => {
         let {txhash, note} = req.body;
         try {
-            await txnote.setNote(txhash, note);
+            await txnote.setNote(req.token.wid, txhash, note);
         } catch (err) {
             if (err.code && err.message) {
                 res.send(_.extend({success: false}, _.pick(err, ['code', 'message'])));

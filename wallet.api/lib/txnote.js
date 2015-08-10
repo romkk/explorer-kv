@@ -3,13 +3,13 @@ let mysql = require('./mysql');
 let bitcoind = require('./bitcoind');
 
 module.exports = {
-    async getNote(txhash) {
+    async getNote(wid, txhash) {
         let sql = `select note
                    from tx_note
-                   where txhash = ?`;
-        return (await mysql.pluck(sql, 'note', [txhash]));
+                   where wid = ? and txhash = ?`;
+        return (await mysql.pluck(sql, 'note', [wid, txhash]));
     },
-    async setNote(txhash, note) {
+    async setNote(wid, txhash, note) {
         // 验证 hash 是否正确
         try {
             await bitcoind('getrawtransaction', txhash);
@@ -25,11 +25,11 @@ module.exports = {
         }
         // 保存
         let sql = `insert into tx_note
-                   (txhash, note, created_at, updated_at)
+                   (wid, txhash, note, created_at, updated_at)
                    values
-                   (?, ?, now(), now())`;
+                   (?, ?, ?, now(), now())`;
         try {
-            await mysql.query(sql, [txhash, note]);
+            await mysql.query(sql, [wid, txhash, note]);
         } catch (err) {
             if (err.code == 'ER_DUP_ENTRY') {
                 let e = new Error();

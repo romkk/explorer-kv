@@ -877,3 +877,26 @@ GET /sts-token?ticket=xxxx
     "success": true
 }
 ```
+
+## 邮件发送
+
+用户通过邮件发送备份文件。注意这里使用常规的`multipart/form-data`提交数据。
+
+**Request**
+
+```
+POST /mail
+```
+
+参数：
+
+  * receiver 收件人
+  * file 压缩包文件，`Content-Type`需为`application/zip`
+
+**Response**
+
+```
+{
+    "success": true
+}
+```

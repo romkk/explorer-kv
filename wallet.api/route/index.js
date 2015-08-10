@@ -9,6 +9,7 @@ module.exports = server => {
     require('./ping')(server);
     require('./sts')(server);
     require('./bm_account')(server);
+    require('./mail')(server);
 
     // with views
     require('./qr_code')(server);

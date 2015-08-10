@@ -39,5 +39,6 @@ module.exports = {
         }
     },
     userCenter: process.env.UC_ENDPOINT,
-    qrCodeEndpoint: process.env.QRCODE_ENDPOINT
+    qrCodeEndpoint: process.env.QRCODE_ENDPOINT,
+    mailEndpoint: process.env.EMAIL_GATEWAY_ENDPOINT
 };

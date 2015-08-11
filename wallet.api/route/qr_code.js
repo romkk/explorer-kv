@@ -41,6 +41,8 @@ module.exports = server => {
     server.get('/qr-code-page', async (req, res, next) => {
         req.checkQuery('msg', 'should be a valid string').isLength(1);
         req.sanitize('msg').toString();
+        req.checkQuery('hide', 'should be a valid boolean').optional().isBoolean();
+        req.sanitize('hide').toBoolean(true);
         var errors = req.validationErrors();
         if (errors) {
             return next(new restify.InvalidArgumentError({
@@ -49,6 +51,7 @@ module.exports = server => {
         }
 
         let msg = req.params.msg.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        let hideDescription = _.get(req, 'params.hide', false);
         let imageSrc = config.get('qrCodeEndpoint') + '?msg=' + encodeURIComponent(msg) + '&size=5';
         let html = `<!DOCTYPE html>
         <html>
@@ -72,7 +75,7 @@ module.exports = server => {
                         <div class="img">
                             <img src="${imageSrc}" alt="${msg}"/>
                         </div>
-                        <p class="msg">${msg}</p>
+                        ${ hideDescription ? '' : `<p class="msg">${msg}</p>` }
                         <p class="desc">请使用 BM Wallet 扫描</p>
                     </div>
                 </div>

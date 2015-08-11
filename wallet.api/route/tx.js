@@ -240,9 +240,11 @@ module.exports = server => {
             return next();
         }
 
-        let sql = `select txhash, note from tx_note where txhash in (${ result.map(r => '?').join(', ') })`;
         let noteMap = {};
-        (await mysql.query(sql, result.map(r => r.hash))).forEach(r => noteMap[r.txhash] = r.note);
+        if (result.length) {
+            let sql = `select txhash, note from tx_note where txhash in (${ result.map(r => '?').join(', ') })`;
+            (await mysql.query(sql, result.map(r => r.hash))).forEach(r => noteMap[r.txhash] = r.note);
+        }
 
         let addrs = req.params.active.split('|');
         let ret = [];

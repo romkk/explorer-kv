@@ -22,7 +22,7 @@ module.exports = server => {
         }
 
         let receiver = req.params.receiver;
-        let f = req.files.file;
+        let f = _.get(req, 'files.file', null); //可能没有上传文件
 
         if (!f) {
             res.send(new restify.BadRequestError('BadRequestError'));
@@ -42,12 +42,9 @@ module.exports = server => {
         try {
             ret = await mail(receiver, f.path, f.name);
         } catch (err) {
-            console.log(err);
             res.send(new restify.InternalServerError('Internal Error'));
             return next();
         }
-
-        console.log(ret);
 
         res.send(_.extend({ success: true }, ret));
 

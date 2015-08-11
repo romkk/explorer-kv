@@ -261,6 +261,11 @@ module.exports = server => {
 
     server.get('/tx/:txhash', async (req, res, next) => {
         req.checkParams('txhash', 'should be a valid txhash').isLength(64, 64);
+        req.sanitize('txhash').toString();
+
+        req.checkQuery('active', 'should be a \'|\' separated address list').matches(/^([a-zA-Z0-9]{33,35})(\|[a-zA-Z0-9]{33,35})*$/);
+        req.sanitize('active').toString();
+
         var errors = req.validationErrors();
 
         if (errors) {
@@ -269,7 +274,7 @@ module.exports = server => {
             }));
         }
 
-        let tx, latestBlock, note;
+        let tx, latestBlock, note, addrs = req.params.active.split('|');
 
         let sql = `select note from tx_note where txhash = ? and wid = ?`;
         try {
@@ -283,7 +288,7 @@ module.exports = server => {
             return next();
         }
 
-        res.send(_.extend(helper.txAmountSummary(tx, []), {
+        res.send(_.extend(helper.txAmountSummary(tx, addrs), {
             confirmations: latestBlock.height == -1 ? 0 : latestBlock.height - tx.block_height + 1,
             txhash: tx.hash,
             note: note || '',

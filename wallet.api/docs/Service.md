@@ -178,12 +178,15 @@ GET /tx
 
 ### 查询交易详细信息
 
+查询处理过的详细信息，可以使用该接口；如果要查询原始交易数据，请使用数据 API。
 
 **Request**
 
 ```
-GET /tx/:txhash
+GET /tx/:txhash?active=$address
 ```
+
+`$address`为`|`分隔的地址。
 
 **Response**
 

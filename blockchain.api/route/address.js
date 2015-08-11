@@ -37,7 +37,8 @@ module.exports = (server) => {
 
         var addr = await Address.grab(req.params.addr, !req.params.skipcache);
         if (addr == null) {
-            return new restify.ResourceNotFoundError('Address not found');
+            res.send(new restify.ResourceNotFoundError('Address not found'));
+            return next();
         }
 
         var atList = new AddressTxList(addr.attrs, req.params.timestamp, req.params.sort);

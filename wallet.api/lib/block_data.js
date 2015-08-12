@@ -12,12 +12,12 @@ module.exports = async (path, querySet) => {
     log(`request block chain data api, path = ${path}, qs = ${querystring}`);
 
     try {
-        var result = await request({
+        return await request({
             baseUrl: endpoint,
             uri: `${path}?${querystring}`,
-            timeout: 10000
+            timeout: 10000,
+            json: true
         });
-        return JSON.parse(result);
     } catch (err) {
         log(`request block chain data api error: ${err.message}, path = ${path}, qs = ${querystring}`);
         throw new restify.InternalServerError('Please try again later.');

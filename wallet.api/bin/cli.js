@@ -37,7 +37,7 @@ server.use(restify.acceptParser(server.acceptable));
 server.use(restify.queryParser());
 server.use(restify.jsonp());
 server.use(restify.bodyParser({
-    maxBodySize: 10 * 1024 * 1024
+    maxBodySize: 10 * 1024 * 1024       // 10 MB
 }));
 server.use(expressValidator());
 server.use(restify.gzipResponse());

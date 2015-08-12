@@ -14,31 +14,19 @@ let mysql = require('../lib/mysql');
 let m = require('mysql');
 let Transaction = require('bitcore').Transaction;
 
-// 获取 unspent，找出合适的 unspent
-async function getUnspentTxs(sentFrom, amount, offset) {
-    const limit = 200;
-    var aggregated = 0;
-    var aggregatedTxs = [];
+// 获取 unspent
+async function unspentFetcher(sentFrom) {
+    const pageSize = 200;
 
-    while (aggregated <= amount) {
-        let unspentList = await blockData('/unspent', {     // if error, throw it
-            active: sentFrom.join('|'),
-            offset: offset,
-            limit: limit
-        });
+    let result = await blockData('/unspent', {       // just throw error
+        active: sentFrom.join('|'),
+        offset: 0,
+        limit: pageSize
+    });
 
-        if (!unspentList.unspent_outputs.length) break;
+    let cache = result.unspent_outputs;
 
-        unspentList.unspent_outputs.every(tx => {
-            aggregated += tx.value;
-            aggregatedTxs.push(tx);
-            offset++;
-            //log(`tx.value = ${tx.value}, offset = ${offset}`);
-            return aggregated <= amount;
-        });
-    }
-
-    return [offset, aggregated, aggregatedTxs];
+    return () => cache.shift();
 }
 
 // http://bitcoin.stackexchange.com/questions/1195/how-to-calculate-transaction-size-before-sending
@@ -61,7 +49,7 @@ module.exports = server => {
 
         var totalSentAmount = _.sum(sentTo, 'amount');
 
-        // 检查余额是否足够
+        // get balance
         var totalUnspentAmount;
         try {
             let apiResponse = await blockData('/multiaddr', {
@@ -72,27 +60,13 @@ module.exports = server => {
             return next(err);
         }
 
-        if (totalUnspentAmount <= totalSentAmount) {    //等于时则不足以支付手续费
-            res.send({
-                success: false,
-                code: 'TxUnaffordable',
-                message: `totalSentAmount = ${totalSentAmount}, you got = ${totalUnspentAmount}, diff = ${totalUnspentAmount - totalSentAmount}`
-            });
-            return next();
-        }
-
-        let offset = 0, aggregated = 0, aggregatedTxs = [], txSize = 0, fee = 0;
+        let aggregated = 0, aggregatedTxs = [], txSize = 0, fee = 0;
         let iter = 1;
+        let affordable, moreTx;
+        let nextTx = await unspentFetcher(sentFrom);
         do {
-            // 获得 unspent 列表
-            let curOffset, curAggregated, curAggregatedTxs;
-            try {
-                [curOffset, curAggregated, curAggregatedTxs] = await getUnspentTxs(sentFrom, fee + totalSentAmount - aggregated, offset);
-            } catch (err) {
-                return next(err);
-            }
-
-            if (curAggregated == 0) {  //没有更多了
+            let tx = nextTx();
+            if (tx == null) {   // no more txs
                 // balance change ?
                 try {
                     let apiResponse = await blockData('/multiaddr', {
@@ -102,36 +76,39 @@ module.exports = server => {
                     if (totalUnspentAmount != currentAmount) {      //余额变动，重新启动
                         log(`检测到 unspent 余额变动, previous = ${totalUnspentAmount}, currentAmount = ${currentAmount}`);
                         totalUnspentAmount = currentAmount;
-                        offset = aggregated = aggregatedTxs = txSize = fee = 0;
+                        aggregated = txSize = fee = 0;
+                        aggregatedTxs = [];
+                        nextTx = await unspentFetcher(sentFrom);
                         continue;
                     }
                 } catch (err) {
                     //do nothing
                 }
-
-                res.send({
-                    success: false,
-                    code: 'TxUnaffordable',
-                    message: `estimated fee = ${fee}, total spent = ${totalSentAmount}, you got = ${totalUnspentAmount}, will send = ${aggregated}, diff = ${totalUnspentAmount - totalSentAmount - fee}`
-                });
-                return next();
+                break;
             }
+            aggregated += tx.value;
+            aggregatedTxs.push(tx);
 
-            offset = curOffset;
-            aggregated += curAggregated;
-            aggregatedTxs.push.apply(aggregatedTxs, curAggregatedTxs);
-            // 计算手续费
-            txSize = 148 * aggregatedTxs.length       // input
-                + 34 * sentTo.length               // output
-                + 10;                              // fixed bytes
+            // calculate transaction fee
+            txSize = 148 * aggregatedTxs.length        // input
+                    + 34 * sentTo.length               // output
+                    + 10;                              // fixed bytes
+
             fee = estimateFee(txSize, aggregated, feePerKB);
-            log(`iter = ${iter++}, offset = ${offset}, fee = ${fee}, totalSentAmount = ${totalSentAmount}, aggregated = ${aggregated}, aggregatedTxs.length = ${aggregatedTxs.length}`);
+            log(`iter = ${iter++}, fee = ${fee}, totalSentAmount = ${totalSentAmount}, aggregated = ${aggregated}, aggregatedTxs.length = ${aggregatedTxs.length}`);
         } while (fee + totalSentAmount > aggregated);
+
+        affordable = fee + totalSentAmount <= aggregated;
+
+        // is there any more txs ?
+        moreTx = totalUnspentAmount - aggregated > 0;
 
         res.send({
             success: true,
             fee: fee,
-            unspent_txs: aggregatedTxs
+            unspent_txs: aggregatedTxs,
+            affordable: affordable,
+            more_txs: moreTx
         });
         next();
     });

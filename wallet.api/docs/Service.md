@@ -257,15 +257,11 @@ POST /tx/compose
             "value": 7,
             "value_hex": "7"
         }
-    ]
+    ],
+    "affordable": true,         -- 当前 unspent 是否满足支付需求
+    "more_txs": true            -- 是否还有更多的 unspent 用于支付
 }
 ```
-
-可能的错误码：
-
-* TxUnaffordable
-
-  余额不足。
 
 ### 广播交易
 

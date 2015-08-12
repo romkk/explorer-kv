@@ -207,6 +207,21 @@ var schema = {
                 minLength: 1
             }
         }
+    },
+
+    markNotificationMessage: {
+        type: 'object',
+        required: ['message_ids'],
+        properties: {
+            message_ids: {
+                type: 'array',
+                items: {
+                    type: 'integer',
+                    minimum: 0,
+                    exclusiveMinimum: true
+                }
+            }
+        }
     }
 };
 

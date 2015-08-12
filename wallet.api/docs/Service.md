@@ -874,3 +874,36 @@ POST /mail
     "success": true
 }
 ```
+
+## 获取推送消息
+
+进入 app 后，通过接口拉取最新消息。
+
+**Request**
+
+```
+GET /notification-message?mark=msg_id|msg_id2...
+```
+
+传入 `msg_id`，使用`|`分割。服务器将标记传入的 msg 为已读状态。
+
+**Response**
+
+返回未确认的消息。
+
+```
+{
+    "success": true,
+    "messages": [
+        {
+            "id": 1,
+            "event_type": "EVENT_MULTISIG_ACCOUNT_CREATED",
+            "custom_content": {
+                "name": 
+                "litianzhao"
+            },
+            "timestamp": 1439373663
+        }
+    ]
+}
+```

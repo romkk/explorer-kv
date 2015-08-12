@@ -63,7 +63,13 @@ module.exports = server => {
         let aggregated = 0, aggregatedTxs = [], txSize = 0, fee = 0;
         let iter = 1;
         let affordable, moreTx;
-        let nextTx = await unspentFetcher(sentFrom);
+        let nextTx;
+        try {
+            nextTx = await unspentFetcher(sentFrom);
+        } catch (err) {
+            return next(err);
+        }
+
         do {
             let tx = nextTx();
             if (tx == null) {   // no more txs
@@ -78,7 +84,12 @@ module.exports = server => {
                         totalUnspentAmount = currentAmount;
                         aggregated = txSize = fee = 0;
                         aggregatedTxs = [];
-                        nextTx = await unspentFetcher(sentFrom);
+                        try {
+                            nextTx = await unspentFetcher(sentFrom);
+                        } catch (err) {
+                            return next(err);
+                        }
+
                         continue;
                     }
                 } catch (err) {

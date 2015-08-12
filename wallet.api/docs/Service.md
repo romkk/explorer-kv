@@ -882,10 +882,17 @@ POST /mail
 **Request**
 
 ```
-GET /notification-message?mark=msg_id|msg_id2...
+POST /notification-message
+
+{
+    "message_ids": [
+        1,
+        2
+    ]
+}
 ```
 
-传入 `msg_id`，使用`|`分割。服务器将标记传入的 msg 为已读状态。
+服务器将标记传入的 msg 为已读状态。
 
 **Response**
 

@@ -528,7 +528,8 @@ GET /multi-signature-account/$account_id/tx
         "txhash": "dbf23dc6101cafacaf3acec615864b4a82be7fe71802ff0bc19bd0ea01a6e784",
         "is_deleted": false,
         "deleted_at": -1,
-        "fee": 10000
+        "fee": 10000,
+        "confirmations": -1     -- 如果是未发出的交易，则为 -1
     }
 ]
 ```

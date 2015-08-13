@@ -11,6 +11,7 @@ let bitcore = require('bitcore');
 let moment = require('moment');
 let helper = require('../lib/helper');
 let xg = require('../lib/xg');
+let blockData = require('../lib/block_data');
 
 let formatAccountStatus = (status) => {
     status.participants = status.participants.map(p => {
@@ -386,6 +387,14 @@ module.exports = server => {
             result = _.indexBy(await mysql.query(sql, hashList), 'txhash');
         }
 
+        let latestHeight;
+        try {
+            latestHeight = (await blockData('/latestblock')).height;
+        } catch (err) {
+            console.log(err.stack);
+            res.send(new restify.InternalServerError('Internal Error'));
+            return next();
+        }
         ret = _.compact(ret.map(r => {
             if (_.isUndefined(r.is_coinbase)) {
                 return r;
@@ -400,7 +409,8 @@ module.exports = server => {
                     timestamp: r.time,
                     status: 'RECEIVED',
                     is_deleted: false,
-                    deleted_at: -1
+                    deleted_at: -1,
+                    confirmations: r.block_height == -1 ? -1 : latestHeight - r.block_height + 1
                 }, helper.txAmountSummary(r, [accountStatus.generated_address]));
             }
 
@@ -409,6 +419,7 @@ module.exports = server => {
             o.status = ['DENIED', 'APPROVED', 'TBD'][p.status];
             o.is_deleted = !!p.is_deleted;
             o.deleted_at = !!p.is_deleted ? moment.utc(p.deleted_at).unix() : -1;
+            o.confirmations = r.block_height == -1 ? -1 : latestHeight - r.block_height + 1;
             return _.extend(o, helper.txAmountSummary(r, [accountStatus.generated_address]));
         }));
 

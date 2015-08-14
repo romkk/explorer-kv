@@ -24,9 +24,14 @@ var schema = {
             hex: {
                 type: 'string',
                 minLength: 1
+            },
+            note: {
+                type: 'string',
+                minLength: 0,
+                maxLength: 255
             }
         },
-        required: ['hex']
+        required: ['hex', 'note']
     },
 
     tx: {
@@ -200,6 +205,21 @@ var schema = {
             ticket: {
                 type: 'string',
                 minLength: 1
+            }
+        }
+    },
+
+    markNotificationMessage: {
+        type: 'object',
+        required: ['message_ids'],
+        properties: {
+            message_ids: {
+                type: 'array',
+                items: {
+                    type: 'integer',
+                    minimum: 0,
+                    exclusiveMinimum: true
+                }
             }
         }
     }

@@ -36,7 +36,9 @@ server.use(restify.CORS());
 server.use(restify.acceptParser(server.acceptable));
 server.use(restify.queryParser());
 server.use(restify.jsonp());
-server.use(restify.bodyParser());
+server.use(restify.bodyParser({
+    maxBodySize: 10 * 1024 * 1024       // 10 MB
+}));
 server.use(expressValidator());
 server.use(restify.gzipResponse());
 
@@ -50,7 +52,8 @@ server.use(auth.tokenMiddleware([
     '/bm-account',
     '!/bm-account/bind',
     '/sts-token',
-    '/qr-code'
+    '/qr-code',
+    '/sendmail'
 ]));
 
 server.on('after', restify.auditLogger({
@@ -59,14 +62,6 @@ server.on('after', restify.auditLogger({
         stream: process.stdout
     })
 }));
-
-// 检查 request header
-server.use((req, res, next) => {
-    if (req.method != 'GET' && !req.is('json')) {
-        return next(new restify.BadRequestError('Content-Type need to be "application/json"'));
-    }
-    next();
-});
 
 server.use((req, res, next) => {
     log(`URL: ${req.url}`);

@@ -10,5 +10,12 @@ module.exports = {
   ssdb: {
     host: process.env.SSDB_HOST,
     port: process.env.SSDB_PORT
+  },
+
+  bitcoind: {
+    host: process.env.BITCOIND_HOST,
+    port: process.env.BITCOIND_PORT,
+    user: process.env.BITCOIND_USER,
+    pass: process.env.BITCOIND_PASS
   }
 };

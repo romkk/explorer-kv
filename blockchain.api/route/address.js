@@ -37,7 +37,8 @@ module.exports = (server) => {
 
         var addr = await Address.grab(req.params.addr, !req.params.skipcache);
         if (addr == null) {
-            return new restify.ResourceNotFoundError('Address not found');
+            res.send(new restify.ResourceNotFoundError('Address not found'));
+            return next();
         }
 
         var atList = new AddressTxList(addr.attrs, req.params.timestamp, req.params.sort);
@@ -86,7 +87,37 @@ module.exports = (server) => {
             return atList.iter();
         });
         var pq = new PriorityQueue({
-            comparator: sort == 'desc' ? (a, b) => b[0].tx_height - a[0].tx_height : (a, b) => a[0].tx_height - b[0].tx_height
+            comparator: sort == 'desc' ? (a, b) => {
+                let ret;
+                if (a[0].tx_height == -1 && b[0].tx_height != -1) {
+                    ret = -1;
+                } else if (a[0].tx_height != -1 && b[0].tx_height == -1) {
+                    ret = 1;
+                } else {
+                    ret = b[0].tx_height - a[0].tx_height;
+                }
+
+                if (ret == 0) {
+                    ret = b[0].idx - a[0].idx;
+                }
+
+                return ret;
+            } : (a, b) => {
+                let ret;
+                if (a[0].tx_height == -1 && b[0].tx_height != -1) {
+                    ret = 1;
+                } else if (a[0].tx_height != -1 && b[0].tx_height == -1) {
+                    ret = -1;
+                } else {
+                    ret = a[0].tx_height - b[0].tx_height;
+                }
+
+                if (ret == 0) {
+                    ret = a[0].idx - b[0].idx;
+                }
+
+                return ret;
+            }
         });
         var txInPQ = {};
 

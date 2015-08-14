@@ -26,7 +26,7 @@ module.exports = {
         bucket: 'wallet-user-data',
         rootAccessKeyId: process.env.OSS_ACCESSKEY_ID,
         rootAccessKeySecret: process.env.OSS_ACCESSKEY_SECRET,
-        durationSeconds: 900
+        durationSeconds: 900    // 令牌有效期
     },
     xg: {       //信鸽推送
         android: {
@@ -39,5 +39,6 @@ module.exports = {
         }
     },
     userCenter: process.env.UC_ENDPOINT,
-    qrCodeEndpoint: process.env.QRCODE_ENDPOINT
+    qrCodeEndpoint: process.env.QRCODE_ENDPOINT,
+    mailEndpoint: process.env.EMAIL_GATEWAY_ENDPOINT
 };

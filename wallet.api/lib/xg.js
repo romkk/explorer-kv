@@ -3,6 +3,7 @@ let moment = require('moment');
 let config = require('config');
 let xinge = require('../vendor/Xinge');
 let log = require('debug')('wallet:lib:xg');
+let mysql = require('./mysql');
 
 class XG {
     static make() {
@@ -36,9 +37,11 @@ class XG {
             args = [args];
         }
 
-        extraKV = _.mapValues(extraKV, v => String(v));
+        let msgId = await this.save(receivers, eventType, extraKV);
+        extraKV.wallet_msg_id = msgId;
 
         let eventName = eventType.slice(eventType.indexOf('EVENT_') + 'EVENT_'.length);
+        extraKV = _.mapValues(extraKV, v => String(v));
 
         // prepare Android
         let androidMessage = new xinge.AndroidMessage();
@@ -79,25 +82,48 @@ class XG {
         });
 
         // push message
-        log(`push message, receivers = ${receivers.join(',')}, eventType = ${eventType}, args = ${args.join(',')}`);
+        log(`push message, receivers = ${receivers.join(',')}, eventType = ${eventType}, args = ${args.join(',')}, extraKV = ${JSON.stringify(extraKV)}`);
 
-        return Promise.settle([iOSPromise, androidPromise]).spread((iOSResult, androidResult) => {
-            if (iOSResult.isFulfilled()) {
-                let r = JSON.parse(iOSResult.value());
-                log(`push ios success, code = ${r.ret_code}, result = ${r.result}`);
-            } else if (iOSResult.isRejected()) {
-                log(`push ios failed`);
-                console.log(iOSResult.reason().stack);
-            }
+        let [iOSResult, androidResult] = await Promise.settle([iOSPromise, androidPromise]);
+        if (iOSResult.isFulfilled()) {
+            let r = JSON.parse(iOSResult.value());
+            log(`push ios success, code = ${r.ret_code}, result = ${r.result}`);
+        } else if (iOSResult.isRejected()) {
+            log(`push ios failed`);
+            console.log(iOSResult.reason().stack);
+        }
 
-            if (androidResult.isFulfilled()) {
-                let r = JSON.parse(androidResult.value());
-                log(`push android success, code = ${r.ret_code}, result = ${r.result}`);
-            } else if (androidResult.isRejected()) {
-                log(`push android failed`);
-                console.log(androidResult.reason().stack);
-            }
-        });
+        if (androidResult.isFulfilled()) {
+            let r = JSON.parse(androidResult.value());
+            log(`push android success, code = ${r.ret_code}, result = ${r.result}`);
+        } else if (androidResult.isRejected()) {
+            log(`push android failed`);
+            console.log(androidResult.reason().stack);
+        }
+    }
+
+    async save(receivers, eventType, customContent) {
+        try {
+            let msgId;
+            await mysql.transaction(async conn => {
+                let sql = `insert into notification_message
+                           (event_type, custom_content, created_at, updated_at)
+                           values
+                           (?, ?, now(), now())`;
+                let result = await conn.query(sql, [eventType, JSON.stringify(customContent)]);
+                msgId = result.insertId;
+
+                sql = `insert into notification_message_owner
+                       (wid, msg_id, created_at, updated_at)
+                       values
+                       ${receivers.map(r => '(?, ?, now(), now())').join(', ')}`;
+                await conn.query(sql, _.flatten(receivers.map(r => [ r, msgId ])));
+            });
+            return msgId;
+        } catch (err) {
+            log(`插入 mssage 队列失败， eventType = ${eventType}, receivers = ${receivers}`);
+            throw err;
+        }
     }
 }
 

@@ -6,8 +6,8 @@
 
 * 协议： `HTTPS`
 * Host：
-       * Main     Network: `chain.bitmain.com`
-       * Testnet3 Network: `tchain.bitmain.com`
+       * Main     Network: `chain.btc.com`
+       * Testnet3 Network: `tchain.btc.com`
 * Path： `/api/{version}`，当前可选版本为 `v1`
 * 请求类型：`GET`
 
@@ -16,9 +16,9 @@
     # 格式：
     GET https://{host}/api/{version}/{path}
     # 示例：
-    GET https://chain.bitmain.com/api/v1/latestblock
+    GET https://chain.btc.com/api/v1/latestblock
 
-建议将`https://chain.bitmain.com/api/v1`整字符串做为配置项，与后面的具体路径分离。
+建议将`https://chain.btc.com/api/v1`整字符串做为配置项，与后面的具体路径分离。
 
 ## 访问频率限制
 
@@ -456,3 +456,110 @@ GET /unspent
 	"txs":[--Array of Transactions--]
 }
 ```
+
+### 交易工具
+
+#### 交易解码
+
+**Request**
+
+```
+POST /tx/decode
+
+{
+    "hex": "01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0403f01208ffffffff04d891824a000000001976a914fdb9fb622b0db8d9121475a983288a0876f4de4888ac0000000000000000226a200000000000000000000000000000000000000000000000000000ffff0000000000000000000000001b6a1976a914fdb9fb622b0db8d9121475a983288a0876f4de4888ac0000000000000000326a30447096b7ea1c05001ce2a0725ff361f3466a45fe65198d1822ca3015dcd6b6c50167ac467d6122717f1d6cb42000000000000000"
+}
+```
+
+**Response**
+
+```
+{
+    "decoded_tx": {
+        "locktime": 0,
+        "txid": "87a30bfffcf187d4c745ba201bfd52abc7ee1f87b6a56c5c3068a6c1f79e0da4",
+        "version": 1,
+        "vin": [
+            {
+                "coinbase": "03f01208",
+                "sequence": 4294967295
+            }
+        ],
+        "vout": [
+            {
+                "n": 0,
+                "scriptPubKey": {
+                    "addresses": [
+                        "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR"
+                    ],
+                    "asm": "OP_DUP OP_HASH160 fdb9fb622b0db8d9121475a983288a0876f4de48 OP_EQUALVERIFY OP_CHECKSIG",
+                    "hex": "76a914fdb9fb622b0db8d9121475a983288a0876f4de4888ac",
+                    "reqSigs": 1,
+                    "type": "pubkeyhash"
+                },
+                "value": 12.50071
+            },
+            {
+                "n": 1,
+                "scriptPubKey": {
+                    "asm": "OP_RETURN 0000000000000000000000000000000000000000000000000000ffff00000000",
+                    "hex": "6a200000000000000000000000000000000000000000000000000000ffff00000000",
+                    "type": "nulldata"
+                },
+                "value": 0
+            },
+            {
+                "n": 2,
+                "scriptPubKey": {
+                    "asm": "OP_RETURN 76a914fdb9fb622b0db8d9121475a983288a0876f4de4888ac",
+                    "hex": "6a1976a914fdb9fb622b0db8d9121475a983288a0876f4de4888ac",
+                    "type": "nulldata"
+                },
+                "value": 0
+            },
+            {
+                "n": 3,
+                "scriptPubKey": {
+                    "asm": "OP_RETURN 447096b7ea1c05001ce2a0725ff361f3466a45fe65198d1822ca3015dcd6b6c50167ac467d6122717f1d6cb420000000",
+                    "hex": "6a30447096b7ea1c05001ce2a0725ff361f3466a45fe65198d1822ca3015dcd6b6c50167ac467d6122717f1d6cb420000000",
+                    "type": "nonstandard"
+                },
+                "value": 0
+            }
+        ]
+    },
+    "success": true
+}
+```
+
+可能的错误码：
+
+* TxPublishFailed
+
+  发布失败，详细信息请关注`bitcoind`字段，含有调用 bitcoind 返回的错误信息。
+
+#### 交易发布
+
+**Request**
+
+```
+POST /tx/publish
+
+{
+    "hex": "01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0403f01208ffffffff04d891824a000000001976a914fdb9fb622b0db8d9121475a983288a0876f4de4888ac0000000000000000226a200000000000000000000000000000000000000000000000000000ffff0000000000000000000000001b6a1976a914fdb9fb622b0db8d9121475a983288a0876f4de4888ac0000000000000000326a30447096b7ea1c05001ce2a0725ff361f3466a45fe65198d1822ca3015dcd6b6c50167ac467d6122717f1d6cb42000000000000000"
+}
+```
+
+**Response**
+
+```
+{
+    "success": true
+}
+```
+
+可能的错误码：
+
+* TxPublishFailed
+
+  发布失败，详细信息请关注`bitcoind`字段，含有调用 bitcoind 返回的错误信息。

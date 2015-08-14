@@ -169,21 +169,48 @@ GET /tx
             "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR"
         ],
         "time": 1435317403,
-        "txhash": "14655dca122f353c16c547a033d2d1c4129492395eedd90bfc4390ad28cb4bc3"
+        "txhash": "14655dca122f353c16c547a033d2d1c4129492395eedd90bfc4390ad28cb4bc3",
+        "fee": 10000,
+        "note": "i'm rich"
     }
 ]
 ```
 
 ### 查询交易详细信息
 
-请使用数据 API。
+查询处理过的详细信息，可以使用该接口；如果要查询原始交易数据，请使用数据 API。
+
+**Request**
+
+```
+GET /tx/:txhash?active=$address
+```
+
+`$address`为`|`分隔的地址。
+
+**Response**
+
+```
+{
+    "amount": 0,
+    "confirmations": 135,
+    "fee": 71000,
+    "inputs": [],
+    "note": "",
+    "outputs": [
+        "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR"
+    ],
+    "timestamp": 1439176519,
+    "txhash": "87a30bfffcf187d4c745ba201bfd52abc7ee1f87b6a56c5c3068a6c1f79e0da4"
+}
+```
 
 ### 提交构造交易请求
 
 **Request**
 
 ```
-POST /tx
+POST /tx/compose
 
 {
     "fee_per_kb": 10000,
@@ -230,25 +257,22 @@ POST /tx
             "value": 7,
             "value_hex": "7"
         }
-    ]
+    ],
+    "affordable": true,         -- 当前 unspent 是否满足支付需求
+    "more_txs": true            -- 是否还有更多的 unspent 用于支付
 }
 ```
-
-可能的错误码：
-
-* TxUnaffordable
-
-  余额不足。
 
 ### 广播交易
 
 **Request**
 
 ```
-POST /tx/publish
+POST /tx
 
 {
-    "hex": "HEXSTRING"
+    "hex": "HEXSTRING",
+    "note": "hello world"
 }
 ```
 
@@ -256,19 +280,25 @@ POST /tx/publish
 
 ```
 {
-    "success": true
+    "success": true,
+    "txhash": "HASH",
+    "note": "hello world"
 }
 ```
 
 可能的错误码：
 
-* TxPublishFailed
+  * TxPublishInvalidHex
+  
+    hex 无效
 
-  发布失败，详细信息请关注`bitcoind`字段，含有调用 bitcoind 返回的错误信息。
-
-### 监控地址余额变动
-
-TODO
+  * TxPublishBitcoindError
+  
+    bitcoind 报错，请关注 `description` 字段
+    
+  * TxPublishDuplicateTx
+  
+    该交易已经发布过了    
 
 ## 多重签名账户
 
@@ -483,7 +513,7 @@ GET /multi-signature-account/$account_id/tx
 ```
 [
     {
-        "amount": -100010000,
+        "amount": -100010000,       -- 包含手续费
         "id": 57,
         "inputs": [
             "mtJL8KeTugcf2YCqvxbFatUbNYDywBFfNR"
@@ -497,7 +527,9 @@ GET /multi-signature-account/$account_id/tx
         "timestamp": 1435313711,
         "txhash": "dbf23dc6101cafacaf3acec615864b4a82be7fe71802ff0bc19bd0ea01a6e784",
         "is_deleted": false,
-        "deleted_at": -1
+        "deleted_at": -1,
+        "fee": 10000,
+        "confirmations": -1     -- 如果是未发出的交易，则为 -1
     }
 ]
 ```
@@ -818,5 +850,68 @@ GET /sts-token?ticket=xxxx
         "FederatedUserId": "1581108693131087:null"
     },
     "success": true
+}
+```
+
+## 邮件发送
+
+用户通过邮件发送备份文件。注意这里使用常规的`multipart/form-data`提交数据。
+
+**Request**
+
+```
+POST /mail
+```
+
+参数：
+
+  * receiver 收件人
+  * file 压缩包文件，`Content-Type`需为`application/zip`
+
+**Response**
+
+```
+{
+    "success": true
+}
+```
+
+## 获取推送消息
+
+进入 app 后，通过接口拉取最新消息。
+
+**Request**
+
+```
+POST /notification-message
+
+{
+    "message_ids": [
+        1,
+        2
+    ]
+}
+```
+
+服务器将标记传入的 msg 为已读状态。
+
+**Response**
+
+返回未确认的消息。
+
+```
+{
+    "success": true,
+    "messages": [
+        {
+            "id": 1,
+            "event_type": "EVENT_MULTISIG_ACCOUNT_CREATED",
+            "custom_content": {
+                "name": 
+                "litianzhao"
+            },
+            "timestamp": 1439373663
+        }
+    ]
 }
 ```

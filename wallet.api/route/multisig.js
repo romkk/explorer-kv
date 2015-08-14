@@ -11,6 +11,7 @@ let bitcore = require('bitcore');
 let moment = require('moment');
 let helper = require('../lib/helper');
 let xg = require('../lib/xg');
+let blockData = require('../lib/block_data');
 
 let formatAccountStatus = (status) => {
     status.participants = status.participants.map(p => {
@@ -386,8 +387,19 @@ module.exports = server => {
             result = _.indexBy(await mysql.query(sql, hashList), 'txhash');
         }
 
-        ret = _.compact(ret.map(r => {
+        let latestHeight;
+        try {
+            latestHeight = (await blockData('/latestblock')).height;
+        } catch (err) {
+            console.log(err.stack);
+            res.send(new restify.InternalServerError('Internal Error'));
+            return next();
+        }
+
+        let tbdIndex = -1;
+        ret = _.compact(ret.map((r, i) => {
             if (_.isUndefined(r.is_coinbase)) {
+                if (r.status == 'TBD') tbdIndex = i;
                 return r;
             }
 
@@ -400,8 +412,9 @@ module.exports = server => {
                     timestamp: r.time,
                     status: 'RECEIVED',
                     is_deleted: false,
-                    deleted_at: -1
-                }, helper.txAmountSummary(r, accountStatus.generated_address));
+                    deleted_at: -1,
+                    confirmations: r.block_height == -1 ? -1 : latestHeight - r.block_height + 1
+                }, helper.txAmountSummary(r, [accountStatus.generated_address]));
             }
 
             let o = _.pick(p, ['id', 'note', 'txhash']);        // 有对应数据库记录的交易
@@ -409,9 +422,15 @@ module.exports = server => {
             o.status = ['DENIED', 'APPROVED', 'TBD'][p.status];
             o.is_deleted = !!p.is_deleted;
             o.deleted_at = !!p.is_deleted ? moment.utc(p.deleted_at).unix() : -1;
-            return _.extend(o, helper.txAmountSummary(r, accountStatus.generated_address));
+            o.confirmations = r.block_height == -1 ? -1 : latestHeight - r.block_height + 1;
+            return _.extend(o, helper.txAmountSummary(r, [accountStatus.generated_address]));
         }));
 
+        // 将待审批记录提到最顶端
+        // 假设：只有一个待审批记录
+        if (tbdIndex > -1) {
+            ret = ret.splice(tbdIndex, 1).concat(ret);
+        }
         res.send(ret);
         next();
     });

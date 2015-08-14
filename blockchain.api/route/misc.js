@@ -81,7 +81,7 @@ module.exports = (server) => {
                     script: txs[i].out[r.position].script,
                     value: r.value,
                     value_hex: r.value.toString(16),
-                    confirmations: height - r.block_height + 1
+                    confirmations: txs[i].block_height == -1 ? -1 : height - txs[i].block_height + 1
                 });
                 return --limit > 0;
             });

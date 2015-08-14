@@ -152,28 +152,30 @@ async function getAmountAndRelatedAddress(addr, hex) {
 
     //console.log(inputAddrs, outputAddrs);
 
-    // 计算 amount
+    let addrs = [addr];
+
+    // 计算 amount, copy from helper.txAmountSummary
     let amount = 0;
-    if (inputAddrs.some(el => el.addr.includes(addr))) {       // 支出
-        let totalInput = inputAddrs.filter(el => el.addr.includes(addr)).reduce((prev, cur) => {
-            return prev + cur.value;
-        }, 0);
-        let output = outputAddrs.find(el => el.addr.includes(addr));       // 假设只有一个找零
-        amount = (output ? output.value : 0) - totalInput;
+    if (inputAddrs.some(el => el.addr.some(a => addrs.includes(a)))) {       // 支出
+        let totalInput = inputAddrs.filter(el => el.addr.some(a => addrs.includes(a))).reduce((prev, cur) => prev + cur.value, 0);
+        let totalOutput = outputAddrs.filter(el => el.addr.some(a => addrs.includes(a))).reduce((prev, cur) => prev + cur.value, 0);
+        amount = totalOutput - totalInput;
     } else {        // 收入
-        amount = outputAddrs.filter(el => el.addr.includes(addr)).reduce((prev, cur) => prev + cur.value, 0);
+        amount = outputAddrs.filter(el => el.addr.some(a => addrs.includes(a))).reduce((prev, cur) => prev + cur.value, 0);
     }
 
     console.log({
         amount: amount,
         inputs: _(inputAddrs).pluck('addr').flatten().uniq().value(),
-        outputs: _(outputAddrs).pluck('addr').flatten().uniq().value()
+        outputs: _(outputAddrs).pluck('addr').flatten().uniq().value(),
+        fee: _(inputAddrs).pluck('value').sum() - _(outputAddrs).pluck('value').sum()
     });
 
     return {
         amount: amount,
         inputs: _(inputAddrs).pluck('addr').flatten().uniq().value(),
-        outputs: _(outputAddrs).pluck('addr').flatten().uniq().value()
+        outputs: _(outputAddrs).pluck('addr').flatten().uniq().value(),
+        fee: _(inputAddrs).pluck('value').sum() - _(outputAddrs).pluck('value').sum()
     };
 }
 

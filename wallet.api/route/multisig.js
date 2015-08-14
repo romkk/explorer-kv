@@ -395,8 +395,11 @@ module.exports = server => {
             res.send(new restify.InternalServerError('Internal Error'));
             return next();
         }
-        ret = _.compact(ret.map(r => {
+
+        let tbdIndex = -1;
+        ret = _.compact(ret.map((r, i) => {
             if (_.isUndefined(r.is_coinbase)) {
+                if (r.status == 'TBD') tbdIndex = i;
                 return r;
             }
 
@@ -423,6 +426,11 @@ module.exports = server => {
             return _.extend(o, helper.txAmountSummary(r, [accountStatus.generated_address]));
         }));
 
+        // 将待审批记录提到最顶端
+        // 假设：只有一个待审批记录
+        if (tbdIndex > -1) {
+            ret = ret.splice(tbdIndex, 1).concat(ret);
+        }
         res.send(ret);
         next();
     });

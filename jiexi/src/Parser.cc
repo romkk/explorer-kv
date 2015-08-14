@@ -1076,7 +1076,7 @@ void _insertTxOutputs(MySQLConnection &db, CacheManager *cache,
       // 每一个输出地址均生成一条 address_unspent_outputs 记录
       string sql = Strings::Format("INSERT INTO `address_unspent_outputs_%04d`"
                                    " (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)"
-                                   " VALUES (%lld, %lld, %d, %d, %lld, %lld, '%s') ",
+                                   " VALUES (%lld, %lld, %d, %d, %d, %lld, '%s') ",
                                    addrId % 10, addrId, txlog->txId_, n, i, txlog->blkHeight_,
                                    out.nValue, now.c_str());
       db.updateOrThrowEx(sql, 1);
@@ -1377,7 +1377,7 @@ void Parser::rollbackBlock(TxLog *txlog) {
 
 // 回滚，重新插入未花费记录
 void _unremoveUnspentOutputs(MySQLConnection &db, CacheManager *cache,
-                             const int64_t blockHeight,
+                             const int32_t blockHeight,
                              const int64_t txId, const int32_t position,
                              map<int64_t, int64_t> &addressBalance,
                              const int32_t ymd) {
@@ -1411,7 +1411,7 @@ void _unremoveUnspentOutputs(MySQLConnection &db, CacheManager *cache,
     // 恢复每一个输出地址的 address_unspent_outputs 记录
     sql = Strings::Format("INSERT INTO `address_unspent_outputs_%04d`"
                           " (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)"
-                          " VALUES (%lld, %lld, %d, %d, %lld, %lld, '%s') ",
+                          " VALUES (%lld, %lld, %d, %d, %d, %lld, '%s') ",
                           addrId % 10, addrId, txId, position, n, blockHeight,
                           value, date("%F %T").c_str());
     db.updateOrThrowEx(sql, 1);

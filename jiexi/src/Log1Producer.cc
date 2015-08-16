@@ -24,6 +24,8 @@
 
 #include <boost/filesystem.hpp>
 
+namespace fs = boost::filesystem;
+
 const CBlock &Log1::getBlock() const {
   return block_;
 }
@@ -66,6 +68,8 @@ void Chain::push(const int32_t height, const uint256 &hash,
                            prevHash.ToString().c_str());
     }
     blocks_[height] = hash;
+
+    LOG_INFO("accept block, height: %d, hash: %s", height, hash.ToString().c_str());
   }
   /********************* 后退 *********************/
   else if (height + 1 == curHeight) {
@@ -81,6 +85,8 @@ void Chain::push(const int32_t height, const uint256 &hash,
     }
     // 移除最后一个块
     blocks_.erase(std::prev(blocks_.end()));
+
+    LOG_INFO("rollback block, height: %d, hash: %s", height, hash.ToString().c_str());
   }
   /********************* 异常 *********************/
   else {
@@ -109,7 +115,6 @@ Log1Producer::~Log1Producer() {
 // 初始化 log1
 void Log1Producer::initLog1() {
   LogScope ls("Log1Producer::initLog1()");
-  namespace fs = boost::filesystem;
 
   // 加锁LOCK
   {
@@ -169,7 +174,6 @@ void Log1Producer::initLog1() {
 
 void Log1Producer::syncBitcoind() {
   LogScope ls("Log1Producer::syncBitcoind()");
-  namespace fs = boost::filesystem;
   //
   // 假设bitcoind在我们同步的过程中，是不会发生剧烈分叉的（剧烈分叉是指在向前追的那条链发生
   // 迁移了，导致当前追的链失效）。如果发生剧烈分叉则导致异常退出，再次启动则会首先回退再跟
@@ -183,7 +187,6 @@ void Log1Producer::syncBitcoind() {
 
 void Log1Producer::syncLog0() {
   LogScope ls("Log1Producer::syncLog0()");
-  namespace fs = boost::filesystem;
   bool syncSuccess = false;
 
   //
@@ -212,7 +215,7 @@ void Log1Producer::syncLog0() {
       // 找到高度和哈希一致的块
       log0FileIndex_  = *it;
       log0FileOffset_ = fin.tellg();
-      LOG_INFO("sync log0 success, idx: %d, offset: %lld",
+      LOG_INFO("sync log0 success, file idx: %d, offset: %lld",
                log0FileIndex_, log0FileOffset_);
       syncSuccess = true;
       break;
@@ -226,10 +229,27 @@ void Log1Producer::syncLog0() {
   }
 }
 
-// 尝试从 log0 中读取 N 行日志
-void Log1Producer::tryReadLog0(Log1 &log0Item, vector<string> &lines) {
-  namespace fs = boost::filesystem;
+void Log1Producer::tryRemoveOldLog0() {
+  const int32_t keepLogNum = (int32_t)Config::GConfig.getInt("log0.files.max", 24 * 3);
+  int32_t fileIdx = log0FileIndex_ - keepLogNum;
 
+  // 遍历，删除所有小序列号的文件
+  while (fileIdx >= 0) {
+    const string file = Strings::Format("%s/files/%d.log",
+                                        log0Dir_.c_str(), fileIdx--);
+    if (!fs::exists(fs::path(file))) {
+      break;
+    }
+    // try delete
+    LOG_INFO("remove old log0: %s", file.c_str());
+    if (!fs::remove(fs::path(file))) {
+      THROW_EXCEPTION_DBEX("remove old log0 failure: %s", file.c_str());
+    }
+  }
+}
+
+// 尝试从 log0 中读取 N 行日志
+void Log1Producer::tryReadLog0(vector<string> &lines) {
   const string currFile = Strings::Format("%s/files/%d.log",
                                           log0Dir_.c_str(), log0FileIndex_);
   const string nextFile = Strings::Format("%s/files/%d.log",
@@ -268,10 +288,54 @@ void Log1Producer::tryReadLog0(Log1 &log0Item, vector<string> &lines) {
     log0FileIndex_++;
     log0FileOffset_ = 0;
     LOG_INFO("swith log0 file, old: %s, new: %s ", currFile.c_str(), nextFile.c_str());
+
+    tryRemoveOldLog0();
   }
 }
 
 void Log1Producer::run() {
-  Log1 log0Item;
+  LogScope ls("Log1Producer::run()");
+
+  while (running_) {
+    vector<string> lines;
+    tryReadLog0(lines);
+
+    if (!running_) { break; }
+    if (lines.size() == 0) {
+      sleep(1);
+      continue;
+    }
+
+    for (const auto &line : lines) {
+      Log1 log0Item;
+      log0Item.parse(line);
+      //
+      // Tx
+      //
+      if (log0Item.isTx()) {
+        // 交易的容错是最强的，即使当前块已经错乱了，推入交易仍然不会出问题
+        writeLog1Tx(log0Item.getTx());
+      }
+      //
+      // Block
+      //
+      else if (log0Item.isBlock()) {
+        // 推入当前链中，如果块的前后关联有问题，则会抛出异常中断程序
+        chain_.push(log0Item.blockHeight_,
+                    log0Item.getBlock().GetHash(), log0Item.getBlock().hashPrevBlock);
+        writeLog1Block(log0Item.getBlock());
+      } else {
+        THROW_EXCEPTION_DBEX("invalid log0 type, log line: %s", line.c_str());
+      }
+    } /* /for */
+  } /* /while */
+}
+
+void Log1Producer::writeLog1Tx(const CTransaction &tx) {
+  // TODO
+}
+
+void Log1Producer::writeLog1Block(const CBlock &block) {
+  // TODO
 }
 

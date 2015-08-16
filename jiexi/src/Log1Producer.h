@@ -95,23 +95,18 @@ class Log1Producer {
   // 最后消费的文件以及游标
   int32_t log0FileIndex_;
   int64_t log0FileOffset_;
-//  std::ifstream *log0Ifstream_;
 
-  void writeLog1(const string &line);
-  void tryReadLog0();
+  void writeLog1Tx   (const CTransaction &tx);
+  void writeLog1Block(const CBlock       &blk);
 
   void tryRemoveOldLog0();  // 移除旧的log0日志
-  void tryReadLog0(Log1 &log0Item, vector<string> &lines);
-
+  void tryReadLog0(vector<string> &lines);
 
 public:
   Log1Producer();
   ~Log1Producer();
 
   void init();
-
-  void writeLog1Tx   (const CTransaction &tx);
-  void writeLog1Block(const CBlock       &blk);
 
   // 初始化 log1
   void initLog1();

@@ -20,9 +20,6 @@
 #include "util.h"
 #include "Common.h"
 
-#include <iostream>
-#include <fstream>
-
 #include <fcntl.h>
 
 #include <boost/filesystem.hpp>
@@ -193,8 +190,7 @@ void Log1Producer::syncLog0() {
   // 遍历 log0 所有文件，直至找到一样的块，若找到则同步完成
   //
   std::set<int32_t> filesIdxs;  // log0 所有文件
-  const string filesDir = Strings::Format("%s/files", log0Dir_.c_str());
-  fs::path filesPath(filesDir);
+  fs::path filesPath(Strings::Format("%s/files", log0Dir_.c_str()));
   tryCreateDirectory(filesPath);
   for (fs::directory_iterator end, it(filesPath); it != end; ++it) {
     filesIdxs.insert(atoi(it->path().stem().c_str()));
@@ -204,13 +200,13 @@ void Log1Producer::syncLog0() {
   for (auto it = filesIdxs.rbegin(); it != filesIdxs.rend(); it++) {
     ifstream fin(Strings::Format("%s/files/%d.log", log0Dir_.c_str(), *it));
     string line;
-    Log1 log1Item;  // log0 里记录的也是log1格式
+    Log1 log0Item;  // log0 里记录的也是log1格式
     while (getline(fin, line)) {
-      log1Item.parse(line);
-      if (log1Item.isTx()) { continue; }
-      assert(log1Item.isBlock());
-      if (log1Item.blockHeight_         != log1BlkBeginHeight_ ||
-          log1Item.getBlock().GetHash() != log1BlkBeginHash_) {
+      log0Item.parse(line);
+      if (log0Item.isTx()) { continue; }
+      assert(log0Item.isBlock());
+      if (log0Item.blockHeight_         != log1BlkBeginHeight_ ||
+          log0Item.getBlock().GetHash() != log1BlkBeginHash_) {
         continue;
       }
       // 找到高度和哈希一致的块
@@ -228,5 +224,54 @@ void Log1Producer::syncLog0() {
   if (!syncSuccess) {
     THROW_EXCEPTION_DBEX("sync log0 failure");
   }
+}
+
+// 尝试从 log0 中读取 N 行日志
+void Log1Producer::tryReadLog0(Log1 &log0Item, vector<string> &lines) {
+  namespace fs = boost::filesystem;
+
+  const string currFile = Strings::Format("%s/files/%d.log",
+                                          log0Dir_.c_str(), log0FileIndex_);
+  const string nextFile = Strings::Format("%s/files/%d.log",
+                                          log0Dir_.c_str(), log0FileIndex_ + 1);
+
+  // 判断是否存在下一个文件，需要在读取当前文件之间判断，防止读取漏掉现有文件的最后内容
+  const bool isNextExist = fs::exists(fs::path(nextFile));
+
+  //
+  // 打开文件并尝试读取新行
+  //
+  ifstream log0Ifstream(currFile);
+  if (!log0Ifstream.is_open()) {
+    THROW_EXCEPTION_DBEX("open file failure: %s", currFile.c_str());
+  }
+  log0Ifstream.seekg(log0FileOffset_);
+  string line;
+  while (getline(log0Ifstream, line)) {  // getline()读不到内容，则会关闭 ifstream
+    lines.push_back(line);
+    log0FileOffset_ = log0Ifstream.tellg();
+
+    if (lines.size() > 500) {  // 每次最多处理500条日志
+      LOG_WARN("reach max limit, stop load log0 items");
+      break;
+    }
+  }
+  if (lines.size() > 0) {
+    return;
+  }
+
+  //
+  // 探测新文件，仅当前面没有读取到新内容的时候
+  //
+  if (isNextExist == true && lines.size() == 0) {
+    // 存在新的文件，切换索引，重置offset
+    log0FileIndex_++;
+    log0FileOffset_ = 0;
+    LOG_INFO("swith log0 file, old: %s, new: %s ", currFile.c_str(), nextFile.c_str());
+  }
+}
+
+void Log1Producer::run() {
+  Log1 log0Item;
 }
 

@@ -20,7 +20,12 @@
 #define Explorer_Log1Producer_h
 
 #include "Common.h"
+#include "Util.h"
+
 #include "bitcoin/core.h"
+
+#include <iostream>
+#include <fstream>
 
 
 class Log1 {
@@ -63,6 +68,8 @@ public:
 
 
 class Log1Producer {
+  atomic<bool> running_;
+
   /****************** log1 ******************/
   string log1Dir_;
   int log1LockFd_;
@@ -88,11 +95,13 @@ class Log1Producer {
   // 最后消费的文件以及游标
   int32_t log0FileIndex_;
   int64_t log0FileOffset_;
+//  std::ifstream *log0Ifstream_;
 
   void writeLog1(const string &line);
   void tryReadLog0();
 
   void tryRemoveOldLog0();  // 移除旧的log0日志
+  void tryReadLog0(Log1 &log0Item, vector<string> &lines);
 
 
 public:
@@ -110,6 +119,7 @@ public:
   // log1 同步上目前的进度，总是先同步上bitcoind，再同步log0
   void syncBitcoind();  // 同步 bitcoind(RPC)
   void syncLog0();      // 同步 log0
+  void run();
 
 };
 

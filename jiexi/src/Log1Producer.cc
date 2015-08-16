@@ -27,6 +27,13 @@
 
 #include <boost/filesystem.hpp>
 
+const CBlock &Log1::getBlock() const {
+  return block_;
+}
+
+const CTransaction &Log1::getTx() const {
+  return tx_;
+}
 
 Chain::Chain(const int32_t limit): limit_(limit)
 {
@@ -104,6 +111,7 @@ Log1Producer::~Log1Producer() {
 
 // 初始化 log1
 void Log1Producer::initLog1() {
+  LogScope ls("Log1Producer::initLog1()");
   namespace fs = boost::filesystem;
 
   // 加锁LOCK
@@ -116,6 +124,7 @@ void Log1Producer::initLog1() {
   }
 
   // 遍历Log1，找出最近的文件，和最近的记录
+  std::set<int32_t> filesIdxs;  // log1所有文件
   const string filesDir = Strings::Format("%s/files", log1Dir_.c_str());
   fs::path filesPath(filesDir);
   tryCreateDirectory(filesPath);
@@ -123,45 +132,24 @@ void Log1Producer::initLog1() {
     int log1FileIndex = -1;
     for (fs::directory_iterator end, it(filesPath); it != end; ++it) {
       const int idx = atoi(it->path().stem().c_str());
+      filesIdxs.insert(idx);
+
       if (idx > log1FileIndex) {
         log1FileIndex = idx;
       }
     }
-    log1FileIndex_  = log1FileIndex;
+    log1FileIndex_ = log1FileIndex;
   }
 
   // 找到最后的块高度 & 哈希
   if (log1FileIndex_ == -1) {
     // 没有log1文件，则采用配置文件的参数作为其实块信息
-    log1BlkHeight_  = (int32_t)Config::GConfig.getInt("log1.begin.block.height");
-    log1BlkHash_    = uint256(Config::GConfig.get("log1.begin.block.hash"));
-    log1FileOffset_ = 0;
+    log1BlkBeginHeight_ = (int32_t)Config::GConfig.getInt("log1.begin.block.height");
+    log1BlkBeginHash_   = uint256(Config::GConfig.get("log1.begin.block.hash"));
   } else {
-    // 存在log1文件，找最后一条块记录
-    ifstream fin(Strings::Format("%s/files/%d.log", log1Dir_.c_str(), log1FileIndex_));
-    string line;
-    Log1 log1Item;
-    while (getline(fin, line)) {
-      log1Item.parse(line);
-      if (log1Item.isTx()) { continue; }
-      assert(log1Item.isBlock());
-      log1BlkHash_   = log1Item.block_.GetHash();
-      log1BlkHeight_ = log1Item.blockHeight_;
-    }
-  }
-
-  // 载入最近块链: 遍历log1的文件，慢慢载入
-  {
-    // 遍历log1所有文件，存入set
-    std::set<int32_t> idxs;
-    for (fs::directory_iterator end, it(filesPath); it != end; ++it) {
-      const int idx = atoi(it->path().stem().c_str());
-      idxs.insert(idx);
-    }
-
-    // 利用set自动排序，下一步会从小向大，遍历所有文件，重新载入块链
+    // 利用set自动排序，从小向大遍历所有文件，重新载入块链
     // TODO: 性能优化，少读取一些log1日志文件
-    for (auto fileIdx : idxs) {
+    for (auto fileIdx : filesIdxs) {
       ifstream fin(Strings::Format("%s/files/%d.log", log1Dir_.c_str(), fileIdx));
       string line;
       Log1 log1Item;
@@ -169,10 +157,76 @@ void Log1Producer::initLog1() {
         log1Item.parse(line);
         if (log1Item.isTx()) { continue; }
         assert(log1Item.isBlock());
-        chain_.push(log1Item.blockHeight_, log1Item.block_.GetHash(), log1Item.block_.hashPrevBlock);
+        chain_.push(log1Item.blockHeight_, log1Item.getBlock().GetHash(),
+                    log1Item.getBlock().hashPrevBlock);
       }
-    }
+    } /* /for */
+
+    log1BlkBeginHeight_ = chain_.getCurHeight();
+    log1BlkBeginHash_   = chain_.getCurHash();
   }
 
+  LOG_INFO("log1 begin block: %d, %s", log1BlkBeginHeight_,
+           log1BlkBeginHash_.ToString().c_str());
+}
+
+void Log1Producer::syncBitcoind() {
+  LogScope ls("Log1Producer::syncBitcoind()");
+  namespace fs = boost::filesystem;
+  //
+  // 假设bitcoind在我们同步的过程中，是不会发生剧烈分叉的（剧烈分叉是指在向前追的那条链发生
+  // 迁移了，导致当前追的链失效）。如果发生剧烈分叉则导致异常退出，再次启动则会首先回退再跟
+  // 进，依然可以同步上去。
+  //
+  // 第一步，先尝试找到高度和哈希一致的块，若log1最前面的不符合，则回退直至找到一致的块
+  // 第二步，从一致块高度开始，每次加一，向前追，直至与bitcoind高度一致
+  //
+
+}
+
+void Log1Producer::syncLog0() {
+  LogScope ls("Log1Producer::syncLog0()");
+  namespace fs = boost::filesystem;
+  bool syncSuccess = false;
+
+  //
+  // 遍历 log0 所有文件，直至找到一样的块，若找到则同步完成
+  //
+  std::set<int32_t> filesIdxs;  // log0 所有文件
+  const string filesDir = Strings::Format("%s/files", log0Dir_.c_str());
+  fs::path filesPath(filesDir);
+  tryCreateDirectory(filesPath);
+  for (fs::directory_iterator end, it(filesPath); it != end; ++it) {
+    filesIdxs.insert(atoi(it->path().stem().c_str()));
+  }
+
+  // 反序遍历，从最新的文件开始找
+  for (auto it = filesIdxs.rbegin(); it != filesIdxs.rend(); it++) {
+    ifstream fin(Strings::Format("%s/files/%d.log", log0Dir_.c_str(), *it));
+    string line;
+    Log1 log1Item;  // log0 里记录的也是log1格式
+    while (getline(fin, line)) {
+      log1Item.parse(line);
+      if (log1Item.isTx()) { continue; }
+      assert(log1Item.isBlock());
+      if (log1Item.blockHeight_         != log1BlkBeginHeight_ ||
+          log1Item.getBlock().GetHash() != log1BlkBeginHash_) {
+        continue;
+      }
+      // 找到高度和哈希一致的块
+      log0FileIndex_  = *it;
+      log0FileOffset_ = fin.tellg();
+      LOG_INFO("sync log0 success, idx: %d, offset: %lld",
+               log0FileIndex_, log0FileOffset_);
+      syncSuccess = true;
+      break;
+    } /* /while */
+
+    if (syncSuccess) { break; }
+  } /* /for */
+
+  if (!syncSuccess) {
+    THROW_EXCEPTION_DBEX("sync log0 failure");
+  }
 }
 

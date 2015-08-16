@@ -24,6 +24,9 @@
 
 
 class Log1 {
+  CTransaction tx_;
+  CBlock  block_;
+
 public:
   enum {
     TYPE_BLOCK = 1, TYPE_TX = 2
@@ -32,9 +35,6 @@ public:
   int32_t type_;
   string  content_;
 
-  CTransaction tx_;
-
-  CBlock  block_;
   int32_t blockHeight_;
 
   Log1();
@@ -43,6 +43,8 @@ public:
   bool parse(const string &line);
   bool isTx();
   bool isBlock();
+  const CBlock &getBlock() const;
+  const CTransaction &getTx() const;
 };
 
 
@@ -50,14 +52,13 @@ class Chain {
   int32_t limit_;
   map<int32_t, uint256> blocks_;
 
-  int32_t getCurHeight() const;
-  uint256 getCurHash() const;
-
 public:
   Chain(const int32_t limit);
   ~Chain();
 
   void push(const int32_t height, const uint256 &hash, const uint256 &prevHash);
+  int32_t getCurHeight() const;
+  uint256 getCurHash() const;
 };
 
 
@@ -67,12 +68,12 @@ class Log1Producer {
   int log1LockFd_;
 
   // 最近块高度&哈希值
-  int32_t log1BlkHeight_;
-  uint256 log1BlkHash_;
+  int32_t log1BlkBeginHeight_;
+  uint256 log1BlkBeginHash_;
 
   // 最后生成的文件以及游标
   int32_t log1FileIndex_;
-  int64_t log1FileOffset_;
+//  int64_t log1FileOffset_;
 
   // 最近N个块链
   Chain chain_;
@@ -85,8 +86,8 @@ class Log1Producer {
   uint256 log0BlkHash_;
 
   // 最后消费的文件以及游标
-  int32_t log0Index_;
-  int64_t log0Offset_;
+  int32_t log0FileIndex_;
+  int64_t log0FileOffset_;
 
   void writeLog1(const string &line);
   void tryReadLog0();

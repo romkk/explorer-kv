@@ -42,4 +42,6 @@ int64_t txHash2Id(MySQLConnection &db, const uint256 &txHash);
 
 void callBlockRelayParseUrl(const string &blockHash);
 
+string EncodeHexTx(const CTransaction& tx);
+
 #endif

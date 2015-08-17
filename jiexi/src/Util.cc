@@ -156,3 +156,9 @@ void callBlockRelayParseUrl(const string &blockHash) {
   LOG_INFO("call block relay parse url: %s", url.c_str());
   boost::thread t(curlCallUrl, url); // thread runs free
 }
+
+string EncodeHexTx(const CTransaction& tx) {
+  CDataStream ssTx(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+  ssTx << tx;
+  return HexStr(ssTx.begin(), ssTx.end());
+}

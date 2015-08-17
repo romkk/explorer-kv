@@ -73,6 +73,7 @@ class Log1Producer {
   /****************** log1 ******************/
   string log1Dir_;
   int log1LockFd_;
+  FILE *log1FileHandler_;
 
   // 最近块高度&哈希值
   int32_t log1BlkBeginHeight_;
@@ -96,8 +97,9 @@ class Log1Producer {
   int32_t log0FileIndex_;
   int64_t log0FileOffset_;
 
+  void writeLog1(const int32_t type, const string &line);
   void writeLog1Tx   (const CTransaction &tx);
-  void writeLog1Block(const CBlock       &blk);
+  void writeLog1Block(const int32_t height, const CBlock &blk);
 
   void tryRemoveOldLog0();  // 移除旧的log0日志
   void tryReadLog0(vector<string> &lines);

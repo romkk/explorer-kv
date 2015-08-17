@@ -21,6 +21,8 @@
 #include "Common.h"
 
 #include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include <boost/filesystem.hpp>
 
@@ -100,7 +102,8 @@ void Chain::push(const int32_t height, const uint256 &hash,
 }
 
 
-Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileIndex_(-1), chain_(1000)
+Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileHandler_(nullptr),
+  log1FileIndex_(-1), chain_(1000)
 {
 }
 
@@ -109,6 +112,12 @@ Log1Producer::~Log1Producer() {
     flock(log1LockFd_, LOCK_UN);
     close(log1LockFd_);
     log1LockFd_ = -1;
+  }
+
+  if (log1FileHandler_ != nullptr) {
+    fsync(fileno(log1FileHandler_));
+    fclose(log1FileHandler_);
+    log1FileHandler_ = nullptr;
   }
 }
 
@@ -230,7 +239,7 @@ void Log1Producer::syncLog0() {
 }
 
 void Log1Producer::tryRemoveOldLog0() {
-  const int32_t keepLogNum = (int32_t)Config::GConfig.getInt("log0.files.max", 24 * 3);
+  const int32_t keepLogNum = (int32_t)Config::GConfig.getInt("log0.files.max.num", 24 * 3);
   int32_t fileIdx = log0FileIndex_ - keepLogNum;
 
   // 遍历，删除所有小序列号的文件
@@ -323,7 +332,7 @@ void Log1Producer::run() {
         // 推入当前链中，如果块的前后关联有问题，则会抛出异常中断程序
         chain_.push(log0Item.blockHeight_,
                     log0Item.getBlock().GetHash(), log0Item.getBlock().hashPrevBlock);
-        writeLog1Block(log0Item.getBlock());
+        writeLog1Block(log0Item.blockHeight_, log0Item.getBlock());
       } else {
         THROW_EXCEPTION_DBEX("invalid log0 type, log line: %s", line.c_str());
       }
@@ -331,11 +340,57 @@ void Log1Producer::run() {
   } /* /while */
 }
 
+void Log1Producer::writeLog1(const int32_t type, const string &line) {
+  //
+  // 写 log1 日志
+  //
+  const string file = Strings::Format("%s/files/%d.log", log1Dir_.c_str(), log1FileIndex_);
+  if (log1FileHandler_ == nullptr) {
+    log1FileHandler_ = fopen(file.c_str(), "a");  // append mode
+  }
+  if (log1FileHandler_ == nullptr) {
+    THROW_EXCEPTION_DBEX("open file failure: %s", file.c_str());
+  }
+  const string logLine = Strings::Format("%s,%d,%s\n",
+                                         date("%F %T").c_str(),
+                                         type, line.c_str());
+  size_t res = fwrite(logLine.c_str(), 1U, logLine.length(), log1FileHandler_);
+  if (res != logLine.length()) {
+    THROW_EXCEPTION_DBEX("fwrite return size_t(%llu) is NOT match line length: %llu, file: %s",
+                         res, logLine.length(), file.c_str());
+  }
+  fflush(log1FileHandler_);
+
+  //
+  // 切换 log1 日志：超过最大文件长度则关闭文件，下次写入时会自动打开新的文件
+  //
+  const int64_t log1FileMaxSize = Config::GConfig.getInt("log1.file.max.size",
+                                                         50 * 1024 * 1024);
+  fpos_t position = -1;
+  if (fgetpos(log1FileHandler_, &position) == -1) {
+    THROW_EXCEPTION_DBEX("fgetpos failure: %s", file.c_str());
+  }
+  if (position > log1FileMaxSize) {
+    fsync(fileno(log1FileHandler_));
+    fclose(log1FileHandler_);
+    log1FileHandler_ = nullptr;
+    log1FileIndex_++;
+    LOG_INFO("log1's size(%lld) reach max(%lld), switch to new file index: %d",
+             position, log1FileMaxSize, log1FileIndex_);
+  }
+}
+
 void Log1Producer::writeLog1Tx(const CTransaction &tx) {
-  // TODO
+  const string hex = EncodeHexTx(tx);
+  writeLog1(2, Strings::Format("%s|%s",
+                               tx.GetHash().ToString().c_str(), hex.c_str()));
 }
 
-void Log1Producer::writeLog1Block(const CBlock &block) {
-  // TODO
+void Log1Producer::writeLog1Block(const int32_t height, const CBlock &block) {
+  CDataStream ssBlock(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+  ssBlock << block;
+  std::string strHex = HexStr(ssBlock.begin(), ssBlock.end());
+  writeLog1(1, Strings::Format("%d|%s|%s", height,
+                               block.GetHash().ToString().c_str(),
+                               strHex.c_str()));
 }
-

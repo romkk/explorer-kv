@@ -67,6 +67,7 @@ public:
   int32_t getCurHeight() const;
   uint256 getCurHash() const;
   size_t size() const;
+  void pop();
 };
 
 

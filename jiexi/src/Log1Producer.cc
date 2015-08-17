@@ -17,8 +17,10 @@
  */
 
 #include "Log1Producer.h"
-#include "util.h"
+
+#include "BitcoinRpc.h"
 #include "Common.h"
+#include "Util.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -28,6 +30,23 @@
 
 namespace fs = boost::filesystem;
 
+
+static JsonNode _bitcoindRpcRequest(BitcoinRpc &bitcoind, const string &request) {
+  string response;
+  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
+  if (ret != 0) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
+  }
+  JsonNode r;
+  JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
+  if (r["error"].type() != Utilities::JS::type::Undefined &&
+      r["error"].type() == Utilities::JS::type::Obj) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, code: %d, error: %s",
+                         r["error"]["code"].int32(),
+                         r["error"]["message"].str().c_str());
+  }
+  return r["result"];
+}
 
 ///////////////////////////////////  Log1  /////////////////////////////////////
 Log1::Log1(): type_(-1), blockHeight_(-1) {
@@ -170,6 +189,12 @@ size_t Chain::size() const {
   return blocks_.size();
 }
 
+void Chain::pop() {
+  if (blocks_.size() == 0) { return; }
+  // 移除最后一个块
+  blocks_.erase(std::prev(blocks_.end()));
+}
+
 ///////////////////////////////  Log1Producer  /////////////////////////////////
 Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileHandler_(nullptr),
   log1FileIndex_(-1), chain_(1000)
@@ -245,9 +270,33 @@ void Log1Producer::initLog1() {
     log1BlkBeginHeight_ = chain_.getCurHeight();
     log1BlkBeginHash_   = chain_.getCurHash();
   }
+  assert(chain_.size() >= 1);
 
   LOG_INFO("log1 begin block: %d, %s", log1BlkBeginHeight_,
            log1BlkBeginHash_.ToString().c_str());
+}
+
+static string _bitcoind_getBlockHashByHeight(BitcoinRpc &bitcoind, const int32_t height) {
+  const string request = Strings::Format("{\"id\":1,\"method\":\"getblockhash\",\"params\":[%d]}",
+                                         height);
+  JsonNode res = _bitcoindRpcRequest(bitcoind, request);
+  return res.str();
+}
+
+static string _bitcoind_getInfo(BitcoinRpc &bitcoind) {
+  const string request = Strings::Format("{\"id\":1,\"method\":\"getinfo\",\"params\":[]}");
+  JsonNode res = _bitcoindRpcRequest(bitcoind, request);
+  return res.str();
+}
+
+static void _bitcoind_getBlockByHash(BitcoinRpc &bitcoind, const string &hashStr, CBlock &block) {
+  const string request = Strings::Format("{\"id\":1,\"method\":\"getblock\",\"params\":[\"%s\", false]}",
+                                         hashStr.c_str());
+  JsonNode res = _bitcoindRpcRequest(bitcoind, request);
+  const string hexStr = res.str();
+  if (!DecodeHexBlk(block, hexStr)) {
+    THROW_EXCEPTION_DBEX("decode block failure, hex: %s", hexStr.c_str());
+  }
 }
 
 void Log1Producer::syncBitcoind() {
@@ -260,7 +309,52 @@ void Log1Producer::syncBitcoind() {
   // 第一步，先尝试找到高度和哈希一致的块，若log1最前面的不符合，则回退直至找到一致的块
   // 第二步，从一致块高度开始，每次加一，向前追，直至与bitcoind高度一致
   //
-  
+  BitcoinRpc bitcoind(Config::GConfig.get("bitcoind.uri"));
+
+  //
+  // 第一步，先尝试找到高度和哈希一致的块，若log1最前面的不符合，则回退直至找到一致的块
+  //
+  assert(chain_.size() >= 1);
+  while (1) {
+    // 检测最后一个块(即chain_的当前块)是否一致
+    const string hashStr = _bitcoind_getBlockHashByHeight(bitcoind, chain_.getCurHeight());
+    if (chain_.getCurHash().ToString() == hashStr) {
+      LOG_INFO("found the same block, height: %d, hash: %s",
+               chain_.getCurHeight(), chain_.getCurHash().ToString().c_str());
+      break;
+    }
+
+    // 不一致，弹出最后一个块
+    chain_.pop();
+    LOG_INFO("chain pop block, height: %d, hash: %s",
+             chain_.getCurHeight(), chain_.getCurHash().ToString().c_str());
+    if (chain_.size() == 0) {
+      THROW_EXCEPTION_DBEX("can't find matched block, bitcoind has a big fork");
+    }
+  }
+
+  //
+  // 第二步，从一致块高度开始，每次加一，向前追，直至与bitcoind高度一致
+  //
+  int32_t bitcoindBestHeight = -1;
+  {
+    const string request = Strings::Format("{\"id\":1,\"method\":\"getinfo\",\"params\":[]}");
+    JsonNode res = _bitcoindRpcRequest(bitcoind, request);
+    bitcoindBestHeight = res["blocks"].int32();
+  }
+
+  while (chain_.getCurHeight() < bitcoindBestHeight) {
+    const int32_t height = chain_.getCurHeight() + 1;
+    const string hashStr = _bitcoind_getBlockHashByHeight(bitcoind, chain_.getCurHeight() + 1);
+
+    CBlock block;
+    _bitcoind_getBlockByHash(bitcoind, hashStr, block);
+    assert(block.GetHash().ToString() == hashStr);
+
+    chain_.push(height, block.GetHash(), block.hashPrevBlock);
+    writeLog1Block(height, block);
+    LOG_INFO("sync bitcoind block, height: %d, hash: %s", height, hashStr.c_str());
+  }
 }
 
 void Log1Producer::syncLog0() {

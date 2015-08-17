@@ -28,13 +28,76 @@
 
 namespace fs = boost::filesystem;
 
-const CBlock &Log1::getBlock() const {
+
+///////////////////////////////////  Log1  /////////////////////////////////////
+Log1::Log1(): type_(-1), blockHeight_(-1) {
+}
+
+Log1::~Log1() {
+}
+
+// 解析当行 log1 类型的日志，解析失败则抛出异常
+void Log1::parse(const string &line) {
+  // 按照 ',' 切分，最多切三份
+  const vector<string> arr1 = split(line, ',', 3);
+  assert(arr1.size() == 3);
+
+  // type
+  const int32_t type = atoi(arr1[1].c_str());
+
+  // 最后一个按照 '|' 切分
+  const vector<string> arr2 = split(arr1[2], '|');
+
+  /* block */
+  if (type == TYPE_BLOCK) {
+    assert(arr2.size() == 3);
+    blockHeight_ = atoi(arr2[0].c_str());
+    content_     = arr2[1] + arr2[2];
+  }
+  /* tx */
+  else if (type == TYPE_TX) {
+    assert(arr2.size() == 2);
+    content_ = arr2[0] + arr2[1];
+  } else {
+    THROW_EXCEPTION_DBEX("[Log1::parse] invalid log1 type(%d)", type);
+  }
+}
+
+const CBlock &Log1::getBlock() {
+  if (block_.IsNull()) {  // 延时解析
+    const string hex = content_.substr(64);
+    if (!DecodeHexBlk(block_, hex)) {
+      THROW_EXCEPTION_DBEX("decode block failure, hex: %s", content_.c_str());
+    }
+    if (block_.GetHash().ToString() != content_.substr(0, 64)) {
+      THROW_EXCEPTION_DBEX("decode block failure, hash not match, hex: %s", content_.c_str());
+    }
+  }
   return block_;
 }
 
-const CTransaction &Log1::getTx() const {
+const CTransaction &Log1::getTx() {
+  if (tx_.IsNull()) {  // 延时解析
+    const string hex = content_.substr(64);
+    if (!DecodeHexTx(tx_, hex)) {
+      THROW_EXCEPTION_DBEX("decode tx failure, hex: %s", content_.c_str());
+    }
+    if (tx_.GetHash().ToString() != content_.substr(0, 64)) {
+      THROW_EXCEPTION_DBEX("decode tx failure, hash not match, hex: %s", content_.c_str());
+    }
+  }
   return tx_;
 }
+
+bool Log1::isTx() {
+  return type_ == TYPE_TX ? true : false;
+}
+
+bool Log1::isBlock() {
+  return type_ == TYPE_BLOCK ? true : false;
+}
+
+//////////////////////////////////  Chain  /////////////////////////////////////
 
 Chain::Chain(const int32_t limit): limit_(limit)
 {
@@ -102,6 +165,7 @@ void Chain::push(const int32_t height, const uint256 &hash,
 }
 
 
+///////////////////////////////  Log1Producer  /////////////////////////////////
 Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileHandler_(nullptr),
   log1FileIndex_(-1), chain_(1000)
 {
@@ -382,15 +446,15 @@ void Log1Producer::writeLog1(const int32_t type, const string &line) {
 
 void Log1Producer::writeLog1Tx(const CTransaction &tx) {
   const string hex = EncodeHexTx(tx);
-  writeLog1(2, Strings::Format("%s|%s",
-                               tx.GetHash().ToString().c_str(), hex.c_str()));
+  writeLog1(Log1::TYPE_TX,
+            Strings::Format("%s|%s", tx.GetHash().ToString().c_str(), hex.c_str()));
 }
 
 void Log1Producer::writeLog1Block(const int32_t height, const CBlock &block) {
   CDataStream ssBlock(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
   ssBlock << block;
   std::string strHex = HexStr(ssBlock.begin(), ssBlock.end());
-  writeLog1(1, Strings::Format("%d|%s|%s", height,
-                               block.GetHash().ToString().c_str(),
-                               strHex.c_str()));
+  writeLog1(Log1::TYPE_BLOCK,
+            Strings::Format("%d|%s|%s", height,
+                            block.GetHash().ToString().c_str(), strHex.c_str()));
 }

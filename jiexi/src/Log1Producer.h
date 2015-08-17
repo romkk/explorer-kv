@@ -28,6 +28,7 @@
 #include <fstream>
 
 
+//////////////////////////////////  Log1  //////////////////////////////////////
 class Log1 {
   CTransaction tx_;
   CBlock  block_;
@@ -45,14 +46,15 @@ public:
   Log1();
   ~Log1();
 
-  bool parse(const string &line);
+  void parse(const string &line);
   bool isTx();
   bool isBlock();
-  const CBlock &getBlock() const;
-  const CTransaction &getTx() const;
+  const CBlock &getBlock();
+  const CTransaction &getTx();
 };
 
 
+//////////////////////////////////  Chain  /////////////////////////////////////
 class Chain {
   int32_t limit_;
   map<int32_t, uint256> blocks_;
@@ -67,6 +69,7 @@ public:
 };
 
 
+//////////////////////////////  Log1Producer  //////////////////////////////////
 class Log1Producer {
   atomic<bool> running_;
 

@@ -31,7 +31,8 @@
 
 #define BILLION 1000000000  // 10亿, 10^9
 
-std::vector<std::string> split(const std::string &s, char delim);
+std::vector<std::string> split(const std::string &s, const char delim);
+std::vector<std::string> split(const std::string &s, const char delim, const int32_t limit);
 
 int32_t HexToDecLast2Bytes(const string &hex);
 int32_t AddressTableIndex(const string &address);
@@ -43,5 +44,7 @@ int64_t txHash2Id(MySQLConnection &db, const uint256 &txHash);
 void callBlockRelayParseUrl(const string &blockHash);
 
 string EncodeHexTx(const CTransaction& tx);
+bool DecodeHexTx(CTransaction& tx, const std::string& strHexTx);
+bool DecodeHexBlk(CBlock& block, const std::string& strHexBlk);
 
 #endif

@@ -30,15 +30,8 @@ async function unspentFetcher(sentFrom) {
 }
 
 // http://bitcoin.stackexchange.com/questions/1195/how-to-calculate-transaction-size-before-sending
-function estimateFee(txSize, amountAvailable, feePerKB) {
-    var estimatedFee = Math.ceil(txSize / 1000) * feePerKB;
-
-    if (estimatedFee < amountAvailable) {
-        txSize += 20 + 4 + 34 + 4;                // Safe upper bound for change address script size in bytes
-        estimatedFee = Math.ceil(txSize / 1000) * feePerKB;
-    }
-
-    return estimatedFee;
+function estimateFee(txSize, feePerKB) {
+    return Math.ceil((txSize + 20 + 4 + 34 + 4) / 1000) * feePerKB;     // Safe upper bound for change address script size in bytes
 }
 
 module.exports = server => {
@@ -105,7 +98,7 @@ module.exports = server => {
                     + 34 * sentTo.length               // output
                     + 10;                              // fixed bytes
 
-            fee = estimateFee(txSize, aggregated, feePerKB);
+            fee = estimateFee(txSize, feePerKB);
             log(`iter = ${iter++}, fee = ${fee}, totalSentAmount = ${totalSentAmount}, aggregated = ${aggregated}, aggregatedTxs.length = ${aggregatedTxs.length}`);
         } while (fee + totalSentAmount > aggregated);
 
@@ -114,9 +107,24 @@ module.exports = server => {
         // is there any more txs ?
         moreTx = totalUnspentAmount - aggregated > 0;
 
+        // calculate total fee ( aggregatedTxs + more_txs )
+        let totalFee;
+        try {
+            let unspentCount = (await blockData('/unspent', {
+                active: sentFrom.join('|')
+            })).n_tx;
+            console.log(unspentCount);
+            totalFee = estimateFee(148 * unspentCount + 34 * sentTo.length + 10, feePerKB);
+            console.log(148 * unspentCount + 34 * sentTo.length + 10, totalFee);
+        } catch (err) {
+            res.send(new restify.InternalServerError('Internal Error'));
+            return next();
+        }
+
         res.send({
             success: true,
             fee: fee,
+            total_fee: totalFee,
             unspent_txs: aggregatedTxs,
             affordable: affordable,
             more_txs: moreTx

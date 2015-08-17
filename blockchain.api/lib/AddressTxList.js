@@ -157,7 +157,7 @@ class AddressTxList {
         var offset = 0;
         const PAGESIZE = 100;
 
-        var pull = () => {
+        let pull = async () => {
             if (table == null) {
                 return false;
             }
@@ -166,49 +166,36 @@ class AddressTxList {
                        where address_id = ? and tx_height ${this._order === 'desc' ? '<=' : '>='} ?
                        order by idx ${this._order}
                        limit ?, ?`;
-            return mysql.query(sql, [ this._addr.id, height, offset, PAGESIZE])
-                .then(rows => {
-                    cache = rows;
+            cache = await mysql.query(sql, [ this._addr.id, height, offset, PAGESIZE ]);
 
-                    var last = cache[cache.length - 1];
-                    var prop = this._order === 'desc' ? 'prev_ymd' : 'next_ymd';
-                    var nextYmd = last[prop];
-                    var nextTable = Address.getAddressToTxTable(nextYmd);
+            if (!cache.length) return false;
 
-                    if (nextTable == table) {
-                        offset += PAGESIZE;
-                    } else {
-                        offset = 0;
-                    }
+            var prop = this._order === 'desc' ? 'prev_ymd' : 'next_ymd';
+            var nextYmd = _.last(cache)[prop];
+            var nextTable = Address.getAddressToTxTable(nextYmd);
 
-                    table = nextTable;
+            if (nextTable == table) {
+                offset += PAGESIZE;
+            } else {
+                offset = 0;
+            }
 
-                    return true;
-                });
+            table = nextTable;
+
+            return true;
         };
 
-        var gen = function* () {
-            let v = Promise.resolve();
-            var done = false;
-
-            while (!done) {
-
-                if (!cache.length) {
-                    v = v.then(pull)
-                        .then(success => {
-                            if (done = !success) {
-                                throw new Error(`${this._addr.address}: No more rows`);
-                            }
-                        });
+        async function next() {
+            if (!cache.length) {
+                if (!(await pull())) {  // no more txs
+                    return null;
                 }
-                yield v.then(() => {
-                    return cache.shift();
-                });
-
             }
-        }.bind(this);
 
-        return gen();
+            return cache.shift();
+        }
+
+        return next;
     }
 }
 

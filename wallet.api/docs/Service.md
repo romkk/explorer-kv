@@ -236,6 +236,7 @@ POST /tx/compose
 {
     "success": true,
     "fee": 10000,
+    "total_fee": 20000,
     "unspent_txs": [
         {
             "address": "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR",

@@ -63,6 +63,7 @@ public:
   Chain(const int32_t limit);
   ~Chain();
 
+  void pushFirst(const int32_t height, const uint256 &hash);
   void push(const int32_t height, const uint256 &hash, const uint256 &prevHash);
   int32_t getCurHeight() const;
   uint256 getCurHash() const;
@@ -80,10 +81,6 @@ class Log1Producer {
   int log1LockFd_;
   FILE *log1FileHandler_;
 
-  // 最近块高度&哈希值
-  int32_t log1BlkBeginHeight_;
-  uint256 log1BlkBeginHash_;
-
   // 最后生成的文件索引
   int32_t log1FileIndex_;
 
@@ -93,9 +90,6 @@ class Log1Producer {
 
   /****************** log0 ******************/
   string log0Dir_;
-  // 最近块高度&哈希值
-  int32_t log0BlkHeight_;
-  uint256 log0BlkHash_;
 
   // 最后消费的文件以及游标
   int32_t log0FileIndex_;
@@ -108,20 +102,21 @@ class Log1Producer {
   void tryRemoveOldLog0();  // 移除旧的log0日志
   void tryReadLog0(vector<string> &lines);
 
-public:
-  Log1Producer();
-  ~Log1Producer();
-
-  void init();
-
   // 初始化 log1
   void initLog1();
 
   // log1 同步上目前的进度，总是先同步上bitcoind，再同步log0
   void syncBitcoind();  // 同步 bitcoind(RPC)
   void syncLog0();      // 同步 log0
-  void run();
 
+public:
+  Log1Producer();
+  ~Log1Producer();
+
+  void init();
+  void stop();
+
+  void run();
 };
 
 #endif

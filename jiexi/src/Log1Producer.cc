@@ -141,6 +141,14 @@ uint256 Chain::getCurHash() const {
   return it->second;
 }
 
+void Chain::pushFirst(const int32_t height, const uint256 &hash) {
+  if (blocks_.size() != 0) {
+    THROW_EXCEPTION_DBEX("blocks_ is not empty, size: %llu", blocks_.size());
+  }
+  blocks_[height] = hash;
+  LOG_INFO("accept block, height: %d, hash: %s", height, hash.ToString().c_str());
+}
+
 void Chain::push(const int32_t height, const uint256 &hash,
                  const uint256 &prevHash) {
   const int32_t curHeight = getCurHeight();
@@ -154,7 +162,6 @@ void Chain::push(const int32_t height, const uint256 &hash,
                            prevHash.ToString().c_str());
     }
     blocks_[height] = hash;
-
     LOG_INFO("accept block, height: %d, hash: %s", height, hash.ToString().c_str());
   }
   /********************* 后退 *********************/
@@ -171,7 +178,6 @@ void Chain::push(const int32_t height, const uint256 &hash,
     }
     // 移除最后一个块
     blocks_.erase(std::prev(blocks_.end()));
-
     LOG_INFO("rollback block, height: %d, hash: %s", height, hash.ToString().c_str());
   }
   /********************* 异常 *********************/
@@ -197,8 +203,11 @@ void Chain::pop() {
 
 ///////////////////////////////  Log1Producer  /////////////////////////////////
 Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileHandler_(nullptr),
-  log1FileIndex_(-1), chain_(1000)
+  log1FileIndex_(-1), chain_(1000/* max blocks */),
+  log0FileIndex_(-1), log0FileOffset_(-1)
 {
+  log1Dir_ = Config::GConfig.get("log1.dir");
+  log0Dir_ = Config::GConfig.get("log0.dir");
 }
 
 Log1Producer::~Log1Producer() {
@@ -213,6 +222,32 @@ Log1Producer::~Log1Producer() {
     fclose(log1FileHandler_);
     log1FileHandler_ = nullptr;
   }
+}
+
+void Log1Producer::stop() {
+  running_ = false;
+}
+
+//
+// 执行顺序是特定的，如需调整请谨慎考虑。初始化中有故障，均会抛出异常，中断程序
+//
+void Log1Producer::init() {
+  //
+  // 1. 初始化 log1
+  //
+  initLog1();
+
+  //
+  // 2. 与 bitcoind 同步
+  //
+  syncBitcoind();
+
+  //
+  // 3. 与 log0 同步 (同步即初试化)
+  //
+  syncLog0();
+
+  running_ = true;
 }
 
 // 初始化 log1
@@ -249,8 +284,8 @@ void Log1Producer::initLog1() {
   // 找到最后的块高度 & 哈希
   if (log1FileIndex_ == -1) {
     // 没有log1文件，则采用配置文件的参数作为其实块信息
-    log1BlkBeginHeight_ = (int32_t)Config::GConfig.getInt("log1.begin.block.height");
-    log1BlkBeginHash_   = uint256(Config::GConfig.get("log1.begin.block.hash"));
+    chain_.pushFirst((int32_t)Config::GConfig.getInt("log1.begin.block.height"),
+                     uint256(Config::GConfig.get("log1.begin.block.hash")));
   } else {
     // 利用set自动排序，从小向大遍历所有文件，重新载入块链
     // TODO: 性能优化，少读取一些log1日志文件
@@ -266,14 +301,11 @@ void Log1Producer::initLog1() {
                     log1Item.getBlock().hashPrevBlock);
       }
     } /* /for */
-
-    log1BlkBeginHeight_ = chain_.getCurHeight();
-    log1BlkBeginHash_   = chain_.getCurHash();
   }
   assert(chain_.size() >= 1);
 
-  LOG_INFO("log1 begin block: %d, %s", log1BlkBeginHeight_,
-           log1BlkBeginHash_.ToString().c_str());
+  LOG_INFO("log1 begin block: %d, %s", chain_.getCurHeight(),
+           chain_.getCurHash().ToString().c_str());
 }
 
 static string _bitcoind_getBlockHashByHeight(BitcoinRpc &bitcoind, const int32_t height) {
@@ -342,6 +374,7 @@ void Log1Producer::syncBitcoind() {
     JsonNode res = _bitcoindRpcRequest(bitcoind, request);
     bitcoindBestHeight = res["blocks"].int32();
   }
+  assert(bitcoindBestHeight > 0);
 
   while (chain_.getCurHeight() < bitcoindBestHeight) {
     const int32_t height = chain_.getCurHeight() + 1;
@@ -380,8 +413,8 @@ void Log1Producer::syncLog0() {
       log0Item.parse(line);
       if (log0Item.isTx()) { continue; }
       assert(log0Item.isBlock());
-      if (log0Item.blockHeight_         != log1BlkBeginHeight_ ||
-          log0Item.getBlock().GetHash() != log1BlkBeginHash_) {
+      if (log0Item.blockHeight_         != chain_.getCurHeight() ||
+          log0Item.getBlock().GetHash() != chain_.getCurHash()) {
         continue;
       }
       // 找到高度和哈希一致的块

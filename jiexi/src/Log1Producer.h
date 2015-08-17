@@ -66,6 +66,7 @@ public:
   void push(const int32_t height, const uint256 &hash, const uint256 &prevHash);
   int32_t getCurHeight() const;
   uint256 getCurHash() const;
+  size_t size() const;
 };
 
 
@@ -82,9 +83,8 @@ class Log1Producer {
   int32_t log1BlkBeginHeight_;
   uint256 log1BlkBeginHash_;
 
-  // 最后生成的文件以及游标
+  // 最后生成的文件索引
   int32_t log1FileIndex_;
-//  int64_t log1FileOffset_;
 
   // 最近N个块链
   Chain chain_;

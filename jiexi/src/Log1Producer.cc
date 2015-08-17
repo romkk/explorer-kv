@@ -53,11 +53,13 @@ void Log1::parse(const string &line) {
     assert(arr2.size() == 3);
     blockHeight_ = atoi(arr2[0].c_str());
     content_     = arr2[1] + arr2[2];
+    type_        = type;
   }
   /* tx */
   else if (type == TYPE_TX) {
     assert(arr2.size() == 2);
     content_ = arr2[0] + arr2[1];
+    type_    = type;
   } else {
     THROW_EXCEPTION_DBEX("[Log1::parse] invalid log1 type(%d)", type);
   }
@@ -164,6 +166,9 @@ void Chain::push(const int32_t height, const uint256 &hash,
   }
 }
 
+size_t Chain::size() const {
+  return blocks_.size();
+}
 
 ///////////////////////////////  Log1Producer  /////////////////////////////////
 Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileHandler_(nullptr),
@@ -255,7 +260,7 @@ void Log1Producer::syncBitcoind() {
   // 第一步，先尝试找到高度和哈希一致的块，若log1最前面的不符合，则回退直至找到一致的块
   // 第二步，从一致块高度开始，每次加一，向前追，直至与bitcoind高度一致
   //
-
+  
 }
 
 void Log1Producer::syncLog0() {

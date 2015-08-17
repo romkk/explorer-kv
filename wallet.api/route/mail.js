@@ -4,11 +4,6 @@ let fs = require('fs');
 let _ = require('lodash');
 
 module.exports = server => {
-    server.post('/sendmail', async (req, res, next) => {
-        res.send(_.extend(req.params, req.files));
-        next();
-    });
-
     server.post('/mail', async (req, res, next) => {
         req.checkParams('receiver', 'should be a valid email').isEmail();
         req.sanitize('txhash').toString();
@@ -26,15 +21,6 @@ module.exports = server => {
 
         if (!f) {
             res.send(new restify.BadRequestError('BadRequestError'));
-            return next();
-        }
-
-        if (f.type != 'application/zip') {
-            res.send({
-                success: false,
-                code: 'MailInvalidHeader',
-                message: 'the file must be a valid zip file'
-            });
             return next();
         }
 

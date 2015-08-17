@@ -32,6 +32,8 @@ module.exports = async (receiver, filePath, fileName) => {
             e.code = ret.result_code;
             throw e;
         }
+
+        return ret;
     } catch (err) {
         log(`发送邮件失败, to = ${receiver}`);
         console.error(err.stack);

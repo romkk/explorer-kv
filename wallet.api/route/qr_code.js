@@ -66,7 +66,6 @@ module.exports = server => {
                     .container { display: table; height: 100%; max-height: 600px; margin-left: auto; margin-right: auto; }
                     .container-inner { display: table-cell; vertical-align: middle; text-align: center; }
                     .msg { font-size: 14px; font-family: Menlo, Monaco, Consolas, "Andale Mono", "lucida console", "Courier New", monospace; color: #333; }
-                    .desc { font-size: 12px; color: #999; }
                 </style>
             </head>
             <body>
@@ -76,7 +75,6 @@ module.exports = server => {
                             <img src="${imageSrc}" alt="${msg}"/>
                         </div>
                         ${ hideDescription ? '' : `<p class="msg">${msg}</p>` }
-                        <p class="desc">请使用 BM Wallet 扫描</p>
                     </div>
                 </div>
             </body>

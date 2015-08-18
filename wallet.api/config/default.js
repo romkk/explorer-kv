@@ -19,7 +19,7 @@ module.exports = {
         pass: process.env.BITCOIND_PASS
     },
 
-    explorerEndpoint: 'http://tchain.bitmain.com/api/v1/',
+    explorerEndpoint: process.env.EXPLORER_ENDPOINT,
     tokenExpiredOffset: 10 * 86400,     //token 有效期
     oss: {
         bucketOwnerId: '1581108693131087',      // listBucket 获得

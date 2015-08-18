@@ -164,13 +164,6 @@ async function getAmountAndRelatedAddress(addr, hex) {
         amount = outputAddrs.filter(el => el.addr.some(a => addrs.includes(a))).reduce((prev, cur) => prev + cur.value, 0);
     }
 
-    console.log({
-        amount: amount,
-        inputs: _(inputAddrs).pluck('addr').flatten().uniq().value(),
-        outputs: _(outputAddrs).pluck('addr').flatten().uniq().value(),
-        fee: _(inputAddrs).pluck('value').sum() - _(outputAddrs).pluck('value').sum()
-    });
-
     return {
         amount: amount,
         inputs: _(inputAddrs).pluck('addr').flatten().uniq().value(),

@@ -113,9 +113,7 @@ module.exports = server => {
             let unspentCount = (await blockData('/unspent', {
                 active: sentFrom.join('|')
             })).n_tx;
-            console.log(unspentCount);
             totalFee = estimateFee(148 * unspentCount + 34 * sentTo.length + 10, feePerKB);
-            console.log(148 * unspentCount + 34 * sentTo.length + 10, totalFee);
         } catch (err) {
             res.send(new restify.InternalServerError('Internal Error'));
             return next();

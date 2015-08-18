@@ -115,7 +115,6 @@ public:
 
   void init();
   void stop();
-
   void run();
 };
 

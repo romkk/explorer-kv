@@ -23,6 +23,7 @@ namespace fs = boost::filesystem;
 //////////////////////////////  MemTxRepository  ///////////////////////////////
 bool MemTxRepository::addTx(const CTransaction &tx,
                             vector<uint256> &conflictTxs) {
+  assert(tx.IsCoinBase() == false);
   const uint256 txhash = tx.GetHash();
 
   // 返回第一层的冲突交易
@@ -67,11 +68,18 @@ bool MemTxRepository::addTx(const CTransaction &tx,
   return false;
 }
 
-void MemTxRepository::removeTxs(const vector<uint256> &txhashs) {
+void MemTxRepository::removeTxs(const vector<uint256> &txhashs,
+                                const bool ingoreEmpty) {
   for (auto &hash : txhashs) {
-    assert(txs_.find(hash) != txs_.end());
-    CTransaction &tx = txs_[hash];
+    const bool exist = (txs_.find(hash) != txs_.end());
+    if (!exist) {
+      if (!ingoreEmpty) {
+      	THROW_EXCEPTION_DBEX("tx not in memrepo: %s", hash.ToString().c_str());
+      }
+      continue;
+    }
 
+    CTransaction &tx = txs_[hash];
     for (auto &it : tx.vin) {
       TxOutputKey out(it.prevout.hash, it.prevout.n);
       auto it2 = spentOutputs_.find(out);
@@ -88,22 +96,6 @@ size_t MemTxRepository::size() const {
 
 
 ///////////////////////////////  Log2Producer  /////////////////////////////////
-static void _initLog2_removeUnreadyLog2(MySQLConnection &db) {
-  string sql;
-  //
-  // 清理临时的记录（未完整状态的），临时记录都在 txlogs2 最后，且连续的。
-  // sql: 总是清理最后的 N 条记录(如果里面有 `is_ready` = 0的话)
-  //
-  sql = "DELETE FROM `txlogs2` WHERE ";
-  sql += " `id` >= ((SELECT * FROM (SELECT MAX(`id`) FROM `txlogs2`) AS `t1`) - 1000)";
-  sql += " AND `is_ready` = 0 ";
-
-  uint64 delNum = 0;
-  while ((delNum = db.update(sql)) > 0) {
-    LOG_INFO("remove unready log2 records: %llu", delNum);
-  };
-}
-
 static void _initLog2_loadUnconfirmedTxs(MySQLConnection &db,
                                          MemTxRepository &memRepo) {
   string sql = "SELECT `tx_hash` FROM `0_unconfirmed_txs` ORDER BY `position`";
@@ -138,7 +130,10 @@ void Log2Producer::initLog2() {
   //
   // 清理临时的记录（未完整状态的）
   //
-  _initLog2_removeUnreadyLog2(db_);
+  {
+    sql = "DELETE FROM `txlogs2` WHERE `batch_id` = -1";
+    db_.update(sql);
+  }
 
   //
   // 找最后一个块记录，即最后一条 block_id 非零的记录
@@ -293,11 +288,126 @@ void Log2Producer::stop() {
 }
 
 void Log2Producer::handleTx(Log1 &log1Item) {
+  //
+  // 接收新的交易
+  //
+  string sql;
+  const CTransaction &tx = log1Item.getTx();
+  const uint256 hash = tx.GetHash();
 
+  vector<uint256> conflictTxs;
+  const string nowStr = date("%F %T");
+  const bool res = memRepo_.addTx(tx, conflictTxs);
+
+  // 冲突的交易
+  if (res == false) {
+    LOG_WARN("reject tx: %s", hash.ToString().c_str());
+    for (auto &it : conflictTxs) {
+      LOG_WARN("\tconflict tx: %s", it.ToString().c_str());
+    }
+    return;
+  }
+
+  // 无冲突，插入DB
+  sql = Strings::Format("INSERT INTO `txlogs2` (`batch_id`, `type`, `block_height`, "
+                        " `block_id`, `tx_hash`, `created_at`, `updated_at`) "
+                        " VALUES ("
+                        " (SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `txlogs2` as t1), "
+                        " %d, -1, -1, '%s', '%s', '%s');",
+                        LOG2TYPE_TX_ACCEPT,
+                        hash.ToString().c_str(),
+                        nowStr.c_str(), nowStr.c_str());
+  db_.updateOrThrowEx(sql, 1);
+}
+
+void Log2Producer::handleBlockAccept(Log1 &log1Item) {
+  //
+  // 块高度前进
+  //
+  const CBlock &blk = log1Item.getBlock();
+  const uint256 hash = blk.GetHash();
+
+  // 1.0 过一遍内存，通过添加至 memRepo 找到冲突的交易
+  vector<uint256> txHashs;
+  vector<uint256> conflictTxs;
+  for (auto &tx : blk.vtx) {
+    if (tx.IsCoinBase()) { continue; }
+    memRepo_.addTx(tx, conflictTxs);
+    txHashs.push_back(tx.GetHash());
+  }
+
+  // 1.1 移除冲突交易
+  memRepo_.removeTxs(conflictTxs);
+
+  // 1.2 移除块的交易，忽略不存在的交易（有可能因为冲突没有添加至 memRepo）
+  memRepo_.removeTxs(txHashs, true/* ingore not exist tx */);
+
+  // TODO
+  // 2.0 插入 raw_blocks
+  const int64_t blockId = 0; // TODO
+  // 2.1 插入 raw_txs
+
+  // 3.0 批量插入数据
+  vector<string> values;
+  const string nowStr = date("%F %T");
+  const string fields = "`batch_id`, `type`, `block_height`, `block_id`, `tx_hash`, `created_at`, `updated_at`";
+
+  // 冲突的交易，需要做拒绝处理
+  for (auto &it : conflictTxs) {
+    string item = Strings::Format("-1,%d,-1,-1,'%s','%s','%s'",
+                                  LOG2TYPE_TX_REJECT,
+                                  it.ToString().c_str(),
+                                  nowStr.c_str(), nowStr.c_str());
+    values.push_back(item);
+  }
+
+  // 新块的交易，做确认操作
+  for (auto &tx : blk.vtx) {
+    string item = Strings::Format("-1,%d,%d,%lld,'%s','%s','%s'",
+                                  LOG2TYPE_TX_CONFIRM,
+                                  log1Item.blockHeight_, blockId,
+                                  tx.GetHash().ToString().c_str(),
+                                  nowStr.c_str(), nowStr.c_str());
+    values.push_back(item);
+  }
+
+  // 插入本批次数据
+  multiInsert(db_, "txlogs2", fields, values);
+
+  // 提交本批数据
+  commitBatch(values.size());
+}
+
+void Log2Producer::commitBatch(const size_t expectAffectedRows) {
+  const int64_t nextBatchID = 0; // TODO
+  string sql = Strings::Format("UPDATE `txlogs2` SET `batch_id`=%lld WHERE `batch_id`=-1",
+                               nextBatchID);
+  db_.updateOrThrowEx(sql, (int32_t)expectAffectedRows);
+}
+
+void Log2Producer::handleBlockRollback(Log1 &log1Item) {
+  //
+  // 块高度后退
+  //
 }
 
 void Log2Producer::handleBlock(Log1 &log1Item) {
-
+  //
+  // 块高度前进
+  //
+  if (log1Item.blockHeight_ > log2BlockHeight_) {
+    handleBlockAccept(log1Item);
+  }
+  //
+  // 块高度后退
+  //
+  else if (log1Item.blockHeight_ < log2BlockHeight_) {
+    handleBlockRollback(log1Item);
+  }
+  else {
+    THROW_EXCEPTION_DBEX("block are same height, log1: %s",
+                         log1Item.toString().c_str());
+  }
 }
 
 void Log2Producer::run() {
@@ -316,18 +426,16 @@ void Log2Producer::run() {
     for (const auto &line : lines) {
       Log1 log1Item;
       log1Item.parse(line);
-      //
+
       // Tx
-      //
       if (log1Item.isTx()) {
-
+        handleTx(log1Item);
       }
-      //
       // Block
-      //
       else if (log1Item.isBlock()) {
-
-      } else {
+        handleBlock(log1Item);
+      }
+      else {
         THROW_EXCEPTION_DBEX("invalid log1 type, log line: %s", line.c_str());
       }
     } /* /for */

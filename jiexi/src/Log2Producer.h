@@ -29,6 +29,14 @@
 #include <iostream>
 #include <fstream>
 
+//
+// log2中交易的类型
+//
+#define LOG2TYPE_TX_ACCEPT     100  // 接收一个未确认交易
+#define LOG2TYPE_TX_CONFIRM    200  // 将交易进行确认
+#define LOG2TYPE_TX_UNCONFIRM  300  // 将交易解除确认。块回退时，重新变为未确认
+#define LOG2TYPE_TX_REJECT     400  // 拒绝交易。如该交易冲突等
+
 
 ////////////////////////////////  TxOutputKey  /////////////////////////////////
 class TxOutputKey {
@@ -72,7 +80,7 @@ public:
   bool addTx(const CTransaction &tx, vector<uint256> &conflictTxs);
 
   // 从内存交易库中删除一个或多个交易
-  void removeTxs(const vector<uint256> &txhashs);
+  void removeTxs(const vector<uint256> &txhashs, const bool ingoreEmpty=false);
 
   size_t size() const;
 };
@@ -105,7 +113,12 @@ class Log2Producer {
   void tryReadLog1(vector<string> &lines);
 
   void handleTx(Log1 &log1Item);
+
   void handleBlock(Log1 &log1Item);
+  void handleBlockAccept  (Log1 &log1Item);
+  void handleBlockRollback(Log1 &log1Item);
+
+  void commitBatch(const size_t expectAffectedRows);
 
 public:
   Log2Producer();

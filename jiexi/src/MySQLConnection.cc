@@ -215,3 +215,37 @@ string MySQLConnection::getVariable(const char *name) {
   LOG_DEBUG("getVariable %s=%s", row[0], row[1]);
   return string(row[1]);
 }
+
+// 批量插入函数
+bool multiInsert(MySQLConnection &db, const string &table,
+                 const string &fields, const vector<string> &values) {
+  string sqlPrefix = Strings::Format("INSERT INTO `%s`(%s) VALUES ",
+                                     table.c_str(), fields.c_str());
+
+  if (values.size() == 0 || fields.length() == 0 || table.length() == 0) {
+    return false;
+  }
+
+  string sql = sqlPrefix;
+  for (auto &it : values) {
+    sql += Strings::Format("(%s),", it.c_str());
+    // 超过 8MB
+    if (sql.length() > 8*1024*1024) {
+      sql.resize(sql.length() - 1);  // 去掉最后一个逗号
+      if (!db.execute(sql.c_str())) {
+        return false;
+      }
+      sql = sqlPrefix;
+    }
+  }
+
+  // 最后剩余的一批
+  if (sql.length() > sqlPrefix.length()) {
+    sql.resize(sql.length() - 1);  // 去掉最后一个逗号
+    if (!db.execute(sql.c_str())) {
+      return false;
+    }
+  }
+
+  return true;
+}

@@ -202,7 +202,4 @@ public:
 
 };
 
-bool multiInsert(MySQLConnection &db, const string &table,
-                 const string &fields, const vector<string> &values);
-
 #endif

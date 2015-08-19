@@ -41,8 +41,8 @@ module.exports = server => {
     server.get('/qr-code-page', async (req, res, next) => {
         req.checkQuery('msg', 'should be a valid string').isLength(1);
         req.sanitize('msg').toString();
-        req.checkQuery('hide', 'should be a valid boolean').optional().isBoolean();
-        req.sanitize('hide').toBoolean(true);
+        req.checkQuery('desc', 'should be a valid string').optional().isLength(1);
+        req.sanitize('desc').toString();
         var errors = req.validationErrors();
         if (errors) {
             return next(new restify.InvalidArgumentError({
@@ -51,7 +51,7 @@ module.exports = server => {
         }
 
         let msg = req.params.msg.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        let hideDescription = _.get(req, 'params.hide', false);
+        let desc = _.get(req, 'params.desc', false);
         let imageSrc = config.get('qrCodeEndpoint') + '?msg=' + encodeURIComponent(msg) + '&size=5';
         let html = `<!DOCTYPE html>
         <html>
@@ -59,13 +59,13 @@ module.exports = server => {
                 <meta charset="utf-8">
                 <meta http-equiv="X-UA-Compatible" content="IE=edge">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
-                <title>Bitmain QR Code Service</title>
+                <title>Bitmain QR Code</title>
                 <style>
                     html, body { height: 100%; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
                     body { margin: 0; }
                     .container { display: table; height: 100%; max-height: 600px; margin-left: auto; margin-right: auto; }
                     .container-inner { display: table-cell; vertical-align: middle; text-align: center; }
-                    .msg { font-size: 14px; font-family: Menlo, Monaco, Consolas, "Andale Mono", "lucida console", "Courier New", monospace; color: #333; }
+                    .desc { font-size: 14px; color: #333; padding-left: 15px; padding-right: 15px; }
                 </style>
             </head>
             <body>
@@ -74,7 +74,7 @@ module.exports = server => {
                         <div class="img">
                             <img src="${imageSrc}" alt="${msg}"/>
                         </div>
-                        ${ hideDescription ? '' : `<p class="msg">${msg}</p>` }
+                        ${ desc === false ? '' : `<p class="desc">${desc}</p>` }
                     </div>
                 </div>
             </body>

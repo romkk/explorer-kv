@@ -12,8 +12,8 @@ module.exports = async (receiver, filePath, fileName) => {
             method: 'post',
             formData: {
                 target: receiver,
-                subject: '您的钱包备份文件',
-                mail_content: `<p>您好</p><p>您于 ${moment.utc().format('YYYY-MM-DD HH:mm:ss')} 备份了您的 Bitmain Wallet，备份文件见附件。</p>`,
+                subject: 'BTC 钱包备份文本',
+                mail_content: `<p>附件为您的钱包加密备份文本。您可使用附件中的文本通过 BTC 客户端恢复钱包的所有设置和余额。</p>`,
                 app_name: config.get('mailAppname'),
                 attach_file: {
                     value: fs.createReadStream(filePath),

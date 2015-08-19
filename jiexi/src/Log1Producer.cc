@@ -118,6 +118,17 @@ bool Log1::isBlock() {
   return type_ == TYPE_BLOCK ? true : false;
 }
 
+string Log1::toString() {
+  if (type_ == TYPE_TX) {
+    return Strings::Format("(tx: %s)", getTx().GetHash().ToString().c_str());
+  }
+  else if (type_ == TYPE_BLOCK) {
+    return Strings::Format("(block: %d, %s)", blockHeight_,
+                           getBlock().GetHash().ToString().c_str());
+  }
+  return "(null)";
+}
+
 //////////////////////////////////  Chain  /////////////////////////////////////
 
 Chain::Chain(const int32_t limit): limit_(limit)

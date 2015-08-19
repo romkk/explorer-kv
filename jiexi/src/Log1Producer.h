@@ -51,6 +51,7 @@ public:
   bool isBlock();
   const CBlock &getBlock();
   const CTransaction &getTx();
+  string toString();
 };
 
 

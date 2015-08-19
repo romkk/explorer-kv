@@ -75,7 +75,7 @@ public:
 ///////////////////////////////  Log2Producer  /////////////////////////////////
 class Log2Producer {
   MySQLConnection db_;
-
+  MemTxRepository memRepo_;
 
   /* log1 */
   string log1Dir_;

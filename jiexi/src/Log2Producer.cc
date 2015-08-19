@@ -99,6 +99,31 @@ void Log2Producer::removeUnreadyLog2() {
   };
 }
 
+static void _initLog2_loadUnconfirmedTxs(MySQLConnection &db,
+                                         MemTxRepository &memRepo) {
+  string sql = "SELECT `tx_hash` FROM `0_unconfirmed_txs` ORDER BY `position`";
+  MySQLResult res;
+  char **row = nullptr;
+  db.query(sql, res);
+  if (res.numRows() == 0)  {
+    return;
+  }
+
+  while ((row = res.nextRow()) != nullptr) {
+    const uint256 hash(row[0]);
+    const string txHex = getTxHexByHash(db, hash);
+
+    vector<uint256> conflictTxs;
+    CTransaction tx;
+    if (!DecodeHexTx(tx, txHex)) {
+      THROW_EXCEPTION_DBEX("decode tx failure, hex: %s", txHex.c_str());
+    }
+    if (memRepo.addTx(tx, conflictTxs) == false) {
+      THROW_EXCEPTION_DBEX("add tx to mem repo fail, tx: %s", hash.ToString().c_str());
+    }
+  }
+}
+
 void Log2Producer::initLog2() {
   LogScope ls("Log2Producer::initLog2()");
   string sql;
@@ -143,5 +168,6 @@ void Log2Producer::initLog2() {
   //
   // 载入未确认交易
   //
+  _initLog2_loadUnconfirmedTxs(db_, memRepo_);
 
 }

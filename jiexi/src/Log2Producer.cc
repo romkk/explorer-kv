@@ -324,8 +324,12 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
   //
   // 块高度前进
   //
-  const CBlock &blk = log1Item.getBlock();
+  const CBlock &blk  = log1Item.getBlock();
   const uint256 hash = blk.GetHash();
+  const string lsStr = Strings::Format("accept block: %d, %s",
+                                       log1Item.blockHeight_,
+                                       hash.ToString().c_str());
+  LogScope ls(lsStr.c_str());
 
   // 1.0 过一遍内存，通过添加至 memRepo 找到冲突的交易
   vector<uint256> txHashs;
@@ -376,13 +380,20 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
 
   // 提交本批数据
   commitBatch(values.size());
+
+  LOG_INFO("block txs: %llu, conflict txs: %llu", blk.vtx.size(), conflictTxs.size());
 }
 
 void Log2Producer::commitBatch(const size_t expectAffectedRows) {
   const int64_t nextBatchID = 0; // TODO
   string sql = Strings::Format("UPDATE `txlogs2` SET `batch_id`=%lld WHERE `batch_id`=-1",
                                nextBatchID);
+  //
+  // 使用事务提交，保证更新成功的数据就是既定的数量。有差错则异常，DB事务无法提交。
+  //
+  db_.execute("START TRANSACTION");
   db_.updateOrThrowEx(sql, (int32_t)expectAffectedRows);
+  db_.execute("COMMIT");
 }
 
 void Log2Producer::handleBlockRollback(Log1 &log1Item) {

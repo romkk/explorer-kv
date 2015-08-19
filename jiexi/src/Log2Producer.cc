@@ -19,24 +19,7 @@
 #include "Log2Producer.h"
 
 
-//class MemTxRepository {
-//  // 内存中交易，map存储，key为tx哈希，value是tx对象
-//  map<uint256, CTransaction> memTxs_;
-//
-//  // 内存所有交易花掉的交易输出
-//  map<TxOutputKey, uint256> spentOutputs_;
-//
-//public:
-//  MemTxRepository();
-//  ~MemTxRepository();
-//
-//  // 添加一个交易，如果失败了，会将所有冲突的交易链返回
-//  bool addTx(const CTransaction &tx, vector<CTransaction> &conflictTxs);
-//
-//  // 从内存交易库中删除一个或多个交易
-//  bool removeTxs(const vector<CTransaction> &txs);
-//};
-
+//////////////////////////////  MemTxRepository  ///////////////////////////////
 bool MemTxRepository::addTx(const CTransaction &tx,
                             vector<uint256> &conflictTxs) {
   const uint256 txhash = tx.GetHash();
@@ -62,10 +45,11 @@ bool MemTxRepository::addTx(const CTransaction &tx,
       spentOutputs_.insert(make_pair(out, txhash));
     }
     memTxs_[txhash] = tx;
+
     return true;
   }
 
-  // 有冲突，遍历冲突交易，迭代找出冲突交易的后续交易
+  // 有冲突，遍历冲突交易，迭代找出冲突交易的后续交易。深度优先的遍历方式。
   for (size_t i = 0; i < conflictTxs.size(); i++) {
     const uint256 chash = conflictTxs[i];
 
@@ -84,8 +68,16 @@ bool MemTxRepository::addTx(const CTransaction &tx,
 
 void MemTxRepository::removeTxs(const vector<uint256> &txhashs) {
   for (auto &hash : txhashs) {
+    assert(memTxs_.find(hash) != memTxs_.end());
     CTransaction &tx = memTxs_[hash];
-    // TODO
+
+    for (auto &it : tx.vin) {
+      TxOutputKey out(it.prevout.hash, it.prevout.n);
+      auto it2 = spentOutputs_.find(out);
+      assert(it2 != spentOutputs_.end());
+      spentOutputs_.erase(it2);
+    }
+    memTxs_.erase(hash);
   }
 }
 

@@ -80,6 +80,7 @@ public:
 
 ///////////////////////////////  Log2Producer  /////////////////////////////////
 class Log2Producer {
+  atomic<bool> running_;
   MySQLConnection db_;
   MemTxRepository memRepo_;
 
@@ -102,6 +103,9 @@ class Log2Producer {
 
   void tryRemoveOldLog1();  // 移除旧的 log1 日志
   void tryReadLog1(vector<string> &lines);
+
+  void handleTx(Log1 &log1Item);
+  void handleBlock(Log1 &log1Item);
 
 public:
   Log2Producer();

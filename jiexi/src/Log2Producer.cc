@@ -283,3 +283,54 @@ void Log2Producer::tryReadLog1(vector<string> &lines) {
   }
 }
 
+void Log2Producer::init() {
+  initLog2();
+  syncLog1();
+}
+
+void Log2Producer::stop() {
+  running_ = false;
+}
+
+void Log2Producer::handleTx(Log1 &log1Item) {
+
+}
+
+void Log2Producer::handleBlock(Log1 &log1Item) {
+
+}
+
+void Log2Producer::run() {
+  LogScope ls("Log2Producer::run()");
+
+  while (running_) {
+    vector<string> lines;
+    tryReadLog1(lines);
+
+    if (!running_) { break; }
+    if (lines.size() == 0) {
+      sleep(1);
+      continue;
+    }
+
+    for (const auto &line : lines) {
+      Log1 log1Item;
+      log1Item.parse(line);
+      //
+      // Tx
+      //
+      if (log1Item.isTx()) {
+
+      }
+      //
+      // Block
+      //
+      else if (log1Item.isBlock()) {
+
+      } else {
+        THROW_EXCEPTION_DBEX("invalid log1 type, log line: %s", line.c_str());
+      }
+    } /* /for */
+  } /* /while */
+}
+

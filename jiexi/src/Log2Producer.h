@@ -39,6 +39,10 @@ public:
   TxOutputKey(const uint256 &hash, const int32_t position):
     hash_(hash), position_(position) {
   }
+  TxOutputKey(const TxOutputKey &right) {
+    hash_     = right.hash_;
+    position_ = right.position_;
+  }
 
   ~TxOutputKey() {}
 
@@ -55,7 +59,7 @@ public:
 ///////////////////////////////  Log2Producer  /////////////////////////////////
 class MemTxRepository {
   // 内存中交易，map存储，key为tx哈希，value是tx对象
-  map<uint256, CTransaction> memTxs_;
+  map<uint256, CTransaction> txs_;
 
   // 内存所有交易花掉的交易输出
   map<TxOutputKey, uint256> spentOutputs_;
@@ -69,6 +73,8 @@ public:
 
   // 从内存交易库中删除一个或多个交易
   void removeTxs(const vector<uint256> &txhashs);
+
+  size_t size() const;
 };
 
 
@@ -89,7 +95,6 @@ class Log2Producer {
   uint256 log2BlockHash_;
 
   // 初始化 log2
-  void removeUnreadyLog2();
   void initLog2();
 
   // 同步 log1

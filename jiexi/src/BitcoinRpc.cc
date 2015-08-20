@@ -105,7 +105,7 @@ int BitcoinRpc::jsonCall(const string& request, string& response, int64 timeoutM
       LOG_WARN("no response from server");
       return 2;
     }
-    LOG_DEBUG("[BitcoinRpc::jsonCall] response: %s", response.c_str());
+//    LOG_DEBUG("[BitcoinRpc::jsonCall] response: %s", response.c_str());
     return 0;
   }
   catch (std::exception& e)

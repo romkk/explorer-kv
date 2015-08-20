@@ -33,6 +33,8 @@ class Log1 {
   CTransaction tx_;
   CBlock  block_;
 
+  void reset();
+
 public:
   enum {
     TYPE_BLOCK = 1, TYPE_TX = 2

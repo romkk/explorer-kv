@@ -38,9 +38,9 @@ void handler(int sig) {
 }
 
 void usage() {
-  string u = "Usage:\n\n";
-  u += "\n\tlog2producer -c \"log2producer.conf\" -l \"log2producer.log\"\n";
-  fprintf(stderr, u.c_str());
+  string u = "Usage:\n";
+  u += "\tlog2producer -c \"log2producer.conf\" -l \"log2producer.log\"\n";
+  fprintf(stderr, "%s", u.c_str());
 }
 
 int main(int argc, char **argv) {

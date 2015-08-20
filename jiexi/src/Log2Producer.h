@@ -31,11 +31,22 @@
 
 //
 // log2中交易的类型
+// 交易是严格的在这四个状态变迁，允许的变迁过程：
+//   accept -> reject
+//   accept -> confirm -> unconfirm -> reject
 //
-#define LOG2TYPE_TX_ACCEPT     100  // 接收一个未确认交易
-#define LOG2TYPE_TX_CONFIRM    200  // 将交易进行确认
-#define LOG2TYPE_TX_UNCONFIRM  300  // 将交易解除确认。块回退时，重新变为未确认
-#define LOG2TYPE_TX_REJECT     400  // 拒绝交易。如该交易冲突等
+
+// 接收一个未确认交易
+#define LOG2TYPE_TX_ACCEPT     100
+
+// 将交易进行确认, 不包含 accept
+#define LOG2TYPE_TX_CONFIRM    200
+
+// 将交易解除确认。块回退时，重新变为未确认
+#define LOG2TYPE_TX_UNCONFIRM  300
+
+// 拒绝交易。如该交易冲突等。reject的交易必须都是处于未确认态
+#define LOG2TYPE_TX_REJECT     400
 
 
 ////////////////////////////////  TxOutputKey  /////////////////////////////////
@@ -83,6 +94,7 @@ public:
   void removeTxs(const vector<uint256> &txhashs, const bool ingoreEmpty=false);
 
   size_t size() const;
+  bool isExist(const uint256 &txhash) const;
 };
 
 

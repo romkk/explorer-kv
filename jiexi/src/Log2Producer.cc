@@ -26,6 +26,10 @@ bool MemTxRepository::addTx(const CTransaction &tx,
   assert(tx.IsCoinBase() == false);
   const uint256 txhash = tx.GetHash();
 
+  if (isExist(txhash)) {
+    return false;  // alreay exist
+  }
+
   // 返回第一层的冲突交易
   for (auto &it : tx.vin) {
     TxOutputKey out(it.prevout.hash, it.prevout.n);
@@ -39,8 +43,6 @@ bool MemTxRepository::addTx(const CTransaction &tx,
 
   // 没有冲突，加入到内存
   if (conflictTxs.size() == 0) {
-    assert(txs_.find(txhash) == txs_.end());
-
     // 标记内存中已经花费的output
     for (auto &it : tx.vin) {
       TxOutputKey out(it.prevout.hash, it.prevout.n);
@@ -94,6 +96,9 @@ size_t MemTxRepository::size() const {
   return txs_.size();
 }
 
+bool MemTxRepository::isExist(const uint256 &txhash) const {
+  return txs_.find(txhash) != txs_.end();
+}
 
 ///////////////////////////////  Log2Producer  /////////////////////////////////
 static void _initLog2_loadUnconfirmedTxs(MySQLConnection &db,
@@ -294,6 +299,7 @@ void Log2Producer::handleTx(Log1 &log1Item) {
   string sql;
   const CTransaction &tx = log1Item.getTx();
   const uint256 hash = tx.GetHash();
+  LOG_INFO("process tx(+): %s", hash.ToString().c_str());
 
   vector<uint256> conflictTxs;
   const string nowStr = date("%F %T");
@@ -326,24 +332,32 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
   //
   const CBlock &blk  = log1Item.getBlock();
   const uint256 hash = blk.GetHash();
-  const string lsStr = Strings::Format("accept block: %d, %s",
+  const string lsStr = Strings::Format("process block(+): %d, %s",
                                        log1Item.blockHeight_,
                                        hash.ToString().c_str());
   LogScope ls(lsStr.c_str());
 
   // 1.0 过一遍内存，通过添加至 memRepo 找到冲突的交易
   vector<uint256> txHashs;
+  set<uint256> alreadyInMemTxHashs;
   vector<uint256> conflictTxs;
+
   for (auto &tx : blk.vtx) {
-    if (tx.IsCoinBase()) { continue; }
-    memRepo_.addTx(tx, conflictTxs);
-    txHashs.push_back(tx.GetHash());
+    if (tx.IsCoinBase()) { continue; }  // coinbase tx 无需进内存池
+    const uint256 txhash = tx.GetHash();
+    txHashs.push_back(txhash);
+
+    if (memRepo_.isExist(txhash)) {
+      alreadyInMemTxHashs.insert(txhash);
+    } else {
+      memRepo_.addTx(tx, conflictTxs);
+    }
   }
 
   // 1.1 移除冲突交易
   memRepo_.removeTxs(conflictTxs);
 
-  // 1.2 移除块的交易，忽略不存在的交易（有可能因为冲突没有添加至 memRepo）
+  // 1.2 移除块的交易，忽略不存在的交易（有可能因为冲突没有添加至 memRepo 或 coinbase tx）
   memRepo_.removeTxs(txHashs, true/* ingore not exist tx */);
 
   // 2.0 插入 raw_blocks
@@ -370,11 +384,24 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
 
   // 新块的交易，做确认操作
   for (auto &tx : blk.vtx) {
-    string item = Strings::Format("-1,%d,%d,%lld,'%s','%s','%s'",
-                                  LOG2TYPE_TX_CONFIRM,
-                                  log1Item.blockHeight_, blockId,
-                                  tx.GetHash().ToString().c_str(),
-                                  nowStr.c_str(), nowStr.c_str());
+    string item;
+    const uint256 txhash = tx.GetHash();
+
+    // 首次处理的，需要补 accept 操作
+    if (alreadyInMemTxHashs.find(txhash) == alreadyInMemTxHashs.end()) {
+      item = Strings::Format("-1,%d,-1,-1,'%s','%s','%s'",
+                             LOG2TYPE_TX_ACCEPT,
+                             txhash.ToString().c_str(),
+                             nowStr.c_str(), nowStr.c_str());
+      values.push_back(item);
+    }
+
+    // confirm
+    item = Strings::Format("-1,%d,%d,%lld,'%s','%s','%s'",
+                           LOG2TYPE_TX_CONFIRM,
+                           log1Item.blockHeight_, blockId,
+                           txhash.ToString().c_str(),
+                           nowStr.c_str(), nowStr.c_str());
     values.push_back(item);
   }
 
@@ -413,6 +440,57 @@ void Log2Producer::handleBlockRollback(Log1 &log1Item) {
   //
   // 块高度后退
   //
+  const CBlock &blk  = log1Item.getBlock();
+  const uint256 hash = blk.GetHash();
+  const string lsStr = Strings::Format("process block(-): %d, %s",
+                                       log1Item.blockHeight_,
+                                       hash.ToString().c_str());
+  LogScope ls(lsStr.c_str());
+
+  //
+  // 交易重新添加到内存池里
+  //
+  vector<uint256> conflictTxs;
+  for (auto &tx : blk.vtx) {
+    if (tx.IsCoinBase()) { continue; }
+
+    // 应该是没有冲突交易的
+    if (!memRepo_.addTx(tx, conflictTxs)) {
+      LOG_INFO("unconfirm tx: %s", tx.GetHash().ToString().c_str());
+      for (auto &it : conflictTxs) {
+        LOG_WARN("\tconflict tx: %s", it.ToString().c_str());
+      }
+      THROW_EXCEPTION_DBEX("thare are conflict txs, should not happened");
+    }
+  }
+
+  //
+  // 添加反确认
+  //
+  vector<string> values;
+  const string nowStr = date("%F %T");
+  const string fields = "`batch_id`, `type`, `block_height`, `block_id`, `tx_hash`, `created_at`, `updated_at`";
+
+  // get block ID
+  const int64_t blockId = insertRawBlock(db_, blk, log1Item.blockHeight_);
+
+  // 新块的交易，做反确认操作
+  for (auto &tx : blk.vtx) {
+    string item = Strings::Format("-1,%d,%d,%lld,'%s','%s','%s'",
+                                  LOG2TYPE_TX_UNCONFIRM,
+                                  log1Item.blockHeight_, blockId,
+                                  tx.GetHash().ToString().c_str(),
+                                  nowStr.c_str(), nowStr.c_str());
+    values.push_back(item);
+  }
+
+  // 插入本批次数据
+  multiInsert(db_, "txlogs2", fields, values);
+
+  // 提交本批数据
+  commitBatch(values.size());
+
+  LOG_INFO("block txs: %llu, conflict txs: %llu", blk.vtx.size(), conflictTxs.size());
 }
 
 void Log2Producer::handleBlock(Log1 &log1Item) {

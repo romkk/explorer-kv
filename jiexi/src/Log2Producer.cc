@@ -18,16 +18,26 @@
 
 #include "Log2Producer.h"
 
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/file.h>
+
+#include <boost/filesystem.hpp>
+
 namespace fs = boost::filesystem;
 
 //////////////////////////////  MemTxRepository  ///////////////////////////////
+MemTxRepository::MemTxRepository() {}
+MemTxRepository::~MemTxRepository() {}
+
 bool MemTxRepository::addTx(const CTransaction &tx,
                             vector<uint256> &conflictTxs) {
   assert(tx.IsCoinBase() == false);
   const uint256 txhash = tx.GetHash();
 
   if (isExist(txhash)) {
-    return false;  // alreay exist
+    return false;  // already exist
   }
 
   // 返回第一层的冲突交易
@@ -101,6 +111,13 @@ bool MemTxRepository::isExist(const uint256 &txhash) const {
 }
 
 ///////////////////////////////  Log2Producer  /////////////////////////////////
+Log2Producer::Log2Producer(): running_(false), db_(Config::GConfig.get("mysql.uri")) {
+  log1Dir_ = Config::GConfig.get("log1.dir");
+}
+
+Log2Producer::~Log2Producer() {
+}
+
 static void _initLog2_loadUnconfirmedTxs(MySQLConnection &db,
                                          MemTxRepository &memRepo) {
   string sql = "SELECT `tx_hash` FROM `0_unconfirmed_txs` ORDER BY `position`";
@@ -289,6 +306,7 @@ void Log2Producer::init() {
 }
 
 void Log2Producer::stop() {
+  LOG_INFO("stop log2producer...");
   running_ = false;
 }
 
@@ -454,7 +472,7 @@ void Log2Producer::handleBlockRollback(Log1 &log1Item) {
   for (auto &tx : blk.vtx) {
     if (tx.IsCoinBase()) { continue; }
 
-    // 应该是没有冲突交易的
+    // 应该是不存在，且没有冲突交易的
     if (!memRepo_.addTx(tx, conflictTxs)) {
       LOG_INFO("unconfirm tx: %s", tx.GetHash().ToString().c_str());
       for (auto &it : conflictTxs) {

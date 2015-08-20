@@ -25,6 +25,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/file.h>
 
 #include <boost/filesystem.hpp>
 
@@ -181,7 +182,9 @@ void Chain::push(const int32_t height, const uint256 &hash,
       THROW_EXCEPTION_DBEX("blocks should more than 3");
     }
     // 倒数第三个的hash应该是目前后退的prev hash
-    auto it = blocks_.rbegin() + 2;
+    auto it = blocks_.rbegin();
+    ++it;
+    ++it;
     if (prevHash != it->second) {
       THROW_EXCEPTION_DBEX("prev hash not match -3 block hash, -3: %s, prev: %s",
                            it->second.ToString().c_str(),
@@ -236,6 +239,7 @@ Log1Producer::~Log1Producer() {
 }
 
 void Log1Producer::stop() {
+  LOG_INFO("stop log1producer...");
   running_ = false;
 }
 
@@ -571,11 +575,15 @@ void Log1Producer::writeLog1(const int32_t type, const string &line) {
   //
   // 切换 log1 日志：超过最大文件长度则关闭文件，下次写入时会自动打开新的文件
   //
-  const int64_t log1FileMaxSize = Config::GConfig.getInt("log1.file.max.size",
-                                                         50 * 1024 * 1024);
-  fpos_t position = -1;
-  if (fgetpos(log1FileHandler_, &position) == -1) {
-    THROW_EXCEPTION_DBEX("fgetpos failure: %s", file.c_str());
+  int64_t log1FileMaxSize = Config::GConfig.getInt("log1.file.max.size",
+                                                   50 * 1024 * 1024);
+  if (log1FileMaxSize > std::numeric_limits<int32_t>::max()) {
+    log1FileMaxSize = std::numeric_limits<int32_t>::max();
+    LOG_WARN("log1.file.max.size is too large, reset to: %lld", log1FileMaxSize);
+  }
+  long position = ftell(log1FileHandler_);
+  if (position == -1L) {
+    THROW_EXCEPTION_DBEX("ftell failure: %s", file.c_str());
   }
   if (position > log1FileMaxSize) {
     fsync(fileno(log1FileHandler_));

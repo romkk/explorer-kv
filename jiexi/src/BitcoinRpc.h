@@ -21,7 +21,6 @@
 
 #include "Common.h"
 #include "NetIO.h"
-#include "zmq.hpp"
 #include "utilities_js.hpp"
 
 // thread safe

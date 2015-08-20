@@ -388,9 +388,19 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
 }
 
 void Log2Producer::commitBatch(const size_t expectAffectedRows) {
-  const int64_t nextBatchID = 0; // TODO
-  string sql = Strings::Format("UPDATE `txlogs2` SET `batch_id`=%lld WHERE `batch_id`=-1",
-                               nextBatchID);
+  string sql;
+  MySQLResult res;
+  char **row;
+
+  // fetch next batch_id
+  sql = "SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `txlogs2`";
+  db_.query(sql, res);
+  row = res.nextRow();
+  const int64_t nextBatchID = atoi64(row[0]);
+
+  // update batch_id
+  sql = Strings::Format("UPDATE `txlogs2` SET `batch_id`=%lld WHERE `batch_id`=-1",
+                        nextBatchID);
   //
   // 使用事务提交，保证更新成功的数据就是既定的数量。有差错则异常，DB事务无法提交。
   //

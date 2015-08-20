@@ -346,10 +346,13 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
   // 1.2 移除块的交易，忽略不存在的交易（有可能因为冲突没有添加至 memRepo）
   memRepo_.removeTxs(txHashs, true/* ingore not exist tx */);
 
-  // TODO
   // 2.0 插入 raw_blocks
-  const int64_t blockId = 0; // TODO
+  const int64_t blockId = insertRawBlock(db_, blk, log1Item.blockHeight_);
+
   // 2.1 插入 raw_txs
+  for (auto &tx : blk.vtx) {
+    insertRawTx(db_, tx);
+  }
 
   // 3.0 批量插入数据
   vector<string> values;

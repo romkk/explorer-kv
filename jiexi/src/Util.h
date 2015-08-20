@@ -27,6 +27,7 @@
 #include "MySQLConnection.h"
 
 #include "bitcoin/base58.h"
+#include "bitcoin/core.h"
 #include "bitcoin/util.h"
 
 #define BILLION 1000000000  // 10亿, 10^9
@@ -42,9 +43,14 @@ void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
 int64_t txHash2Id(MySQLConnection &db, const uint256 &txHash);
 string getTxHexByHash(MySQLConnection &db, const uint256 &txHash);
 
+int64_t insertRawBlock(MySQLConnection &db, const CBlock &blk, const int32_t height);
+int64_t insertRawTx(MySQLConnection &db, const CTransaction &tx);
+
 void callBlockRelayParseUrl(const string &blockHash);
 
-string EncodeHexTx(const CTransaction& tx);
+string EncodeHexTx(const CTransaction &tx);
+string EncodeHexBlock(const CBlock &block);
+
 bool DecodeHexTx(CTransaction& tx, const std::string& strHexTx);
 bool DecodeHexBlk(CBlock& block, const std::string& strHexBlk);
 

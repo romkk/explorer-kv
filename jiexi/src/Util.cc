@@ -173,6 +173,70 @@ string getTxHexByHash(MySQLConnection &db, const uint256 &txHash) {
   return string(row[0]);
 }
 
+int64_t insertRawBlock(MySQLConnection &db, const CBlock &blk, const int32_t height) {
+  string sql;
+  MySQLResult res;
+  const uint256 blockHash = blk.GetHash();
+
+  // check is exist
+  sql = Strings::Format("SELECT `id`,`block_hash` FROM `0_raw_blocks` "
+                        " WHERE `block_hash` = '%s' ",
+                        blockHash.ToString().c_str());
+  db.query(sql, res);
+  if (res.numRows() == 1) {
+    char **row = res.nextRow();
+    assert(atoi(row[1]) == height);
+    return atoi64(row[0]);
+  }
+
+  // update chain_id
+  sql = Strings::Format("UPDATE `0_raw_blocks` SET `chain_id` = `chain_id` + 1 "
+                        " WHERE `block_height` = %lld ",
+                        height);
+  db.execute(sql.c_str());
+
+  // insert raw
+  const string blockHex = EncodeHexBlock(blk);
+  sql = Strings::Format("INSERT INTO `0_raw_blocks` (`block_hash`, `block_height`,"
+                        " `chain_id`, `hex`, `created_at`)"
+                        " VALUES ('%s', %d, '0', '%s', '%s')",
+                        blockHash.ToString().c_str(),
+                        height, blockHex.c_str(), date("%F %T").c_str());
+  db.updateOrThrowEx(sql, 1);
+
+  return (int64_t)db.getInsertId();
+}
+
+int64_t insertRawTx(MySQLConnection &db, const CTransaction &tx) {
+  string sql;
+  MySQLResult res;
+  const uint256 txHash = tx.GetHash();
+  const string  txHashStr = txHash.ToString();
+
+  // check is exist
+  sql = Strings::Format("SELECT `id` FROM `raw_txs_%04d` WHERE `tx_hash`='%s'",
+                        HexToDecLast2Bytes(txHashStr) % 64, txHashStr.c_str());
+  db.query(sql, res);
+  if (res.numRows() == 1) {
+    char **row = res.nextRow();
+    return atoi64(row[0]);
+  }
+
+  // insert raw
+  const string txHex = EncodeHexTx(tx);
+  const string tableName = Strings::Format("raw_txs_%04d", HexToDecLast2Bytes(txHashStr) % 64);
+  sql = Strings::Format("INSERT INTO `%s` (`id`, `tx_hash`, `hex`, `created_at`) "
+                        " VALUES ( "
+                        " (SELECT IFNULL(MAX(`id`), 0) + 1 FROM `%s` as t1), "
+                        ", '%s', '%s', '%s');",
+                        tableName.c_str(), tableName.c_str(),
+                        txHashStr.c_str(), txHex.c_str(), date("%F %T").c_str());
+  db.updateOrThrowEx(sql, 1);
+
+  return (int64_t)db.getInsertId();
+}
+
+
 // 回调块解析URL
 void callBlockRelayParseUrl(const string &blockHash) {
   string url = Config::GConfig.get("block.relay.parse.url", "");
@@ -188,6 +252,12 @@ string EncodeHexTx(const CTransaction& tx) {
   CDataStream ssTx(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
   ssTx << tx;
   return HexStr(ssTx.begin(), ssTx.end());
+}
+
+string EncodeHexBlock(const CBlock &block) {
+  CDataStream ssBlock(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+  ssBlock << block;
+  return HexStr(ssBlock.begin(), ssBlock.end());
 }
 
 bool DecodeHexTx(CTransaction& tx, const std::string& strHexTx)

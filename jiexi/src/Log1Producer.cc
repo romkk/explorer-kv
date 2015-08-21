@@ -323,6 +323,10 @@ void Log1Producer::initLog1() {
            chain_.getCurHash().ToString().c_str());
 }
 
+//
+// _bitcoind_xxxxx() 系列函数内部有重复代码，因为单独移出来后有问题，疑似 JsonNode 的Bug
+// 所以，每个函数都重复了请求、解析代码
+//
 static string _bitcoind_getBlockHashByHeight(BitcoinRpc &bitcoind, const int32_t height) {
   const string request = Strings::Format("{\"id\":1,\"method\":\"getblockhash\",\"params\":[%d]}",
                                          height);

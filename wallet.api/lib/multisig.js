@@ -104,7 +104,8 @@ class MultiSig {
         try {
             txHash = await bitcoind('sendrawtransaction', rawhex);
         } catch (err) {
-            if (err.response.body.error.code == -25 || err.response.body.error.code == -22) {
+            let code = err.response.body.error.code;
+            if (code == -25 || code == -22 || code == -26) {
                 return false;
             } else {
                 throw err;

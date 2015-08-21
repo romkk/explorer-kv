@@ -240,6 +240,8 @@ void Log1Producer::stop() {
 void Log1Producer::init() {
   running_ = true;
 
+  // TODO: 检测各个目录 log1/log0 是否正常，检测bitcoind是否正常
+
   //
   // 1. 初始化 log1
   //
@@ -538,7 +540,14 @@ void Log1Producer::tryReadLog0(vector<string> &lines) {
   if (!log0Ifstream.is_open()) {
     THROW_EXCEPTION_DBEX("open file failure: %s", currFile.c_str());
   }
-  log0Ifstream.seekg(log0FileOffset_);
+  // check file size
+  log0Ifstream.seekg(0, log0Ifstream.end);
+  long length = log0Ifstream.tellg();
+  if (length < log0FileOffset_) {
+    THROW_EXCEPTION_DBEX("file change been changed: %s", currFile.c_str());
+  }
+  // seek to end from begin
+  log0Ifstream.seekg(log0FileOffset_, log0Ifstream.beg);
   string line;
   while (getline(log0Ifstream, line)) {  // getline()读不到内容，则会关闭 ifstream
     lines.push_back(line);

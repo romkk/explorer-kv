@@ -32,23 +32,6 @@
 namespace fs = boost::filesystem;
 
 
-static JsonNode _bitcoindRpcRequest(BitcoinRpc &bitcoind, const string &request) {
-  string response;
-  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
-  if (ret != 0) {
-    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
-  }
-  JsonNode r;
-  JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
-  if (r["error"].type() != Utilities::JS::type::Undefined &&
-      r["error"].type() == Utilities::JS::type::Obj) {
-    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, code: %d, error: %s",
-                         r["error"]["code"].int32(),
-                         r["error"]["message"].str().c_str());
-  }
-  return r["result"];
-}
-
 ///////////////////////////////////  Log1  /////////////////////////////////////
 Log1::Log1() {
   reset();
@@ -66,6 +49,7 @@ void Log1::reset() {
 
 // 解析当行 log1 类型的日志，解析失败则抛出异常
 void Log1::parse(const string &line) {
+  reset();
 
   // 按照 ',' 切分，最多切三份
   const vector<string> arr1 = split(line, ',', 3);
@@ -183,7 +167,6 @@ void Chain::push(const int32_t height, const uint256 &hash,
                            prevHash.ToString().c_str());
     }
     blocks_[height] = hash;
-    LOG_INFO("chain push block, height: %d, hash: %s", height, hash.ToString().c_str());
   }
   /********************* 后退 *********************/
   else if (height + 1 == curHeight) {
@@ -201,7 +184,6 @@ void Chain::push(const int32_t height, const uint256 &hash,
     }
     // 移除最后一个块
     blocks_.erase(std::prev(blocks_.end()));
-    LOG_INFO("chain pop block, height: %d, hash: %s", height, hash.ToString().c_str());
   }
   /********************* 异常 *********************/
   else {
@@ -256,6 +238,8 @@ void Log1Producer::stop() {
 // 执行顺序是特定的，如需调整请谨慎考虑。初始化中有故障，均会抛出异常，中断程序
 //
 void Log1Producer::init() {
+  running_ = true;
+
   //
   // 1. 初始化 log1
   //
@@ -270,8 +254,6 @@ void Log1Producer::init() {
   // 3. 与 log0 同步 (同步即初试化)
   //
   syncLog0();
-
-  running_ = true;
 }
 
 // 初始化 log1
@@ -304,7 +286,7 @@ void Log1Producer::initLog1() {
     }
     log1FileIndex_ = log1FileIndex;
   }
-  LOG_DEBUG("begin log1FileIndex_: %d", log1FileIndex_);
+  LOG_INFO("begin log1FileIndex_: %d", log1FileIndex_);
 
   // 找到最后的块高度 & 哈希
   if (log1FileIndex_ == -1) {
@@ -323,13 +305,9 @@ void Log1Producer::initLog1() {
       string line;
       Log1 log1Item;
       while (getline(fin, line)) {
-        cout << __LINE__ << endl;
         log1Item.parse(line);
         if (log1Item.isTx()) { continue; }
         assert(log1Item.isBlock());
-        LOG_DEBUG("%d, %s, %s", log1Item.blockHeight_,
-                  log1Item.getBlock().GetHash().ToString().c_str(),
-                  log1Item.getBlock().hashPrevBlock.ToString().c_str());
         if (chain_.size() == 0) {
           chain_.pushFirst(log1Item.blockHeight_, log1Item.getBlock().GetHash());
         } else {
@@ -348,27 +326,59 @@ void Log1Producer::initLog1() {
 static string _bitcoind_getBlockHashByHeight(BitcoinRpc &bitcoind, const int32_t height) {
   const string request = Strings::Format("{\"id\":1,\"method\":\"getblockhash\",\"params\":[%d]}",
                                          height);
-  JsonNode res = _bitcoindRpcRequest(bitcoind, request);
-  return res.str();
+  string response;
+  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
+  if (ret != 0) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
+  }
+  JsonNode r;
+  JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
+  if (r["error"].type() != Utilities::JS::type::Undefined &&
+      r["error"].type() == Utilities::JS::type::Obj) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, code: %d, error: %s",
+                         r["error"]["code"].int32(),
+                         r["error"]["message"].str().c_str());
+  }
+  return r["result"].str();
 }
 
 static string _bitcoind_getInfo(BitcoinRpc &bitcoind) {
   const string request = Strings::Format("{\"id\":1,\"method\":\"getinfo\",\"params\":[]}");
-  JsonNode res = _bitcoindRpcRequest(bitcoind, request);
-  return res.str();
+  string response;
+  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
+  if (ret != 0) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
+  }
+  JsonNode r;
+  JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
+  if (r["error"].type() != Utilities::JS::type::Undefined &&
+      r["error"].type() == Utilities::JS::type::Obj) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, code: %d, error: %s",
+                         r["error"]["code"].int32(),
+                         r["error"]["message"].str().c_str());
+  }
+  return r["result"].str();
 }
 
 static void _bitcoind_getBlockByHash(BitcoinRpc &bitcoind, const string &hashStr, CBlock &block) {
   const string request = Strings::Format("{\"id\":1,\"method\":\"getblock\",\"params\":[\"%s\", false]}",
                                          hashStr.c_str());
-  JsonNode res = _bitcoindRpcRequest(bitcoind, request);
-  const string hexStr = res.str();
-  if (!DecodeHexBlk(block, hexStr)) {
-    THROW_EXCEPTION_DBEX("decode block failure, hex: %s", hexStr.c_str());
+  string response;
+  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
+  if (ret != 0) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
+  }
+  vector<string> strArr = split(response, '"', 5);
+  assert(strArr.size() == 5);
+  if (!DecodeHexBlk(block, strArr[3])) {
+    LOG_ERROR("rpc request : %s", request.c_str());
+    LOG_ERROR("rpc response: %s", response.c_str());
+    THROW_EXCEPTION_DBEX("decode block failure, hex: %s", strArr[3].c_str());
   }
 }
 
 void Log1Producer::syncBitcoind() {
+  if (!running_) { return; }
   LogScope ls("Log1Producer::syncBitcoind()");
   //
   // 假设bitcoind在我们同步的过程中，是不会发生剧烈分叉的（剧烈分叉是指在向前追的那条链发生
@@ -384,14 +394,14 @@ void Log1Producer::syncBitcoind() {
   // 第一步，先尝试找到高度和哈希一致的块，若log1最前面的不符合，则回退直至找到一致的块
   //
   assert(chain_.size() >= 1);
-  while (1) {
+  while (running_) {
     if (chain_.getCurHeight() == -1) {
       break;
     }
     // 检测最后一个块(即chain_的当前块)是否一致
     const string hashStr = _bitcoind_getBlockHashByHeight(bitcoind, chain_.getCurHeight());
     if (chain_.getCurHash().ToString() == hashStr) {
-      LOG_INFO("found the same block, height: %d, hash: %s",
+      LOG_INFO("found begin block, height: %d, hash: %s",
                chain_.getCurHeight(), chain_.getCurHash().ToString().c_str());
       break;
     }
@@ -411,13 +421,25 @@ void Log1Producer::syncBitcoind() {
   int32_t bitcoindBestHeight = -1;
   {
     const string request = Strings::Format("{\"id\":1,\"method\":\"getinfo\",\"params\":[]}");
-    JsonNode res = _bitcoindRpcRequest(bitcoind, request);
-    bitcoindBestHeight = res["blocks"].int32();
+    string response;
+    const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
+    if (ret != 0) {
+      THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
+    }
+    JsonNode r;
+    JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
+    if (r["error"].type() != Utilities::JS::type::Undefined &&
+        r["error"].type() == Utilities::JS::type::Obj) {
+      THROW_EXCEPTION_DBEX("bitcoind rpc call fail, code: %d, error: %s",
+                           r["error"]["code"].int32(),
+                           r["error"]["message"].str().c_str());
+    }
+    bitcoindBestHeight = r["result"]["blocks"].int32();
   }
   assert(bitcoindBestHeight > 0);
-  LOG_INFO("bitcoind current best height: %d", bitcoindBestHeight);
+  LOG_INFO("bitcoind best height: %d", bitcoindBestHeight);
 
-  while (chain_.getCurHeight() < bitcoindBestHeight) {
+  while (chain_.getCurHeight() < bitcoindBestHeight && running_) {
     const int32_t height = chain_.getCurHeight() + 1;
     const string hashStr = _bitcoind_getBlockHashByHeight(bitcoind, chain_.getCurHeight() + 1);
     LOG_INFO("sync bitcoind block, height: %d, hash: %s", height, hashStr.c_str());
@@ -432,6 +454,7 @@ void Log1Producer::syncBitcoind() {
 }
 
 void Log1Producer::syncLog0() {
+  if (!running_) { return; }
   LogScope ls("Log1Producer::syncLog0()");
   bool syncSuccess = false;
 
@@ -570,6 +593,8 @@ void Log1Producer::run() {
         chain_.push(log0Item.blockHeight_,
                     log0Item.getBlock().GetHash(), log0Item.getBlock().hashPrevBlock);
         writeLog1Block(log0Item.blockHeight_, log0Item.getBlock());
+        LOG_INFO("chain push block, height: %d, hash: %s", log0Item.blockHeight_,
+                 log0Item.getBlock().GetHash().ToString().c_str());
       } else {
         THROW_EXCEPTION_DBEX("invalid log0 type, log line: %s", line.c_str());
       }
@@ -604,8 +629,8 @@ void Log1Producer::writeLog1(const int32_t type, const string &line) {
   //
   // 切换 log1 日志：超过最大文件长度则关闭文件，下次写入时会自动打开新的文件
   //
-  int64_t log1FileMaxSize = Config::GConfig.getInt("log1.file.max.size",
-                                                   50 * 1024 * 1024);
+  int64_t log1FileMaxSize = Config::GConfig.getInt("log1.file.max.size.mb",
+                                                   50) * 1024 * 1024;
   if (log1FileMaxSize > std::numeric_limits<int32_t>::max()) {
     log1FileMaxSize = std::numeric_limits<int32_t>::max();
     LOG_WARN("log1.file.max.size is too large, reset to: %lld", log1FileMaxSize);

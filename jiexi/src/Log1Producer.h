@@ -99,6 +99,7 @@ class Log1Producer {
   // 最后消费的文件以及游标
   int32_t log0FileIndex_;
   int64_t log0FileOffset_;
+  time_t  log0BeginFileLastModifyTime_;
 
   void writeLog1(const int32_t type, const string &line);
   void writeLog1Tx   (const CTransaction &tx);

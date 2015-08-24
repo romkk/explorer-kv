@@ -209,7 +209,7 @@ void Chain::pop() {
 ///////////////////////////////  Log1Producer  /////////////////////////////////
 Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileHandler_(nullptr),
   log1FileIndex_(-1), chain_(1000/* max blocks */),
-  log0FileIndex_(-1), log0FileOffset_(-1)
+  log0FileIndex_(-1), log0FileOffset_(-1), log0BeginFileLastModifyTime_(0)
 {
   log1Dir_ = Config::GConfig.get("log1.dir");
   log0Dir_ = Config::GConfig.get("log0.dir");
@@ -464,6 +464,15 @@ void Log1Producer::syncLog0() {
   LogScope ls("Log1Producer::syncLog0()");
   bool syncSuccess = false;
 
+  try {
+    fs::path beginFile(Strings::Format("%s/BEGIN", log0Dir_.c_str()));
+    log0BeginFileLastModifyTime_ = fs::last_write_time(beginFile);
+  }
+  catch (boost::filesystem::filesystem_error &e)
+  {
+    THROW_EXCEPTION_DBEX("can't get log0 begin file last modify time: %s", e.what());
+  }
+
   //
   // 遍历 log0 所有文件，直至找到一样的块，若找到则同步完成
   //
@@ -534,6 +543,22 @@ void Log1Producer::tryReadLog0(vector<string> &lines) {
   const bool isNextExist = fs::exists(fs::path(nextFile));
 
   //
+  // 判读 log0 是否改变. 改变后则抛出异常，log1producer 退出，重新初始化并运行
+  //
+  try {
+    fs::path beginFile(Strings::Format("%s/BEGIN", log0Dir_.c_str()));
+    if (log0BeginFileLastModifyTime_ != fs::last_write_time(beginFile)) {
+      THROW_EXCEPTION_DBEX("log0 begin file has been changed, curr: %u, old: %u",
+                           (uint32_t)fs::last_write_time(beginFile),
+                           (uint32_t)log0BeginFileLastModifyTime_);
+    }
+  }
+  catch (boost::filesystem::filesystem_error &e)
+  {
+    THROW_EXCEPTION_DBEX("can't get log0 begin file last modify time: %s", e.what());
+  }
+
+  //
   // 打开文件并尝试读取新行
   //
   ifstream log0Ifstream(currFile);
@@ -544,7 +569,7 @@ void Log1Producer::tryReadLog0(vector<string> &lines) {
   log0Ifstream.seekg(0, log0Ifstream.end);
   long length = log0Ifstream.tellg();
   if (length < log0FileOffset_) {
-    THROW_EXCEPTION_DBEX("file change been changed: %s", currFile.c_str());
+    THROW_EXCEPTION_DBEX("file has been changed: %s", currFile.c_str());
   }
   // seek to end from begin
   log0Ifstream.seekg(log0FileOffset_, log0Ifstream.beg);

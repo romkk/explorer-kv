@@ -240,7 +240,21 @@ void Log1Producer::stop() {
 void Log1Producer::init() {
   running_ = true;
 
-  // TODO: 检测各个目录 log1/log0 是否正常，检测bitcoind是否正常
+  // 检测bitcoind是否正常
+  BitcoinRpc bitcoind(Config::GConfig.get("bitcoind.uri"));
+  if (!bitcoind.CheckBitcoind()) {
+    THROW_EXCEPTION_DBEX("bitcoind is not working or error");
+  }
+
+  // 检测 log0 是否正常
+  {
+    fs::path filesPath(Strings::Format("%s/files", log0Dir_.c_str()));
+    tryCreateDirectory(filesPath);
+    fs::directory_iterator end, it(filesPath);
+    if (it == end) {
+      THROW_EXCEPTION_DBEX("log0dir files are empty: %s/files", log0Dir_.c_str());
+    }
+  }
 
   //
   // 1. 初始化 log1

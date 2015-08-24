@@ -208,7 +208,7 @@ void Chain::pop() {
 
 ///////////////////////////////  Log1Producer  /////////////////////////////////
 Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileHandler_(nullptr),
-  log1FileIndex_(-1), chain_(1000/* max blocks */),
+  log1FileIndex_(-1), chain_(2016/* max blocks */),
   log0FileIndex_(-1), log0FileOffset_(-1), log0BeginFileLastModifyTime_(0)
 {
   log1Dir_ = Config::GConfig.get("log1.dir");
@@ -405,8 +405,8 @@ void Log1Producer::syncBitcoind() {
       break;
     }
     // 检测最后一个块(即chain_的当前块)是否一致
-    const string hashStr = _bitcoind_getBlockHashByHeight(bitcoind, chain_.getCurHeight());
-    if (chain_.getCurHash().ToString() == hashStr) {
+    const string bitcoindHashStr = _bitcoind_getBlockHashByHeight(bitcoind, chain_.getCurHeight());
+    if (chain_.getCurHash().ToString() == bitcoindHashStr) {
       LOG_INFO("found begin block, height: %d, hash: %s",
                chain_.getCurHeight(), chain_.getCurHash().ToString().c_str());
       break;
@@ -416,6 +416,14 @@ void Log1Producer::syncBitcoind() {
     chain_.pop();
     LOG_INFO("chain pop block, height: %d, hash: %s",
              chain_.getCurHeight(), chain_.getCurHash().ToString().c_str());
+
+    // 写log1
+    CBlock block;
+    _bitcoind_getBlockByHash(bitcoind, chain_.getCurHash().ToString(), block);
+    writeLog1Block(chain_.getCurHeight(), block);
+    LOG_INFO("sync bitcoind block(-), height: %d, hash: %s",
+             chain_.getCurHeight(), chain_.getCurHash().ToString().c_str());
+
     if (chain_.size() == 0) {
       THROW_EXCEPTION_DBEX("can't find matched block, bitcoind has a big fork");
     }
@@ -448,7 +456,7 @@ void Log1Producer::syncBitcoind() {
   while (chain_.getCurHeight() < bitcoindBestHeight && running_) {
     const int32_t height = chain_.getCurHeight() + 1;
     const string hashStr = _bitcoind_getBlockHashByHeight(bitcoind, chain_.getCurHeight() + 1);
-    LOG_INFO("sync bitcoind block, height: %d, hash: %s", height, hashStr.c_str());
+    LOG_INFO("sync bitcoind block(+), height: %d, hash: %s", height, hashStr.c_str());
 
     CBlock block;
     _bitcoind_getBlockByHash(bitcoind, hashStr, block);

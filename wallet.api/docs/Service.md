@@ -884,7 +884,7 @@ POST /mail
 **Request**
 
 ```
-POST /notification-message
+POST /mark-notification-message
 
 {
     "message_ids": [

@@ -163,9 +163,10 @@ module.exports = (server) => {
     });
 
     server.get('/multiaddr', async (req, res, next) => {
-        let err = validators.isValidAddressList(req.query.active);
+        let err = validators.isValidAddressList(req.params.active);
         if (err != null) {
-            return next(err);
+            res.send(err);
+            return next();
         }
 
         let parts = req.params.active.trim().split('|');

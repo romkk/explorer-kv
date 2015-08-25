@@ -19,6 +19,9 @@ module.exports = (server) => {
     });
 
     server.get('/unspent', async (req, res, next) => {
+        req.checkQuery('active', 'should be a \'|\' separated address list').matches(/^([a-zA-Z0-9]{33,35})(\|[a-zA-Z0-9]{33,35})*$/);
+        req.sanitize('active').toString();
+
         req.checkQuery('offset', 'should be a valid number').optional().isNumeric();
         req.sanitize('offset').toInt();
 

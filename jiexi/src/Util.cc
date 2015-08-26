@@ -228,7 +228,7 @@ int64_t insertRawTx(MySQLConnection &db, const CTransaction &tx) {
   sql = Strings::Format("INSERT INTO `%s` (`id`, `tx_hash`, `hex`, `created_at`) "
                         " VALUES ( "
                         " (SELECT IFNULL(MAX(`id`), 0) + 1 FROM `%s` as t1), "
-                        ", '%s', '%s', '%s');",
+                        " '%s', '%s', '%s');",
                         tableName.c_str(), tableName.c_str(),
                         txHashStr.c_str(), txHex.c_str(), date("%F %T").c_str());
   db.updateOrThrowEx(sql, 1);

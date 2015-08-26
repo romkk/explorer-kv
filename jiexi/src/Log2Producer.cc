@@ -37,6 +37,7 @@ bool MemTxRepository::addTx(const CTransaction &tx,
   const uint256 txhash = tx.GetHash();
 
   if (isExist(txhash)) {
+    LOG_WARN("already in MemRepo: %s", txhash.ToString().c_str());
     return false;  // already exist
   }
 
@@ -140,7 +141,10 @@ static void _initLog2_loadUnconfirmedTxs(MySQLConnection &db,
     if (memRepo.addTx(tx, conflictTxs) == false) {
       THROW_EXCEPTION_DBEX("add tx to mem repo fail, tx: %s", hash.ToString().c_str());
     }
+    LOG_DEBUG("load unconfirmed tx: %s", hash.ToString().c_str());
   }
+
+  LOG_INFO("load unconfirmed txs: %llu", memRepo.size());
 }
 
 void Log2Producer::initLog2() {

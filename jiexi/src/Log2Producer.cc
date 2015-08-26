@@ -184,6 +184,10 @@ void Log2Producer::initLog2() {
     log2BlockHash_   = uint256(Config::GConfig.get("log2.begin.block.hash"));
     log2BlockHeight_ = (int32_t)Config::GConfig.getInt("log2.begin.block.height");
   }
+  if (log2BlockHash_ == uint256() || log2BlockHeight_ < 0) {
+    THROW_EXCEPTION_DBEX("invalid log2 latest block: %d, %s",
+                         log2BlockHeight_, log2BlockHash_.ToString().c_str());
+  }
   LOG_INFO("log2 latest block, height: %d, hash: %s",
            log2BlockHeight_, log2BlockHash_.ToString().c_str());
 
@@ -301,6 +305,8 @@ void Log2Producer::tryReadLog1(vector<string> &lines) {
 }
 
 void Log2Producer::init() {
+  running_ = true;
+
   initLog2();
   syncLog1();
 }

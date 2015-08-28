@@ -215,7 +215,7 @@ GET /tx/:txhash/status?keepalive=true
 
 `keepalive` 为是否阻塞查询，直到服务器端找到该交易。
 
-建议移动端使用 `keepalive` 特性，进行异步查询，避免简单轮询导致的性能问题。
+建议移动端使用 `keepalive` 特性，进行异步查询，避免简单轮询导致的性能问题。在连接中断或者超时时重新发起查询即可。
 
 **Response**
 

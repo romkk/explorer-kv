@@ -292,4 +292,55 @@ module.exports = server => {
         }));
         return next();
     });
+
+    server.get('/tx/:txhash/status', async (req, res, next) => {
+        req.checkParams('txhash', 'should be a valid txhash').isLength(64, 64);
+        req.sanitize('txhash').toString();
+
+        req.checkQuery('keepalive', 'should be a valid boolean').optional().isBoolean();
+        req.sanitize('keepalive').toBoolean(true);
+
+        var errors = req.validationErrors();
+
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let { txhash } = req.params;
+        let keepAlive = _.get(req, 'params.keepalive', false);
+
+        let closed = false, found = false;
+
+        req.on('close', function() {
+            log('[tx status] 客户端关闭连接');
+            closed = true;
+        });
+
+        do {
+            try {
+                await blockData(`/rawtx/${txhash}`);
+                found = true;
+            } catch (err) {
+                if (err.statusCode != 404) {
+                    console.log(err.stack);
+                    res.send(new restify.InternalServerError('Internal Error'));
+                    return next();
+                }
+
+                if (keepAlive) {
+                    await Promise.delay(2000);
+                }
+            }
+        } while (!closed && !found && keepAlive);
+
+        if (!closed) {
+            res.send({
+                success: true,
+                found: found
+            });
+            return next();
+        }
+    });
 };

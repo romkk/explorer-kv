@@ -1199,14 +1199,14 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog *txLog,
 
     // 插入当前记录
     sql = Strings::Format("INSERT INTO `address_txs_%d` (`address_id`, `tx_id`, `tx_height`,"
-                          " `total_received`, `balance_diff`, `balance_final`, `idx`, "
+                          " `total_received`, `balance_diff`, `balance_final`, `idx`, `ymd`,"
                           " `prev_ymd`, `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`)"
-                          " VALUES (%lld, %lld, %d, %lld, %lld, %lld, %lld,"
+                          " VALUES (%lld, %lld, %d, %lld, %lld, %lld, %lld, %d, "
                           "         %d, %lld, 0, 0, '%s') ",
                           tableIdx_AddrTxs(ymd), addrID, txLog->txId_, txLog->blkHeight_,
                           totalRecv + (balanceDiff > 0 ? balanceDiff : 0),
                           balanceDiff, finalBalance + balanceDiff,
-                          txCount + 1,
+                          txCount + 1, ymd,
                           prevTxYmd, prevTxId, date("%F %T").c_str());
     db.updateOrThrowEx(sql, 1);
 

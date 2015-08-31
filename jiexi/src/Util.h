@@ -34,6 +34,7 @@
 
 std::vector<std::string> split(const std::string &s, const char delim);
 std::vector<std::string> split(const std::string &s, const char delim, const int32_t limit);
+std::string implode(const std::vector<std::string> &arr, const std::string &glue);
 
 int32_t HexToDecLast2Bytes(const string &hex);
 int32_t AddressTableIndex(const string &address);

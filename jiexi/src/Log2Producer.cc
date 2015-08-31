@@ -60,6 +60,7 @@ bool MemTxRepository::addTx(const CTransaction &tx,
       spentOutputs_.insert(make_pair(out, txhash));
     }
     txs_[txhash] = tx;
+    unSyncTxsInsert_.insert(txhash);
 
     return true;
   }
@@ -99,8 +100,59 @@ void MemTxRepository::removeTxs(const vector<uint256> &txhashs,
       assert(it2 != spentOutputs_.end());
       spentOutputs_.erase(it2);
     }
+
     txs_.erase(hash);
+    unSyncTxsDelete_.insert(hash);
   }
+}
+
+void _getMemrepoTxsDeleteSQL(const vector<string> &arr, string &sql) {
+  sql = "DELETE FROM `0_memrepo_txs` WHERE `tx_hash` IN ('";
+  sql += implode(arr, "','");
+  sql += "')";
+}
+
+//
+// 将内存中的交易变化同步至DB，该函数必须在DB事务中执行
+// WARNING: 若单个块交易量非常大，可能造成Mysql单个事务容纳不下这么多SQL，当恰巧崩溃时会导致
+//          log2producer 无法从 0_memrepo_txs 恢复出交易
+//
+void MemTxRepository::syncToDB(MySQLConnection &db) {
+  string sql;
+
+  //
+  // 插入交易
+  //
+  vector<string> values;
+  for (auto it : unSyncTxsInsert_) {
+    const string hashStr = it.ToString();
+    sql = Strings::Format("'%s','%s'", hashStr.c_str(), date("%F %T").c_str());
+    values.push_back(sql);
+  }
+  multiInsert(db, "0_memrepo_txs", "`tx_hash`, `created_at`", values);
+  LOG_DEBUG("[MemTxRepository::syncToDB] insert txs: %llu", unSyncTxsInsert_.size());
+  unSyncTxsInsert_.clear();
+
+  //
+  // 删除交易
+  //
+  vector<string> hashVec;
+  for (auto it : unSyncTxsDelete_) {
+    hashVec.push_back(it.ToString());
+    if (hashVec.size() > 10000) {  // 批量执行
+      _getMemrepoTxsDeleteSQL(hashVec, sql);
+      db.updateOrThrowEx(sql, (int32_t)hashVec.size());
+      hashVec.clear();
+    }
+  }
+  if (hashVec.size() > 0) {
+    _getMemrepoTxsDeleteSQL(hashVec, sql);
+    db.updateOrThrowEx(sql, (int32_t)hashVec.size());
+    hashVec.clear();
+  }
+  assert(hashVec.size() == 0);
+  LOG_DEBUG("[MemTxRepository::syncToDB] delete txs: %llu", unSyncTxsDelete_.size());
+  unSyncTxsDelete_.clear();
 }
 
 size_t MemTxRepository::size() const {
@@ -119,9 +171,9 @@ Log2Producer::Log2Producer(): running_(false), db_(Config::GConfig.get("mysql.ur
 Log2Producer::~Log2Producer() {
 }
 
-static void _initLog2_loadUnconfirmedTxs(MySQLConnection &db,
+static void _initLog2_loadMemrepoTxs(MySQLConnection &db,
                                          MemTxRepository &memRepo) {
-  string sql = "SELECT `tx_hash` FROM `0_unconfirmed_txs` ORDER BY `position`";
+  string sql = "SELECT `tx_hash` FROM `0_memrepo_txs` ORDER BY `position`";
   MySQLResult res;
   char **row = nullptr;
   db.query(sql, res);
@@ -196,9 +248,9 @@ void Log2Producer::initLog2() {
            log2BlockHeight_, log2BlockHash_.ToString().c_str());
 
   //
-  // 载入未确认交易
+  // 载入内存库中(未确认)交易
   //
-  _initLog2_loadUnconfirmedTxs(db_, memRepo_);
+  _initLog2_loadMemrepoTxs(db_, memRepo_);
 }
 
 void Log2Producer::syncLog1() {
@@ -308,9 +360,41 @@ void Log2Producer::tryReadLog1(vector<string> &lines) {
   }
 }
 
+void Log2Producer::checkEnvironment() {
+  // 检测 innodb_log_file_size
+  {
+    // 不得低于32MB
+    // 假设平均sql语句是256字节，那么32M对应的SQL为：125,000条，目前单个块的交易数量远远低于此值
+    // 阿里云的RDS，目前该值是 1048576000 (1G)
+    // TODO: 随着块增长，需提高 innodb_log_file_size 的最小限制
+    const int64_t size = atoi64(db_.getVariable("innodb_log_file_size").c_str());
+    const int64_t minSize  = 32  * 1000 * 1000;
+    const int64_t recoSize = 256 * 1000 * 1000;
+    if (size < minSize) {
+      THROW_EXCEPTION_DBEX("mysql innodb_log_file_size(%lld) is less than min size: %lld",
+                           size, minSize);
+    }
+    if (size < recoSize) {
+      LOG_WARN("mysql innodb_log_file_size(%lld) is less than recommended size: %lld",
+               size, recoSize);
+    }
+  }
+
+  // max_allowed_packet
+  {
+    const int64_t size = atoi64(db_.getVariable("max_allowed_packet").c_str());
+    const int64_t minSize = 8 * 1000 * 1000;
+    if (size < minSize) {
+      THROW_EXCEPTION_DBEX("mysql max_allowed_packet(%lld) is less than min size: %lld",
+                           size, minSize);
+    }
+  }
+}
+
 void Log2Producer::init() {
   running_ = true;
 
+  checkEnvironment();
   initLog2();
   syncLog1();
 }
@@ -351,7 +435,11 @@ void Log2Producer::handleTx(Log1 &log1Item) {
                         LOG2TYPE_TX_ACCEPT,
                         hash.ToString().c_str(),
                         nowStr.c_str(), nowStr.c_str());
+
+  db_.execute("START TRANSACTION");
   db_.updateOrThrowEx(sql, 1);
+  memRepo_.syncToDB(db_);
+  db_.execute("COMMIT");
 }
 
 void Log2Producer::handleBlockAccept(Log1 &log1Item) {
@@ -461,6 +549,7 @@ void Log2Producer::commitBatch(const size_t expectAffectedRows) {
   //
   db_.execute("START TRANSACTION");
   db_.updateOrThrowEx(sql, (int32_t)expectAffectedRows);
+  memRepo_.syncToDB(db_);
   db_.execute("COMMIT");
 }
 

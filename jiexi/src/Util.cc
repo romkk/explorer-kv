@@ -53,6 +53,18 @@ std::vector<std::string> split(const std::string &s, const char delim,
   return elems;
 }
 
+std::string implode(const std::vector<std::string> &arr, const std::string &glue) {
+  string s;
+  if (arr.size() == 0) {
+    return s;
+  }
+  for (const auto &it : arr) {
+    s += it + glue;
+  }
+  s.resize(s.length() - glue.length());  // remove last glue
+  return s;
+}
+
 int32_t HexToDecLast2Bytes(const string &hex) {
   if (hex.length() < 2) {
     return 0;

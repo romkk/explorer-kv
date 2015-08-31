@@ -83,6 +83,10 @@ class MemTxRepository {
   // 内存所有交易花掉的交易输出
   map<TxOutputKey, uint256> spentOutputs_;
 
+  // 待同步至DB的变更记录
+  set<uint256> unSyncTxsDelete_;
+  set<uint256> unSyncTxsInsert_;
+
 public:
   MemTxRepository();
   ~MemTxRepository();
@@ -92,6 +96,9 @@ public:
 
   // 从内存交易库中删除一个或多个交易
   void removeTxs(const vector<uint256> &txhashs, const bool ingoreEmpty=false);
+
+  // 同步至DB
+  void syncToDB(MySQLConnection &db);
 
   size_t size() const;
   bool isExist(const uint256 &txhash) const;
@@ -114,6 +121,9 @@ class Log2Producer {
   /* log2 */
   int32_t log2BlockHeight_;
   uint256 log2BlockHash_;
+
+  // 检测环境
+  void checkEnvironment();
 
   // 初始化 log2
   void initLog2();

@@ -140,13 +140,13 @@ query:
   // get mysql error
   error_no = mysql_errno(conn);
   if (error_no == 2006 || error_no == 2013) {
-    LOG_ERROR("exec sql failure, error_no: %u, error_info: %s",
-              error_no, mysql_error(conn));
+    LOG_ERROR("exec sql failure, error_no: %u, error_info: %s, sql: %s",
+              error_no, mysql_error(conn), sql);
   } else {
     // 非网络连接错误，均抛出异常
     THROW_EXCEPTION_EX(ENETDOWN,
-                       "exec sql failure, error_no: %u, error_info: %s",
-                       error_no, mysql_error(conn));
+                       "exec sql failure, error_no: %u, error_info: %s, sql: %s",
+                       error_no, mysql_error(conn), sql);
   }
 
   //

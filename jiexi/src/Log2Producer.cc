@@ -123,35 +123,44 @@ void MemTxRepository::syncToDB(MySQLConnection &db) {
   //
   // 插入交易
   //
-  vector<string> values;
-  for (auto it : unSyncTxsInsert_) {
-    const string hashStr = it.ToString();
-    sql = Strings::Format("'%s','%s'", hashStr.c_str(), date("%F %T").c_str());
-    values.push_back(sql);
+  if (unSyncTxsInsert_.size()) {
+    vector<string> values;
+    for (auto it : unSyncTxsInsert_) {
+      const string hashStr = it.ToString();
+      sql = Strings::Format("'%s','%s'", hashStr.c_str(), date("%F %T").c_str());
+      values.push_back(sql);
+    }
+    multiInsert(db, "0_memrepo_txs", "`tx_hash`, `created_at`", values);
+    LOG_DEBUG("memrepo sync to DB, insert txs: %llu", unSyncTxsInsert_.size());
+    unSyncTxsInsert_.clear();
   }
-  multiInsert(db, "0_memrepo_txs", "`tx_hash`, `created_at`", values);
-  LOG_DEBUG("[MemTxRepository::syncToDB] insert txs: %llu", unSyncTxsInsert_.size());
-  unSyncTxsInsert_.clear();
 
   //
   // 删除交易
   //
-  vector<string> hashVec;
-  for (auto it : unSyncTxsDelete_) {
-    hashVec.push_back(it.ToString());
-    if (hashVec.size() > 10000) {  // 批量执行
+  if (unSyncTxsDelete_.size()) {
+    vector<string> hashVec;
+    for (auto it : unSyncTxsDelete_) {
+      hashVec.push_back(it.ToString());
+      if (hashVec.size() > 5000) {  // 批量执行
+        _getMemrepoTxsDeleteSQL(hashVec, sql);
+        db.updateOrThrowEx(sql, (int32_t)hashVec.size());
+        hashVec.clear();
+      }
+    }
+    if (hashVec.size() > 0) {
       _getMemrepoTxsDeleteSQL(hashVec, sql);
       db.updateOrThrowEx(sql, (int32_t)hashVec.size());
       hashVec.clear();
     }
+    assert(hashVec.size() == 0);
+    LOG_DEBUG("memrepo sync to DB, delete txs: %llu", unSyncTxsDelete_.size());
+    unSyncTxsDelete_.clear();
   }
-  if (hashVec.size() > 0) {
-    _getMemrepoTxsDeleteSQL(hashVec, sql);
-    db.updateOrThrowEx(sql, (int32_t)hashVec.size());
-    hashVec.clear();
-  }
-  assert(hashVec.size() == 0);
-  LOG_DEBUG("[MemTxRepository::syncToDB] delete txs: %llu", unSyncTxsDelete_.size());
+}
+
+void MemTxRepository::ignoreUnsyncData() {
+  unSyncTxsInsert_.clear();
   unSyncTxsDelete_.clear();
 }
 
@@ -197,6 +206,8 @@ static void _initLog2_loadMemrepoTxs(MySQLConnection &db,
   }
 
   LOG_INFO("load unconfirmed txs: %llu", memRepo.size());
+
+  memRepo.ignoreUnsyncData();  // 忽略一下载入的数据，已经同步过了
 }
 
 void Log2Producer::initLog2() {
@@ -209,7 +220,7 @@ void Log2Producer::initLog2() {
   // 清理临时的记录（未完整状态的）
   //
   {
-    sql = "DELETE FROM `txlogs2` WHERE `batch_id` = -1";
+    sql = "DELETE FROM `0_txlogs2` WHERE `batch_id` = -1";
     db_.update(sql);
   }
 
@@ -218,7 +229,7 @@ void Log2Producer::initLog2() {
   //
   int64_t blockId = 0;
   {
-    sql = "SELECT `block_id` FROM `txlogs2` WHERE `block_id`>0 ORDER BY `id` DESC LIMIT 1";
+    sql = "SELECT `block_id` FROM `0_txlogs2` WHERE `block_id`>0 ORDER BY `id` DESC LIMIT 1";
     db_.query(sql, res);
     if (res.numRows()) {
       row = res.nextRow();
@@ -339,11 +350,11 @@ void Log2Producer::tryReadLog1(vector<string> &lines) {
     log1FileOffset_ = log1Ifstream.tellg();
 
     if (lines.size() > 500) {  // 每次最多处理500条日志
-      LOG_WARN("reach max limit, stop load log1 items");
       break;
     }
   }
   if (lines.size() > 0) {
+    LOG_DEBUG("load log1 items: %lld", lines.size());
     return;
   }
 
@@ -426,11 +437,14 @@ void Log2Producer::handleTx(Log1 &log1Item) {
     return;
   }
 
+  // 插入row txs
+  insertRawTx(db_, tx);
+
   // 无冲突，插入DB
-  sql = Strings::Format("INSERT INTO `txlogs2` (`batch_id`, `type`, `block_height`, "
+  sql = Strings::Format("INSERT INTO `0_txlogs2` (`batch_id`, `type`, `block_height`, "
                         " `block_id`, `tx_hash`, `created_at`, `updated_at`) "
                         " VALUES ("
-                        " (SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `txlogs2` as t1), "
+                        " (SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `0_txlogs2` as t1), "
                         " %d, -1, -1, '%s', '%s', '%s');",
                         LOG2TYPE_TX_ACCEPT,
                         hash.ToString().c_str(),
@@ -522,7 +536,7 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
   }
 
   // 插入本批次数据
-  multiInsert(db_, "txlogs2", fields, values);
+  multiInsert(db_, "0_txlogs2", fields, values);
 
   // 提交本批数据
   commitBatch(values.size());
@@ -536,13 +550,13 @@ void Log2Producer::commitBatch(const size_t expectAffectedRows) {
   char **row;
 
   // fetch next batch_id
-  sql = "SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `txlogs2`";
+  sql = "SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `0_txlogs2`";
   db_.query(sql, res);
   row = res.nextRow();
   const int64_t nextBatchID = atoi64(row[0]);
 
   // update batch_id
-  sql = Strings::Format("UPDATE `txlogs2` SET `batch_id`=%lld WHERE `batch_id`=-1",
+  sql = Strings::Format("UPDATE `0_txlogs2` SET `batch_id`=%lld WHERE `batch_id`=-1",
                         nextBatchID);
   //
   // 使用事务提交，保证更新成功的数据就是既定的数量。有差错则异常，DB事务无法提交。
@@ -602,7 +616,7 @@ void Log2Producer::handleBlockRollback(Log1 &log1Item) {
   }
 
   // 插入本批次数据
-  multiInsert(db_, "txlogs2", fields, values);
+  multiInsert(db_, "0_txlogs2", fields, values);
 
   // 提交本批数据
   commitBatch(values.size());

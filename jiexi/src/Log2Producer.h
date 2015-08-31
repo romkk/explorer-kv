@@ -99,6 +99,8 @@ public:
 
   // 同步至DB
   void syncToDB(MySQLConnection &db);
+  // 忽略未同步数据
+  void ignoreUnsyncData();
 
   size_t size() const;
   bool isExist(const uint256 &txhash) const;

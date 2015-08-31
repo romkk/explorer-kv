@@ -263,6 +263,18 @@ CREATE TABLE `0_blocks` (
 
 echo "$blocks"
 
+memrepo_txs='
+DROP TABLE IF EXISTS `0_memrepo_txs`;
+CREATE TABLE `0_memrepo_txs` (
+  `position` bigint(20) NOT NULL AUTO_INCREMENT,
+  `tx_hash` char(64) NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`position`),
+  UNIQUE KEY `tx_hash` (`tx_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
+
+echo "$memrepo_txs"
+
 unconfirmed_txs='
 DROP TABLE IF EXISTS `0_unconfirmed_txs`;
 CREATE TABLE `0_unconfirmed_txs` (

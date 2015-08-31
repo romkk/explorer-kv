@@ -19,6 +19,9 @@ module.exports = (server) => {
     });
 
     server.get('/unspent', async (req, res, next) => {
+        req.checkQuery('active', 'should be a \'|\' separated address list').matches(/^([a-zA-Z0-9]{33,35})(\|[a-zA-Z0-9]{33,35})*$/);
+        req.sanitize('active').toString();
+
         req.checkQuery('offset', 'should be a valid number').optional().isNumeric();
         req.sanitize('offset').toInt();
 
@@ -41,7 +44,7 @@ module.exports = (server) => {
         var offset = req.params.offset || 0;
         var limit = req.params.limit || 200;
         var unspent = [];
-        var count = [];
+        var count = 0;
 
         var [height, addrs] = await* [Block.getLatestHeight(), Address.multiGrab(parts, !req.params.skipcache)];
 
@@ -52,7 +55,7 @@ module.exports = (server) => {
 
             let sql = `select count(tx_id) as cnt from ${table} where address_id = ?`;
             let cnt = await mysql.pluck(sql, 'cnt', [addr.attrs.id]);
-            count.push(cnt);
+            count += cnt;
             log(`addr = ${addr.attrs.address}, table = ${table}, cnt = ${cnt}, offset = ${offset}`);
 
             if (cnt < offset) {     //直接下一个地址

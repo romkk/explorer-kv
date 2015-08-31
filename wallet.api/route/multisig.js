@@ -399,7 +399,7 @@ module.exports = server => {
         let tbdIndex = -1;
         ret = _.compact(ret.map((r, i) => {
             if (_.isUndefined(r.is_coinbase)) {
-                if (r.status == 'TBD') tbdIndex = i;
+                if (r.status == 'TBD' && !r.is_deleted) tbdIndex = i;
                 return r;
             }
 

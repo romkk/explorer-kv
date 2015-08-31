@@ -205,6 +205,27 @@ GET /tx/:txhash?active=$address
 }
 ```
 
+### 查询交易处理状态
+
+**Request**
+
+```
+GET /tx/:txhash/status?keepalive=true
+```
+
+`keepalive` 为是否阻塞查询，直到服务器端找到该交易。
+
+建议移动端使用 `keepalive` 特性，进行异步查询，避免简单轮询导致的性能问题。在连接中断或者超时时重新发起查询即可。
+
+**Response**
+
+```
+{
+    "success": true,
+    "found": true       -- 该交易是否已入库
+}
+```
+
 ### 提交构造交易请求
 
 **Request**
@@ -236,6 +257,7 @@ POST /tx/compose
 {
     "success": true,
     "fee": 10000,
+    "total_fee": 20000,
     "unspent_txs": [
         {
             "address": "n4eY3qiP9pi32MWC6FcJFHciSsfNiYFYgR",
@@ -883,7 +905,7 @@ POST /mail
 **Request**
 
 ```
-POST /notification-message
+POST /mark-notification-message
 
 {
     "message_ids": [

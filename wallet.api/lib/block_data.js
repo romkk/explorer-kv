@@ -6,20 +6,23 @@ var endpoint = config.get('explorerEndpoint');
 var log = require('debug')('wallet:lib/block_data');
 var _ = require('lodash');
 
-module.exports = async (path, querySet) => {
-    var querystring = _.isPlainObject(querySet) ? qs.stringify(querySet) : querySet;
+module.exports = async (path, querySet = {}) => {
+    if (typeof querySet == 'string') {
+        querySet = qs.parse(querySet);
+    }
 
-    log(`request block chain data api, path = ${path}, qs = ${querystring}`);
+    log(`request block chain data api, path = ${path}, qs = ${qs.stringify(querySet)}`);
 
     try {
         return await request({
             baseUrl: endpoint,
-            uri: `${path}?${querystring}`,
+            uri: path,
+            qs: querySet,
             timeout: 10000,
             json: true
         });
     } catch (err) {
-        log(`request block chain data api error: ${err.message}, path = ${path}, qs = ${querystring}`);
-        throw new restify.InternalServerError('Please try again later.');
+        log(`request block chain data api error: ${err.message}, path = ${path}, qs = ${qs.stringify(querySet)}`);
+        throw err;
     }
 };

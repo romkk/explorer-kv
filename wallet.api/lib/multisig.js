@@ -104,7 +104,8 @@ class MultiSig {
         try {
             txHash = await bitcoind('sendrawtransaction', rawhex);
         } catch (err) {
-            if (err.response.body.error.code == -25 || err.response.body.error.code == -22) {
+            let code = err.response.body.error.code;
+            if (code == -25 || code == -22 || code == -26) {
                 return false;
             } else {
                 throw err;
@@ -163,13 +164,6 @@ async function getAmountAndRelatedAddress(addr, hex) {
     } else {        // 收入
         amount = outputAddrs.filter(el => el.addr.some(a => addrs.includes(a))).reduce((prev, cur) => prev + cur.value, 0);
     }
-
-    console.log({
-        amount: amount,
-        inputs: _(inputAddrs).pluck('addr').flatten().uniq().value(),
-        outputs: _(outputAddrs).pluck('addr').flatten().uniq().value(),
-        fee: _(inputAddrs).pluck('value').sum() - _(outputAddrs).pluck('value').sum()
-    });
 
     return {
         amount: amount,

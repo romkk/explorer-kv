@@ -1,16 +1,16 @@
-var mysql = require('../lib/mysql');
-var Address = require('../lib/address');
-var log = require('debug')('api:route:address');
-var bitcore = require('bitcore');
-var helper = require('../lib/helper');
-var restify = require('restify');
-var _ = require('lodash');
-var moment = require('moment');
-var validators = require('../lib/custom_validators');
-var AddressTxList = require('../lib/AddressTxList');
-var Tx = require('../lib/tx');
-var PriorityQueue = require('js-priority-queue');
-var Block = require('../lib/block');
+let mysql = require('../lib/mysql');
+let Address = require('../lib/address');
+let log = require('debug')('api:route:address');
+let bitcore = require('bitcore');
+let helper = require('../lib/helper');
+let restify = require('restify');
+let _ = require('lodash');
+let moment = require('moment');
+let validators = require('../lib/custom_validators');
+let AddressTxList = require('../lib/AddressTxList');
+let Tx = require('../lib/tx');
+let PriorityQueue = require('js-priority-queue');
+let Block = require('../lib/block');
 
 module.exports = (server) => {
     server.get('/address/:addr', async (req, res, next)=> {
@@ -27,7 +27,7 @@ module.exports = (server) => {
 
         req.checkQuery('sort', 'should be desc or asc').optional().isIn(['desc', 'asc']);
 
-        var errors = req.validationErrors();
+        let errors = req.validationErrors();
 
         if (errors) {
             return next(new restify.InvalidArgumentError({
@@ -35,13 +35,13 @@ module.exports = (server) => {
             }));
         }
 
-        var addr = await Address.grab(req.params.addr, !req.params.skipcache);
+        let addr = await Address.grab(req.params.addr, !req.params.skipcache);
         if (addr == null) {
             res.send(new restify.ResourceNotFoundError('Address not found'));
             return next();
         }
 
-        var atList = new AddressTxList(addr.attrs, req.params.timestamp, req.params.sort);
+        let atList = new AddressTxList(addr.attrs, req.params.timestamp, req.params.sort);
         atList = await atList.slice(req.params.offset, req.params.limit);
         addr.txs = await Tx.multiGrab(atList.map(el => el.tx_id), !req.params.skipcache);
 
@@ -64,7 +64,7 @@ module.exports = (server) => {
 
         req.checkQuery('sort', 'should be desc or asc').optional().isIn(['desc', 'asc']);
 
-        var errors = req.validationErrors();
+        let errors = req.validationErrors();
 
         if (errors) {
             return next(new restify.InvalidArgumentError({
@@ -72,21 +72,22 @@ module.exports = (server) => {
             }));
         }
 
-        var err = validators.isValidAddressList(req.query.active);
+        let err = validators.isValidAddressList(req.query.active);
         if (err != null) {
             return next(err);
         }
 
-        var offset = req.params.offset || 0;
-        var limit = req.params.limit || 50;
-        var sort = req.params.sort || 'desc';
-        var parts = req.params.active.trim().split('|');
-        var addrs = _.compact(await Address.multiGrab(parts, !req.params.skipcache));
-        var its = await* addrs.map(addr => {
-            var atList = new AddressTxList(addr.attrs, req.params.timestamp, sort);
+        let offset = req.params.offset || 0;
+        let limit = req.params.limit || 50;
+        let sort = req.params.sort || 'desc';
+        let parts = req.params.active.trim().split('|');
+        let addrs = _.compact(await Address.multiGrab(parts, !req.params.skipcache));
+
+        let its = await* addrs.map(addr => {
+            let atList = new AddressTxList(addr.attrs, req.params.timestamp, sort);
             return atList.iter();
         });
-        var pq = new PriorityQueue({
+        let pq = new PriorityQueue({
             comparator: sort == 'desc' ? (a, b) => {
                 let ret;
                 if (a[0].tx_height == -1 && b[0].tx_height != -1) {
@@ -119,48 +120,41 @@ module.exports = (server) => {
                 return ret;
             }
         });
-        var txInPQ = {};
 
-        async function push(i) {
-            var it = its[i];
+        async function queue(i) {
+            let it = its[i];
             if (it == false) return;
 
-            var c = it.next();
-            if (c.done) {
-                its[i] = false;
-                return;
+            let v = await it();
+            if (v == null) {
+                return its[i] = false;
             }
-            try {
-                var v = await c.value;
-                if (!txInPQ[v.tx_id]) {
-                    pq.queue([v, i]);
-                    txInPQ[v.tx_id] = 1;
-                }
-            } catch (err) {
-                its[i] = false;
-            }
+
+            pq.queue([v, i]);
         }
 
         // 初始化 Priority Queue
-        await* its.map((it, i) => {
-            return push(i);
-        });
+        await* its.map((it, i) => queue(i));
 
-        var txIdList = [];
+        let txIdList = [];
+        let txInList = {};
 
         while ((offset--) > 0 || limit--) {
+            let v, i;
             try {
-                let [v, i] = pq.dequeue();
-                await push(i);
-                if (offset < 0) {
-                    txIdList.push(v.tx_id);
-                }
+                [v, i] = pq.dequeue();
             } catch (err) {
                 break;  //no more element
             }
+
+            await queue(i);
+            if (offset < 0 && !_.has(txInList, v.tx_id)) {
+                txIdList.push(v.tx_id);
+                txInList[v.tx_id] = 1;
+            }
         }
 
-        var [h, txs] = await* [Block.getLatestHeight(), Tx.multiGrab(txIdList, !req.params.skipcache)];
+        let [h, txs] = await* [Block.getLatestHeight(), Tx.multiGrab(txIdList, !req.params.skipcache)];
         res.send(_.compact(txs).map(tx => {
             tx.confirmations = tx.block_height == -1 ? 0 : h - tx.block_height + 1;
             return tx;
@@ -169,21 +163,22 @@ module.exports = (server) => {
     });
 
     server.get('/multiaddr', async (req, res, next) => {
-        var err = validators.isValidAddressList(req.query.active);
+        let err = validators.isValidAddressList(req.params.active);
         if (err != null) {
-            return next(err);
+            res.send(err);
+            return next();
         }
 
-        var parts = req.params.active.trim().split('|');
+        let parts = req.params.active.trim().split('|');
 
-        var ret = await Address.multiGrab(parts, !req.params.skipcache);
+        let ret = await Address.multiGrab(parts, !req.params.skipcache);
 
         ret = ret.map(addr => {
             if (addr == null) {
                 return null;
             }
 
-            var a = addr.attrs;
+            let a = addr.attrs;
 
             return {
                 final_balance: a.total_received - a.total_sent,

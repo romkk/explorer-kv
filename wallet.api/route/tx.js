@@ -30,15 +30,8 @@ async function unspentFetcher(sentFrom) {
 }
 
 // http://bitcoin.stackexchange.com/questions/1195/how-to-calculate-transaction-size-before-sending
-function estimateFee(txSize, amountAvailable, feePerKB) {
-    var estimatedFee = Math.ceil(txSize / 1000) * feePerKB;
-
-    if (estimatedFee < amountAvailable) {
-        txSize += 20 + 4 + 34 + 4;                // Safe upper bound for change address script size in bytes
-        estimatedFee = Math.ceil(txSize / 1000) * feePerKB;
-    }
-
-    return estimatedFee;
+function estimateFee(txSize, feePerKB) {
+    return Math.ceil((txSize + 20 + 4 + 34 + 4) / 1000) * feePerKB;     // Safe upper bound for change address script size in bytes
 }
 
 module.exports = server => {
@@ -105,7 +98,7 @@ module.exports = server => {
                     + 34 * sentTo.length               // output
                     + 10;                              // fixed bytes
 
-            fee = estimateFee(txSize, aggregated, feePerKB);
+            fee = estimateFee(txSize, feePerKB);
             log(`iter = ${iter++}, fee = ${fee}, totalSentAmount = ${totalSentAmount}, aggregated = ${aggregated}, aggregatedTxs.length = ${aggregatedTxs.length}`);
         } while (fee + totalSentAmount > aggregated);
 
@@ -114,9 +107,22 @@ module.exports = server => {
         // is there any more txs ?
         moreTx = totalUnspentAmount - aggregated > 0;
 
+        // calculate total fee ( aggregatedTxs + more_txs )
+        let totalFee;
+        try {
+            let unspentCount = (await blockData('/unspent', {
+                active: sentFrom.join('|')
+            })).n_tx;
+            totalFee = estimateFee(148 * unspentCount + 34 * sentTo.length + 10, feePerKB);
+        } catch (err) {
+            res.send(new restify.InternalServerError('Internal Error'));
+            return next();
+        }
+
         res.send({
             success: true,
             fee: fee,
+            total_fee: totalFee,
             unspent_txs: aggregatedTxs,
             affordable: affordable,
             more_txs: moreTx
@@ -285,5 +291,56 @@ module.exports = server => {
             timestamp: tx.time
         }));
         return next();
+    });
+
+    server.get('/tx/:txhash/status', async (req, res, next) => {
+        req.checkParams('txhash', 'should be a valid txhash').isLength(64, 64);
+        req.sanitize('txhash').toString();
+
+        req.checkQuery('keepalive', 'should be a valid boolean').optional().isBoolean();
+        req.sanitize('keepalive').toBoolean(true);
+
+        var errors = req.validationErrors();
+
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let { txhash } = req.params;
+        let keepAlive = _.get(req, 'params.keepalive', false);
+
+        let closed = false, found = false;
+
+        req.on('close', function() {
+            log('[tx status] 客户端关闭连接');
+            closed = true;
+        });
+
+        do {
+            try {
+                await blockData(`/rawtx/${txhash}`);
+                found = true;
+            } catch (err) {
+                if (err.statusCode != 404) {
+                    console.log(err.stack);
+                    res.send(new restify.InternalServerError('Internal Error'));
+                    return next();
+                }
+
+                if (keepAlive) {
+                    await Promise.delay(2000);
+                }
+            }
+        } while (!closed && !found && keepAlive);
+
+        if (!closed) {
+            res.send({
+                success: true,
+                found: found
+            });
+            return next();
+        }
     });
 };

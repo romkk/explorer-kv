@@ -27,7 +27,7 @@ function isValidAddressList(active) {
 
     for (let p of parts) {
         if (!module.exports.isValidAddress(p)) {
-            return new restify.InvalidArgumentError(`Invalid address found: ${p}`);
+            return new restify.InvalidArgumentError(`Invalid address found`);
         }
     }
 

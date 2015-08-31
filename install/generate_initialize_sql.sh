@@ -185,6 +185,7 @@ CREATE TABLE `0_tpl_address_txs` (
   `balance_diff` bigint(20) NOT NULL,
   `balance_final` bigint(20) NOT NULL,
   `idx` bigint(20) NOT NULL,
+  `ymd` int(11) NOT NULL,
   `prev_ymd` int(11) NOT NULL,
   `prev_tx_id` bigint(20) NOT NULL,
   `next_ymd` int(11) NOT NULL,
@@ -193,7 +194,8 @@ CREATE TABLE `0_tpl_address_txs` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `address_id_tx_id` (`address_id`,`tx_id`),
   UNIQUE KEY `address_id_idx` (`address_id`,`idx`),
-  KEY `address_id_tx_height` (`address_id`,`tx_height`)
+  KEY `address_id_tx_height` (`address_id`,`tx_height`),
+  KEY `address_id_ymd` (`address_id`,`ymd`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 echo "$tpl_address_txs"

@@ -394,10 +394,15 @@ void Log2Producer::checkEnvironment() {
   // max_allowed_packet
   {
     const int64_t size = atoi64(db_.getVariable("max_allowed_packet").c_str());
-    const int64_t minSize = 8 * 1000 * 1000;
+    const int64_t minSize  = 32 * 1000 * 1000;
+    const int64_t recoSize = 64 * 1000 * 1000;
     if (size < minSize) {
       THROW_EXCEPTION_DBEX("mysql max_allowed_packet(%lld) is less than min size: %lld",
                            size, minSize);
+    }
+    if (size < recoSize) {
+      LOG_WARN("mysql max_allowed_packet(%lld) is less than recommended size: %lld",
+               size, recoSize);
     }
   }
 }

@@ -1,0 +1,4 @@
+require('dotenv').load();
+
+// 开发时使用 bluebird，便于定位错误
+global.Promise = require('bluebird');

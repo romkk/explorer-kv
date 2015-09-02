@@ -499,6 +499,7 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
   const int64_t blockId = insertRawBlock(db_, blk, log1Item.blockHeight_);
 
   // 2.1 插入 raw_txs
+  // 这里保证了，能够查询到 raw_block 时，则其中的所有 raw_tx 都能查询到
   for (auto &tx : blk.vtx) {
     insertRawTx(db_, tx);
   }
@@ -620,6 +621,17 @@ void Log2Producer::handleBlockRollback(Log1 &log1Item) {
                                   log1Item.blockHeight_, blockId,
                                   blk.GetBlockTime(),
                                   tx.GetHash().ToString().c_str(),
+                                  nowStr.c_str(), nowStr.c_str());
+    values.push_back(item);
+  }
+
+  // coinbase tx 需要 reject
+  {
+    string item = Strings::Format("-1,%d,%d,%lld,%lld,'%s','%s','%s'",
+                                  LOG2TYPE_TX_REJECT,
+                                  log1Item.blockHeight_, blockId,
+                                  blk.GetBlockTime(),
+                                  blk.vtx[0].GetHash().ToString().c_str(),
                                   nowStr.c_str(), nowStr.c_str());
     values.push_back(item);
   }

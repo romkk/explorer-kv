@@ -447,10 +447,10 @@ void Log2Producer::handleTx(Log1 &log1Item) {
 
   // 无冲突，插入DB
   sql = Strings::Format("INSERT INTO `0_txlogs2` (`batch_id`, `type`, `block_height`, "
-                        " `block_id`, `tx_hash`, `created_at`, `updated_at`) "
+                        " `block_id`,`block_timestamp`,`tx_hash`,`created_at`,`updated_at`) "
                         " VALUES ("
                         " (SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `0_txlogs2` as t1), "
-                        " %d, -1, -1, '%s', '%s', '%s');",
+                        " %d, -1, -1, 0, '%s', '%s', '%s');",
                         LOG2TYPE_TX_ACCEPT,
                         hash.ToString().c_str(),
                         nowStr.c_str(), nowStr.c_str());
@@ -506,11 +506,12 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
   // 3.0 批量插入数据
   vector<string> values;
   const string nowStr = date("%F %T");
-  const string fields = "`batch_id`, `type`, `block_height`, `block_id`, `tx_hash`, `created_at`, `updated_at`";
+  const string fields = "`batch_id`, `type`, `block_height`, `block_id`, "
+  "`block_timestamp`, `tx_hash`, `created_at`, `updated_at`";
 
   // 冲突的交易，需要做拒绝处理
   for (auto &it : conflictTxs) {
-    string item = Strings::Format("-1,%d,-1,-1,'%s','%s','%s'",
+    string item = Strings::Format("-1,%d,-1,-1,0,'%s','%s','%s'",
                                   LOG2TYPE_TX_REJECT,
                                   it.ToString().c_str(),
                                   nowStr.c_str(), nowStr.c_str());
@@ -521,20 +522,21 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
   for (auto &tx : blk.vtx) {
     string item;
     const uint256 txhash = tx.GetHash();
+    const int64_t blockTimestamp = blk.GetBlockTime();
 
     // 首次处理的，需要补 accept 操作
     if (alreadyInMemTxHashs.find(txhash) == alreadyInMemTxHashs.end()) {
-      item = Strings::Format("-1,%d,-1,-1,'%s','%s','%s'",
-                             LOG2TYPE_TX_ACCEPT,
+      item = Strings::Format("-1,%d,-1,-1,%lld,'%s','%s','%s'",
+                             LOG2TYPE_TX_ACCEPT, blockTimestamp,
                              txhash.ToString().c_str(),
                              nowStr.c_str(), nowStr.c_str());
       values.push_back(item);
     }
 
     // confirm
-    item = Strings::Format("-1,%d,%d,%lld,'%s','%s','%s'",
+    item = Strings::Format("-1,%d,%d,%lld,%lld,'%s','%s','%s'",
                            LOG2TYPE_TX_CONFIRM,
-                           log1Item.blockHeight_, blockId,
+                           log1Item.blockHeight_, blockId, blockTimestamp,
                            txhash.ToString().c_str(),
                            nowStr.c_str(), nowStr.c_str());
     values.push_back(item);
@@ -605,16 +607,18 @@ void Log2Producer::handleBlockRollback(Log1 &log1Item) {
   //
   vector<string> values;
   const string nowStr = date("%F %T");
-  const string fields = "`batch_id`, `type`, `block_height`, `block_id`, `tx_hash`, `created_at`, `updated_at`";
+  const string fields = "`batch_id`, `type`, `block_height`, `block_id`,"
+  "`block_timestamp`,`tx_hash`, `created_at`, `updated_at`";
 
   // get block ID
   const int64_t blockId = insertRawBlock(db_, blk, log1Item.blockHeight_);
 
   // 新块的交易，做反确认操作
   for (auto &tx : blk.vtx) {
-    string item = Strings::Format("-1,%d,%d,%lld,'%s','%s','%s'",
+    string item = Strings::Format("-1,%d,%d,%lld,%lld,'%s','%s','%s'",
                                   LOG2TYPE_TX_UNCONFIRM,
                                   log1Item.blockHeight_, blockId,
+                                  blk.GetBlockTime(),
                                   tx.GetHash().ToString().c_str(),
                                   nowStr.c_str(), nowStr.c_str());
     values.push_back(item);
@@ -657,8 +661,9 @@ void Log2Producer::run() {
 
     if (!running_) { break; }
     if (lines.size() == 0) {
-      sleep(1);
+      sleepMs(200);
       continue;
+      // TODO: 可改进为监听文件事件代替sleep操作，减少轮询且提高效率
     }
 
     for (const auto &line : lines) {

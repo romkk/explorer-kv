@@ -213,7 +213,7 @@ int64_t insertRawBlock(MySQLConnection &db, const CBlock &blk, const int32_t hei
   while ((row = res.nextRow()) != nullptr) {
     const string sql2 = Strings::Format("UPDATE `0_raw_blocks` SET `chain_id` = `chain_id` + 1"
                                         " WHERE `id` = %lld ", atoi64(row[0]));
-    db.updateOrThrowEx(sql, 1);
+    db.updateOrThrowEx(sql2, 1);
   }
 
   // insert raw

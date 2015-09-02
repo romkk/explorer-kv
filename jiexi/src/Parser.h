@@ -118,6 +118,34 @@ public:
   ~TxLog();
 };
 
+/////////////////////////////////  TxLog2  ////////////////////////////////////
+//
+// 对应 table.0_txlogs2
+//
+class TxLog2 {
+public:
+  int64_t  id_;         // id, auto_increment
+  int32_t  type_;       // 100: TX_ACCEPT
+                        // 200: TX_CONFIRM
+                        // 300: TX_UNCONFIRM
+                        // 400: TX_REJECT
+  int32_t  blkHeight_;     // block height
+  int64_t  blkId_;         // block ID
+  uint32_t blkTimestamp_;  // block timestamp
+  string   createdAt_;
+
+  string txHex_;
+  uint256 txHash_;
+  CTransaction tx_;
+  int64_t txId_;
+
+  TxLog2();
+  TxLog2(const TxLog2 &t);
+  ~TxLog2();
+};
+
+
+/////////////////////////////////  CacheManager  ////////////////////////////////////
 // 若SSDB宕机，则丢弃数据
 class CacheManager {
   atomic<bool> running_;
@@ -159,33 +187,37 @@ public:
 };
 
 
+/////////////////////////////////  Parser  ////////////////////////////////////
 class Parser {
 private:
   atomic<bool> running_;
   MySQLConnection dbExplorer_;
 
   bool isReverse_;
-  int64_t reverseEndTxlogID_;
+  int64_t reverseEndTxlog2ID_;
 
   CacheManager *cache_;
   bool cacheEnable_;
 
-  bool tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset);
-  int64_t getLastTxLogOffset();
+//  bool tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset);
+  bool tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId);
 
-  int32_t getTxLogMaxIdx();
-  void updateLastTxlogId(const int64_t newId);
+  int64_t getLastTxLog2Id();
+  void updateLastTxlog2Id(const int64_t newId);
+
   void checkTableAddressTxs(const uint32_t timestamp);
 
-  void acceptBlock  (TxLog *txlog, string &blockHash);
-  void rollbackBlock(TxLog *txlog);
+  // block
+  void acceptBlock(TxLog2 *txLog2, string &blockHash);
+  void rejectBlock(TxLog2 *txLog2);
 
-  void acceptTx  (class TxLog *txLog);
-  void rollbackTx(class TxLog *txLog);
+  // tx
+  void acceptTx   (class TxLog2 *txLog2);
+  void confirmTx  (class TxLog2 *txLog2);
+  void unconfirmTx(class TxLog2 *txLog2);
+  void rejectTx   (class TxLog2 *txLog2);
 
   void writeLastProcessTxlogTime();
-
-  bool tryDeleteTempBlockTxlogs(TxLog &lastTxlog, TxLog &curTxlog);
 
 public:
   Parser();

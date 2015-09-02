@@ -188,6 +188,7 @@ string getTxHexByHash(MySQLConnection &db, const uint256 &txHash) {
 int64_t insertRawBlock(MySQLConnection &db, const CBlock &blk, const int32_t height) {
   string sql;
   MySQLResult res;
+  char **row = nullptr;
   const uint256 blockHash = blk.GetHash();
 
   // check is exist
@@ -196,16 +197,24 @@ int64_t insertRawBlock(MySQLConnection &db, const CBlock &blk, const int32_t hei
                         blockHash.ToString().c_str());
   db.query(sql, res);
   if (res.numRows() == 1) {
-    char **row = res.nextRow();
+    row = res.nextRow();
     assert(atoi(row[1]) == height);
     return atoi64(row[0]);
   }
 
-  // update chain_id
-  sql = Strings::Format("UPDATE `0_raw_blocks` SET `chain_id` = `chain_id` + 1 "
-                        " WHERE `block_height` = %lld ",
+  //
+  // update chain_id, 从最大的 chain_id 记录向上递增
+  // 0_raw_blocks.chain_id 与 0_blocks.chain_id 同一个块的 chain_id 不一定一致
+  //
+  sql = Strings::Format("SELECT `id` FROM `0_raw_blocks` "
+                        " WHERE `block_height` = %lld ORDER BY `chain_id` DESC ",
                         height);
-  db.execute(sql.c_str());
+  db.query(sql, res);
+  while ((row = res.nextRow()) != nullptr) {
+    const string sql2 = Strings::Format("UPDATE `0_raw_blocks` SET `chain_id` = `chain_id` + 1"
+                                        " WHERE `id` = %lld ", atoi64(row[0]));
+    db.updateOrThrowEx(sql, 1);
+  }
 
   // insert raw
   const string blockHex = EncodeHexBlock(blk);
@@ -225,6 +234,7 @@ int64_t insertRawTx(MySQLConnection &db, const CTransaction &tx) {
   const uint256 txHash = tx.GetHash();
   const string  txHashStr = txHash.ToString();
 
+  // TODO: 将最近使用的 txhash 进行缓存，有利于当新块到来时，避免执行大量 select SQL语句
   // check is exist
   sql = Strings::Format("SELECT `id` FROM `raw_txs_%04d` WHERE `tx_hash`='%s'",
                         HexToDecLast2Bytes(txHashStr) % 64, txHashStr.c_str());

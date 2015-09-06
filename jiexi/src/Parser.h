@@ -211,6 +211,9 @@ private:
   CacheManager *cache_;
   bool cacheEnable_;
 
+  int64_t unconfirmedTxsSize_;
+  int32_t unconfirmedTxsCount_;
+
 //  bool tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset);
   bool tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId);
 

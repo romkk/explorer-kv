@@ -447,7 +447,8 @@ void CacheManager::threadConsumer() {
 
 
 Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
-running_(true), cache_(nullptr), isReverse_(false), reverseEndTxlog2ID_(0)
+running_(true), isReverse_(false), reverseEndTxlog2ID_(0), cache_(nullptr),
+unconfirmedTxsSize_(0), unconfirmedTxsCount_(0)
 {
   // setup cache manager: SSDB
   cacheEnable_ = Config::GConfig.getBool("ssdb.enable", false);
@@ -480,6 +481,10 @@ void Parser::stop() {
 }
 
 bool Parser::init() {
+  string sql;
+  MySQLResult res;
+  char **row = nullptr;
+
   if (!dbExplorer_.ping()) {
     LOG_FATAL("connect to explorer DB failure");
     return false;
@@ -492,6 +497,27 @@ bool Parser::init() {
     LOG_FATAL("mysql.db.max_allowed_packet(%d) is too small, should >= %d",
               maxAllowed, kMinAllowed);
     return false;
+  }
+
+  //
+  // jiexi.unconfirmed_txs.count & jiexi.unconfirmed_txs.size
+  //
+  {
+    sql = Strings::Format("DELETE FROM `0_explorer_meta` WHERE `key` IN "
+                          " ('jiexi.unconfirmed_txs.count', 'jiexi.unconfirmed_txs.size')");
+    dbExplorer_.updateOrThrowEx(sql);
+
+    sql = Strings::Format("SELECT COUNT(*), IFNULL(SUM(`size`), 0) FROM `0_unconfirmed_txs`");
+    dbExplorer_.query(sql, res);
+    row = res.nextRow();
+    unconfirmedTxsCount_ = atoi(row[0]);
+    unconfirmedTxsSize_  = atoi64(row[0]);
+
+    sql = Strings::Format("INSERT INTO `0_explorer_meta` (`key`, `value`, `created_at`, `updated_at`)"
+                          " VALUES ('jiexi.unconfirmed_txs.count',  %d, NOW(), NOW()), "
+                          "        ('jiexi.unconfirmed_txs.size', %lld, NOW(), NOW()) ",
+                          unconfirmedTxsCount_, unconfirmedTxsSize_);
+    dbExplorer_.updateOrThrowEx(sql, 2);
   }
 
   return true;
@@ -1193,6 +1219,7 @@ void _insertAddressTxs(MySQLConnection &db, class TxLog2 *txLog2,
 
     //
     // 处理前向记录
+    // accept: 加入交易链尾，不涉及调整交易链
     //
     if (addr->endTxYmd_ > 0 && addr->endTxId_ > 0) {
       // 更新前向记录
@@ -1291,19 +1318,41 @@ void _insertTx(MySQLConnection &db, class TxLog2 *txLog2, int64_t valueIn) {
 
 // insert unconfirmed txs
 static
-void _insertUnconfirmedTx(MySQLConnection &db, class TxLog2 *txLog2) {
+void _insertUnconfirmedTx(MySQLConnection &db, class TxLog2 *txLog2,
+                          const int32_t unconfirmedTxsCount,
+                          const int64_t unconfirmedTxsSize) {
   string sql;
-  sql = Strings::Format("INSERT INTO `0_unconfirmed_txs` (`position`, `block_id`, `tx_hash`, `created_at`)"
+  const string nowStr = date("%F %T");
+
+  //
+  // 0_unconfirmed_txs
+  //
+  sql = Strings::Format("INSERT INTO `0_unconfirmed_txs` (`position`,`block_id`,`tx_hash`,`size`,`created_at`)"
                         " VALUES ("
                         " (SELECT IFNULL(MAX(`position`), -1) + 1 FROM `0_unconfirmed_txs` as t1), "
-                        " %lld, '%s', '%s') ",
+                        " %lld, '%s',%d,'%s') ",
                         txLog2->blkId_, txLog2->txHash_.ToString().c_str(),
-                        date("%F %T").c_str());
+                        (int32_t)(txLog2->txHex_.length() / 2),
+                        nowStr.c_str());
+  db.updateOrThrowEx(sql, 1);
+
+  //
+  // 0_explorer_meta
+  //
+  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %d, `updated_at`='%s' "
+                        " WHERE `key` = 'jiexi.unconfirmed_txs.count' ",
+                        unconfirmedTxsCount, nowStr.c_str());
+  db.updateOrThrowEx(sql, 1);
+  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %d, `updated_at`='%s' "
+                        " WHERE `key` = 'jiexi.unconfirmed_txs.size' ",
+                        unconfirmedTxsSize, nowStr.c_str());
   db.updateOrThrowEx(sql, 1);
 }
 
 // 接收一个新的交易
 void Parser::acceptTx(class TxLog2 *txLog2) {
+  assert(txLog2->blkHeight_ == -1);
+
   // 硬编码特殊交易处理
   //
   // 1. tx hash: d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599
@@ -1339,10 +1388,10 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   // 插入交易tx
   _insertTx(dbExplorer_, txLog2, valueIn);
 
-  // 0_unconfirmed_txs
-  if (txLog2->blkHeight_ == -1) {  // 高度为-1表示临时块
-    _insertUnconfirmedTx(dbExplorer_, txLog2);
-  }
+  // 处理未确认计数器和记录
+  unconfirmedTxsCount_++;
+  unconfirmedTxsSize_ += txLog2->txHex_.length() / 2;
+  _insertUnconfirmedTx(dbExplorer_, txLog2, unconfirmedTxsCount_, unconfirmedTxsSize_);
 }
 
 

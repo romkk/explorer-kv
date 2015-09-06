@@ -74,13 +74,25 @@ public:
   int32_t endTxYmd_;
   int64_t beginTxId_;
   int64_t endTxId_;
+
   int64_t totalReceived_;
   int64_t totalSent_;
+
+  int64_t unconfirmedReceived_;
+  int64_t unconfirmedSent_;
+
+  int32_t lastConfirmedTxYmd_;
+  int64_t lastConfirmedTxId_;
+
   int64_t txCount_;
 
-  LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd, int64_t beginTxId,
-                     int64_t endTxId, int64_t totalReceived, int64_t totalSent,
+  LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd,
+                     int64_t beginTxId, int64_t endTxId,
+                     int64_t unconfirmedReceived, int64_t unconfirmedSent,
+                     int32_t lastConfirmedTxYmd, int64_t lastConfirmedTxId,
+                     int64_t totalReceived, int64_t totalSent,
                      int64_t txCount);
+  LastestAddressInfo(const LastestAddressInfo &a);
 };
 
 class DBTxOutput {

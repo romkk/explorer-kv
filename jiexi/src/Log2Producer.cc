@@ -450,8 +450,10 @@ void Log2Producer::handleTx(Log1 &log1Item) {
                         " `block_id`,`block_timestamp`,`tx_hash`,`created_at`,`updated_at`) "
                         " VALUES ("
                         " (SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `0_txlogs2` as t1), "
-                        " %d, -1, -1, 0, '%s', '%s', '%s');",
+                        " %d, -1, -1, %lld, '%s', '%s', '%s');",
                         LOG2TYPE_TX_ACCEPT,
+                        // 设置为当前时间即可，交易平均确认时间大约不到10分钟
+                        (int64_t)time(nullptr) + 600,
                         hash.ToString().c_str(),
                         nowStr.c_str(), nowStr.c_str());
 

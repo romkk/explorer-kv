@@ -175,7 +175,7 @@ bool MemTxRepository::isExist(const uint256 &txhash) const {
 
 
 ///////////////////////////////  BlockTimestamp  /////////////////////////////////
-BlockTimestamp::BlockTimestamp(const int32_t limit): limit_(limit) {
+BlockTimestamp::BlockTimestamp(const int32_t limit): limit_(limit),currMax_(0) {
 }
 
 int64_t BlockTimestamp::getMaxTimestamp() const {
@@ -187,6 +187,9 @@ void BlockTimestamp::pushBlock(const int32_t height, const int64_t ts) {
   blkTimestamps_[height] = ts;
   if (ts > currMax_) {
     currMax_ = ts;
+  } else {
+    LOG_WARN("block %lld timestamp(%lld) is less than curr max: %lld",
+             height, ts, currMax_);
   }
 
   // 检查数量限制，超出后移除首个元素
@@ -312,25 +315,26 @@ void Log2Producer::initLog2() {
                           log2BlockHeight_, log2BlockHash_.ToString().c_str());
     db_.query(sql, res);
     if (res.numRows() == 0) {
-      THROW_EXCEPTION_DBEX("can't find block from table.0_blocks, %d : %s",
+      THROW_EXCEPTION_DBEX("can't find block from table.0_blocks, %d : %s, "
+                           "please wait util 'tparser' catch up latest txlogs2",
                            log2BlockHeight_, log2BlockHash_.ToString().c_str());
     }
 
     // 获取最近 2016 个块的时间戳
-    sql = Strings::Format("SELECT `timestamp`,`height` FROM `0_blocks`"
+    sql = Strings::Format("SELECT * FROM (SELECT `timestamp`,`height` FROM `0_blocks`"
                           " WHERE `height` <= %d AND `chain_id` = 0 "
-                          " ORDER BY `height` DESC LIMIT 2016 ",
+                          " ORDER BY `height` DESC LIMIT 2016) AS `t1` ORDER BY `height` ASC ",
                           log2BlockHeight_);
     db_.query(sql, res);
     if (res.numRows() == 0) {
       THROW_EXCEPTION_DBEX("can't find max block timestamp, log2BlockHeight: %d",
                            log2BlockHeight_);
     }
-    for (size_t i = 0; i < res.numRows(); i++) {
+    for (int32_t i = (int32_t)res.numRows(); i > 0 ; i--) {
       row = res.nextRow();
       const int32_t height = atoi(row[1]);
       blkTs_.pushBlock(height, atoi64(row[0]));
-      assert(height == log2BlockHeight_ - i);
+      assert(height == log2BlockHeight_ - i + 1);
     }
     LOG_INFO("found max block timestamp: %lld", blkTs_.getMaxTimestamp());
   }

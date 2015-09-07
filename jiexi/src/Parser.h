@@ -56,6 +56,7 @@ inline int32_t tableIdx_BlockTxs(const int64_t blockId) {
 }
 
 
+/////////////////////////////////  RawBlock  ////////////////////////////////////
 class RawBlock {
 public:
   int64_t blockId_;
@@ -68,6 +69,8 @@ public:
            const uint256 hash, const string &hex);
 };
 
+
+////////////////////////////  LastestAddressInfo  ///////////////////////////////
 class LastestAddressInfo {
 public:
   int32_t beginTxYmd_;
@@ -110,26 +113,6 @@ public:
 };
 
 
-class TxLog {
-public:
-  int64_t  logId_;      // id in table
-  int32_t  status_;     // handle status
-  int32_t  type_;       // 1: accept, 2: rollback
-  int32_t  blkHeight_;  // block height
-  int64_t  blkId_;      // block ID
-  uint32_t blockTimestamp_;
-  string  createdAt_;
-
-  string txHex_;
-  uint256 txHash_;
-  CTransaction tx_;
-  int64_t txId_;
-
-  TxLog();
-  TxLog(const TxLog &t);
-  ~TxLog();
-};
-
 /////////////////////////////////  TxLog2  ////////////////////////////////////
 //
 // 对应 table.0_txlogs2
@@ -143,7 +126,10 @@ public:
                         // 400: TX_REJECT
   int32_t  blkHeight_;     // block height
   int64_t  blkId_;         // block ID
-  uint32_t blkTimestamp_;  // block timestamp
+
+  uint32_t maxBlkTimestamp_;  // max block timestamp (修正后的块时间戳)
+  int32_t  ymd_;              // 时间戳所对应的 ymd，对应 address_tx_<yyyymm>
+
   string   createdAt_;
 
   string txHex_;
@@ -154,10 +140,12 @@ public:
   TxLog2();
   TxLog2(const TxLog2 &t);
   ~TxLog2();
+
+  string toString() const;
 };
 
 
-/////////////////////////////////  CacheManager  ////////////////////////////////////
+///////////////////////////////  CacheManager  /////////////////////////////////
 // 若SSDB宕机，则丢弃数据
 class CacheManager {
   atomic<bool> running_;
@@ -198,6 +186,25 @@ public:
   void commit();
 };
 
+///////////////////////////////  AddressTxNode  /////////////////////////////////
+class AddressTxNode {
+public:
+  int32_t ymd_;  // 复制使用 memcpy(), 保持 ymd_ 为第一个字段
+  int32_t txHeight_;
+  int64_t addressId_;
+  int64_t txId_;
+  int64_t totalReceived_;
+  int64_t balanceDiff_;
+  int64_t balanceFinal_;
+  int64_t idx_;
+  int32_t prevYmd_;
+  int32_t nextYmd_;
+  int64_t prevTxId_;
+  int64_t nextTxId_;
+
+  AddressTxNode();
+  AddressTxNode(const AddressTxNode &node);
+};
 
 /////////////////////////////////  Parser  ////////////////////////////////////
 class Parser {
@@ -214,7 +221,8 @@ private:
   int64_t unconfirmedTxsSize_;
   int32_t unconfirmedTxsCount_;
 
-//  bool tryFetchLog(class TxLog *txLog, const int64_t lastTxLogOffset);
+  map<uint256/* tx hash */, map<int64_t/* addrID */, int64_t/* balance diff */> > addressBalanceCache_;
+
   bool tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId);
 
   int64_t getLastTxLog2Id();

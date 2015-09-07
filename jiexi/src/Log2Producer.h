@@ -107,6 +107,20 @@ public:
 };
 
 
+///////////////////////////////  BlockTimestamp  /////////////////////////////////
+class BlockTimestamp {
+  int32_t limit_;
+  int64_t currMax_;
+  map<int32_t, int64_t> blkTimestamps_;  // height <-> timestamp
+
+public:
+  BlockTimestamp(const int32_t limit);
+  int64_t getMaxTimestamp() const;
+  void pushBlock(const int32_t height, const int64_t ts);
+  void popBlock();
+};
+
+
 ///////////////////////////////  Log2Producer  /////////////////////////////////
 class Log2Producer {
   atomic<bool> running_;
@@ -119,6 +133,9 @@ class Log2Producer {
   // 最后消费的文件以及游标
   int32_t log1FileIndex_;
   int64_t log1FileOffset_;
+
+  // 块最大时间戳
+  BlockTimestamp blkTs_;
 
   /* log2 */
   int32_t log2BlockHeight_;

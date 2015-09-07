@@ -172,8 +172,47 @@ bool MemTxRepository::isExist(const uint256 &txhash) const {
   return txs_.find(txhash) != txs_.end();
 }
 
+
+
+///////////////////////////////  BlockTimestamp  /////////////////////////////////
+BlockTimestamp::BlockTimestamp(const int32_t limit): limit_(limit) {
+}
+
+int64_t BlockTimestamp::getMaxTimestamp() const {
+  return currMax_;
+}
+
+void BlockTimestamp::pushBlock(const int32_t height, const int64_t ts) {
+  assert(blkTimestamps_.find(height) == blkTimestamps_.end());
+  blkTimestamps_[height] = ts;
+  if (ts > currMax_) {
+    currMax_ = ts;
+  }
+
+  // 检查数量限制，超出后移除首个元素
+  while (blkTimestamps_.size() > limit_) {
+    blkTimestamps_.erase(blkTimestamps_.begin());
+  }
+}
+
+void BlockTimestamp::popBlock() {
+  assert(blkTimestamps_.size() > 0);
+  // map 尾部的 key 最大，也意味着块最高
+  blkTimestamps_.erase(std::prev(blkTimestamps_.end()));
+
+  currMax_ = 0;
+  for (auto it : blkTimestamps_) {
+    if (currMax_ < it.second) {
+      currMax_ = it.second;
+    }
+  }
+}
+
+
 ///////////////////////////////  Log2Producer  /////////////////////////////////
-Log2Producer::Log2Producer(): running_(false), db_(Config::GConfig.get("mysql.uri")) {
+Log2Producer::Log2Producer(): running_(false),
+db_(Config::GConfig.get("mysql.uri")), blkTs_(2016)
+{
   log1Dir_ = Config::GConfig.get("log1.dir");
 }
 
@@ -237,8 +276,8 @@ void Log2Producer::initLog2() {
     }
   }
   if (blockId > 0) {
-    sql = Strings::Format("SELECT `block_hash`,`block_height` FROM `0_raw_blocks` WHERE `id` = %lld ",
-                          blockId);
+    sql = Strings::Format("SELECT `block_hash`,`block_height` "
+                          " FROM `0_raw_blocks` WHERE `id` = %lld ", blockId);
     db_.query(sql, res);
     if (res.numRows() == 0) {
       THROW_EXCEPTION_DBEX("can't find block by id: %lld", blockId);
@@ -262,7 +301,41 @@ void Log2Producer::initLog2() {
   // 载入内存库中(未确认)交易
   //
   _initLog2_loadMemrepoTxs(db_, memRepo_);
+
+  //
+  // 获取当前高度之前的块的最大时间戳
+  //
+  {
+    // 必须 tpaser 消费跟进到最近的 txlogs2，才能保证能从 table.0_blocks 查询到最新
+    sql = Strings::Format("SELECT `hash` FROM `0_blocks` WHERE "
+                          " `height`=%d AND `chain_id`=0 AND `hash`='%s' ",
+                          log2BlockHeight_, log2BlockHash_.ToString().c_str());
+    db_.query(sql, res);
+    if (res.numRows() == 0) {
+      THROW_EXCEPTION_DBEX("can't find block from table.0_blocks, %d : %s",
+                           log2BlockHeight_, log2BlockHash_.ToString().c_str());
+    }
+
+    // 获取最近 2016 个块的时间戳
+    sql = Strings::Format("SELECT `timestamp`,`height` FROM `0_blocks`"
+                          " WHERE `height` <= %d AND `chain_id` = 0 "
+                          " ORDER BY `height` DESC LIMIT 2016 ",
+                          log2BlockHeight_);
+    db_.query(sql, res);
+    if (res.numRows() == 0) {
+      THROW_EXCEPTION_DBEX("can't find max block timestamp, log2BlockHeight: %d",
+                           log2BlockHeight_);
+    }
+    for (size_t i = 0; i < res.numRows(); i++) {
+      row = res.nextRow();
+      const int32_t height = atoi(row[1]);
+      blkTs_.pushBlock(height, atoi64(row[0]));
+      assert(height == log2BlockHeight_ - i);
+    }
+    LOG_INFO("found max block timestamp: %lld", blkTs_.getMaxTimestamp());
+  }
 }
+
 
 void Log2Producer::syncLog1() {
   LogScope ls("Log2Producer::syncLog1()");
@@ -447,13 +520,12 @@ void Log2Producer::handleTx(Log1 &log1Item) {
 
   // 无冲突，插入DB
   sql = Strings::Format("INSERT INTO `0_txlogs2` (`batch_id`, `type`, `block_height`, "
-                        " `block_id`,`block_timestamp`,`tx_hash`,`created_at`,`updated_at`) "
+                        " `block_id`,`max_block_timestamp`,`tx_hash`,`created_at`,`updated_at`) "
                         " VALUES ("
                         " (SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `0_txlogs2` as t1), "
                         " %d, -1, -1, %lld, '%s', '%s', '%s');",
                         LOG2TYPE_TX_ACCEPT,
-                        // 设置为当前时间即可，交易平均确认时间大约不到10分钟
-                        (int64_t)time(nullptr) + 600,
+                        blkTs_.getMaxTimestamp(),  // 设置为前面最大的块时间戳
                         hash.ToString().c_str(),
                         nowStr.c_str(), nowStr.c_str());
 
@@ -473,6 +545,9 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
                                        log1Item.blockHeight_,
                                        hash.ToString().c_str());
   LogScope ls(lsStr.c_str());
+
+  // 先加入到块时间戳里，重新计算时间戳. 回滚块的时候是最后再 pop 块
+  blkTs_.pushBlock(log1Item.blockHeight_, blk.GetBlockTime());
 
   // 1.0 过一遍内存，通过添加至 memRepo 找到冲突的交易
   vector<uint256> txHashs;
@@ -510,7 +585,7 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
   vector<string> values;
   const string nowStr = date("%F %T");
   const string fields = "`batch_id`, `type`, `block_height`, `block_id`, "
-  "`block_timestamp`, `tx_hash`, `created_at`, `updated_at`";
+  "`max_block_timestamp`, `tx_hash`, `created_at`, `updated_at`";
 
   // 冲突的交易，需要做拒绝处理
   for (auto &it : conflictTxs) {
@@ -525,12 +600,11 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
   for (auto &tx : blk.vtx) {
     string item;
     const uint256 txhash = tx.GetHash();
-    const int64_t blockTimestamp = blk.GetBlockTime();
 
     // 首次处理的，需要补 accept 操作
     if (alreadyInMemTxHashs.find(txhash) == alreadyInMemTxHashs.end()) {
       item = Strings::Format("-1,%d,-1,-1,%lld,'%s','%s','%s'",
-                             LOG2TYPE_TX_ACCEPT, blockTimestamp,
+                             LOG2TYPE_TX_ACCEPT, blkTs_.getMaxTimestamp(),
                              txhash.ToString().c_str(),
                              nowStr.c_str(), nowStr.c_str());
       values.push_back(item);
@@ -539,7 +613,7 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
     // confirm
     item = Strings::Format("-1,%d,%d,%lld,%lld,'%s','%s','%s'",
                            LOG2TYPE_TX_CONFIRM,
-                           log1Item.blockHeight_, blockId, blockTimestamp,
+                           log1Item.blockHeight_, blockId, blkTs_.getMaxTimestamp(),
                            txhash.ToString().c_str(),
                            nowStr.c_str(), nowStr.c_str());
     values.push_back(item);
@@ -611,7 +685,7 @@ void Log2Producer::handleBlockRollback(Log1 &log1Item) {
   vector<string> values;
   const string nowStr = date("%F %T");
   const string fields = "`batch_id`, `type`, `block_height`, `block_id`,"
-  "`block_timestamp`,`tx_hash`, `created_at`, `updated_at`";
+  "`max_block_timestamp`,`tx_hash`, `created_at`, `updated_at`";
 
   // get block ID
   const int64_t blockId = insertRawBlock(db_, blk, log1Item.blockHeight_);
@@ -621,7 +695,7 @@ void Log2Producer::handleBlockRollback(Log1 &log1Item) {
     string item = Strings::Format("-1,%d,%d,%lld,%lld,'%s','%s','%s'",
                                   LOG2TYPE_TX_UNCONFIRM,
                                   log1Item.blockHeight_, blockId,
-                                  blk.GetBlockTime(),
+                                  blkTs_.getMaxTimestamp(),
                                   tx.GetHash().ToString().c_str(),
                                   nowStr.c_str(), nowStr.c_str());
     values.push_back(item);
@@ -632,11 +706,14 @@ void Log2Producer::handleBlockRollback(Log1 &log1Item) {
     string item = Strings::Format("-1,%d,%d,%lld,%lld,'%s','%s','%s'",
                                   LOG2TYPE_TX_REJECT,
                                   log1Item.blockHeight_, blockId,
-                                  blk.GetBlockTime(),
+                                  blkTs_.getMaxTimestamp(),
                                   blk.vtx[0].GetHash().ToString().c_str(),
                                   nowStr.c_str(), nowStr.c_str());
     values.push_back(item);
   }
+
+  // 先做操作，再移除块时间戳
+  blkTs_.popBlock();
 
   // 插入本批次数据
   multiInsert(db_, "0_txlogs2", fields, values);

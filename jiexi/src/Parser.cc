@@ -1541,10 +1541,97 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   addUnconfirmedTxPool(txLog2);
 }
 
+// 获取tx对应各个地址的余额变更情况
+map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
+  if (addressBalanceCache_.find(txLog2->txHash_) != addressBalanceCache_.end()) {
+    return &(addressBalanceCache_[txLog2->txHash_]);
+  }
 
-static void _getTxAddressBalance(class TxLog2 *txLog2,
-                                map<int64_t, int64_t> *addressBalance) {
-  // TODO
+  map<int64_t/* addrID */, int64_t/*  balance diff */> addressBalance;
+
+  MySQLResult res;
+  string sql;
+  char **row;
+  set<string> allAddresss;
+
+  //
+  // vin
+  //
+  if (!txLog2->tx_.IsCoinBase()) {
+    for (auto &in : txLog2->tx_.vin) {
+      uint256 prevHash = in.prevout.hash;
+      int64_t prevTxId = txHash2Id(dbExplorer_, prevHash);
+      int32_t prevPos  = (int32_t)in.prevout.n;
+
+      // 获取相关output信息
+      sql = Strings::Format("SELECT `address_ids`,`value` FROM `tx_outputs_%04d` "
+                            " WHERE `tx_id`=%lld AND `position`=%d",
+                            tableIdx_TxOutput(prevTxId), prevTxId, prevPos);
+      dbExplorer_.query(sql, res);
+      assert(res.numRows() == 1);
+
+      // 获取地址
+      row = res.nextRow();
+      vector<string> addressIdsStrVec = split(string(row[0]), '|');
+      for (auto &addrIdStr : addressIdsStrVec) {
+        addressBalance[atoi64(addrIdStr.c_str())] += -1 * atoi64(row[1])/* value */;
+      }
+    }
+  }
+
+  //
+  // vout
+  //
+  // 提取涉及到的所有地址
+  for (auto &out : txLog2->tx_.vout) {
+    txnouttype type;
+    vector<CTxDestination> addresses;
+    int nRequired;
+    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
+      LOG_WARN("extract destinations failure, txId: %lld, hash: %s",
+               txLog2->txId_, txLog2->tx_.GetHash().ToString().c_str());
+      continue;
+    }
+    for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
+      const string addrStr = CBitcoinAddress(addr).ToString();
+      allAddresss.insert(CBitcoinAddress(addr).ToString());
+    }
+  }
+  // 拿到所有地址的id
+  map<string, int64_t> addrMap;
+  GetAddressIds(dbExplorer_, allAddresss, addrMap);
+
+  int n = -1;
+  for (auto &out : txLog2->tx_.vout) {
+    n++;
+    string addressStr;
+    string addressIdsStr;
+    txnouttype type;
+    vector<CTxDestination> addresses;
+    int nRequired;
+    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
+      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
+               txLog2->txId_, txLog2->tx_.GetHash().ToString().c_str(), n);
+    }
+
+    // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
+    int i = -1;
+    for (auto &addr : addresses) {
+      i++;
+      const string addrStr = CBitcoinAddress(addr).ToString();
+      const int64_t addrId = addrMap[addrStr];
+      addressStr    += addrStr + ",";
+      addressIdsStr += Strings::Format("%lld", addrId) + ",";
+
+      // 增加每个地址的余额
+      addressBalance[addrId] += out.nValue;
+    }
+  }
+
+  // 设置缓存
+  addressBalanceCache_[txLog2->txHash_] = addressBalance;
+
+  return &(addressBalanceCache_[txLog2->txHash_]);
 }
 
 int32_t prevYmd(const int32_t ymd) {
@@ -1695,14 +1782,10 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
   //
   string sql;
 
-  // 拿到关联地址的变迁记录，可能需要调整交易链
-  map<int64_t/* addrID */, int64_t/*  balance diff */> addressBalance;
-  if (addressBalanceCache_.count(txLog2->txHash_) == 0) {
-    _getTxAddressBalance(txLog2, &addressBalance);
-    addressBalanceCache_[txLog2->txHash_] = addressBalance;
-  }
+  // 拿到关联地址的余额变更记录，可能需要调整交易链
+  auto addressBalance = _getTxAddressBalance(txLog2);
 
-  for (auto &it : addressBalance) {
+  for (auto &it : *addressBalance) {
     const int64_t addrID       = it.first;
 
     // 获取地址信息
@@ -1756,6 +1839,9 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
 
   // 处理未确认计数器和记录
   removeUnconfirmedTxPool(txLog2);
+
+  // 通常确认后即可删除余额变更记录的缓存
+  addressBalanceCache_.erase(txLog2->txHash_);
 }
 
 // unconfirm tx (address node)
@@ -1807,14 +1893,10 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
   //
   string sql;
 
-  // 拿到关联地址的变迁记录
-  map<int64_t/* addrID */, int64_t/*  balance diff */> addressBalance;
-  if (addressBalanceCache_.count(txLog2->txHash_) == 0) {
-    _getTxAddressBalance(txLog2, &addressBalance);
-    addressBalanceCache_[txLog2->txHash_] = addressBalance;
-  }
+  // 拿到关联地址的余额变更记录，可能需要调整交易链
+  auto addressBalance = _getTxAddressBalance(txLog2);
 
-  for (auto &it : addressBalance) {
+  for (auto &it : *addressBalance) {
     const int64_t addrID       = it.first;
 
     // 获取地址信息

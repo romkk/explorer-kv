@@ -244,6 +244,9 @@ private:
   void unconfirmTx(class TxLog2 *txLog2);
   void rejectTx   (class TxLog2 *txLog2);
 
+  // 获取tx对应各个地址的余额变更情况
+  map<int64_t, int64_t> *_getTxAddressBalance(class TxLog2 *txLog2);
+
   // 操作 tx 的辅助函数
   void _getAddressTxNode(const int64_t txId,
                          const LastestAddressInfo *addr, AddressTxNode *node);

@@ -89,6 +89,7 @@ public:
   int64_t lastConfirmedTxId_;
 
   int64_t txCount_;
+  time_t lastUseTime_;
 
   LastestAddressInfo(int64_t addrId,
                      int32_t beginTxYmd, int32_t endTxYmd,
@@ -254,8 +255,9 @@ private:
   void removeUnconfirmedTx(class TxLog2 *txLog2);
 
   // 移动地址交易节点
-  void moveForwardAddressTxNode (AddressTxNode *node);
-  void moveBackwardAddressTxNode(AddressTxNode *node);
+  void _switchAddressTxNode(AddressTxNode *prevNode, AddressTxNode *currNode);
+  void moveForwardAddressTxNode (const LastestAddressInfo *addr, AddressTxNode *node);
+  void moveBackwardAddressTxNode(const LastestAddressInfo *addr, AddressTxNode *node);
 
   void writeLastProcessTxlogTime();
 

@@ -70,6 +70,8 @@ LastestAddressInfo::LastestAddressInfo(int64_t addrId,
   totalSent_     = totalSent;
 
   txCount_       = txCount;
+
+  lastUseTime_ = time(nullptr);
 }
 
 LastestAddressInfo::LastestAddressInfo(const LastestAddressInfo &a) {
@@ -90,6 +92,8 @@ LastestAddressInfo::LastestAddressInfo(const LastestAddressInfo &a) {
   totalSent_     = a.totalSent_;
 
   txCount_       = a.txCount_;
+
+  lastUseTime_ = a.lastUseTime_;
 }
 
 // 获取block raw hex/id/chainId...
@@ -1146,16 +1150,17 @@ void _accpetTx_insertTxOutputs(MySQLConnection &db, CacheManager *cache,
 }
 
 // 获取地址信息
-static void _getAddressInfo(MySQLConnection &db, const int64_t addrID) {
+static LastestAddressInfo *_getAddressInfo(MySQLConnection &db, const int64_t addrID) {
   MySQLResult res;
   char **row;
   string sql;
+  const time_t now = time(nullptr);
 
   const string addrTableName = Strings::Format("addresses_%04d", tableIdx_Addr(addrID));
-  std::unordered_map<int64_t, LastestAddressInfo *>::iterator it2;
+  std::unordered_map<int64_t, LastestAddressInfo *>::iterator it;
 
-  it2 = gAddrTxCache.find(addrID);
-  if (it2 == gAddrTxCache.end()) {
+  it = gAddrTxCache.find(addrID);
+  if (it == gAddrTxCache.end()) {
     sql = Strings::Format("SELECT `begin_tx_ymd`,`begin_tx_id`,`end_tx_ymd`,`end_tx_id`,`total_received`,"
                           " `total_sent`,`tx_count`, `unconfirmed_received`, `unconfirmed_sent`, "
                           " `last_confirmed_tx_id`, `last_confirmed_tx_ymd` "
@@ -1179,13 +1184,27 @@ static void _getAddressInfo(MySQLConnection &db, const int64_t addrID) {
                                       atoi64(row[5]),   // totalSent
                                       atoi64(row[6]));  // totalSent
 
-    if (gAddrTxCache.size() > 100 * 10000) {
-      // clear, 数量限制，防止长时间运行后占用过多内存
-      std::unordered_map<int64_t, LastestAddressInfo *>().swap(gAddrTxCache);
-    }
     gAddrTxCache[addrID] = ptr;
+    it = gAddrTxCache.find(addrID);
+
+    // clear, 数量限制，防止长时间运行后占用过多内存
+    const int32_t kExpiredDays = 2;
+    if (gAddrTxCache.size() > 500 * 10000) {
+      for (auto it2 = gAddrTxCache.begin(); it2 != gAddrTxCache.end(); ) {
+        if (it2->second->lastUseTime_ + 86400 * kExpiredDays > now) {
+          it2++;
+          continue;
+        }
+        // 删除超出超过 kExpiredDays 天的记录
+        delete it2->second;
+        gAddrTxCache.erase(it2++);
+      }
+    }
   }
-  assert((gAddrTxCache.find(addrID) != gAddrTxCache.end()));
+
+  assert(it != gAddrTxCache.end());
+  it->second->lastUseTime_ = now;  // update last use time
+  return it->second;
 }
 
 // 变更地址&地址对应交易记录
@@ -1200,8 +1219,7 @@ void _accpetTx_insertAddressTxs(MySQLConnection &db, class TxLog2 *txLog2,
     const string addrTableName = Strings::Format("addresses_%04d", tableIdx_Addr(addrID));
 
     // 获取地址信息
-    _getAddressInfo(db, addrID);
-    LastestAddressInfo *addr = gAddrTxCache.find(addrID)->second;
+    LastestAddressInfo *addr = _getAddressInfo(db, addrID);
 
     //
     // 处理前向记录
@@ -1383,13 +1401,92 @@ void Parser::removeUnconfirmedTx(class TxLog2 *txLog2) {
 }
 
 // 交换相邻节点，当前节点前移
-void Parser::moveForwardAddressTxNode (AddressTxNode *node) {
-  // TODO
+void Parser::_switchAddressTxNode(AddressTxNode *prev, AddressTxNode *curr) {
+  //
+  // 顺序调整示意：   1, 2(prev), 3(curr), 4   ->   1, 3, 2, 4
+  // 其中：2，3必须存在，1和4均不一定存在
+  //
+  assert(curr->prevTxId_ != 0);
+  string sql;
+
+  // 变更后续节点, 节点4: 前向节点指向2。涉及指向，不涉及金额变化
+  if (curr->nextTxId_ > 0) {
+    // 涉及指向，不涉及金额变化
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `prev_ymd`=%d, `prev_tx_id`=%lld "
+                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                          curr->nextYmd_, curr->prevYmd_, curr->prevTxId_,
+                          curr->addressId_, curr->nextTxId_);
+    dbExplorer_.updateOrThrowEx(sql , 1);
+  }
+
+  // 变更后续节点, 节点1: 后向节点指向3。涉及指向，不涉及金额变化
+  if (prev->prevTxId_ > 0) {
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d, `next_tx_id`=%lld "
+                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                          prev->prevYmd_, curr->ymd_, curr->txId_,
+                          curr->addressId_, prev->prevTxId_);
+    dbExplorer_.updateOrThrowEx(sql , 1);
+  }
+
+  // 变更前向节点，节点2: 指向 & 金额
+  sql = Strings::Format("UPDATE `address_txs_%d` "
+                        " SET `prev_ymd`=%d, `prev_tx_id`=%lld, "
+                        "     `next_ymd`=%d, `next_tx_id`=%lld, "
+                        " `balance_final`  = `balance_final`  + %lld, "
+                        " `total_received` = `total_received` + %lld, "
+                        " `idx` = `idx` + 1 "
+                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                        curr->prevYmd_,
+                        curr->ymd_, curr->txId_,
+                        curr->nextYmd_, curr->nextTxId_,
+                        curr->balanceDiff_,
+                        (curr->balanceDiff_ > 0 ? curr->balanceDiff_ : 0),
+                        curr->addressId_, curr->prevTxId_);
+  dbExplorer_.updateOrThrowEx(sql , 1);
+
+  // 变更当前节点，节点3: 指向 & 金额
+  sql = Strings::Format("UPDATE `address_txs_%d` "
+                        " SET `prev_ymd`=%d, `prev_tx_id`=%lld, "
+                        "     `next_ymd`=%d, `next_tx_id`=%lld, "
+                        " `balance_final`  = `balance_final`  + %lld, "
+                        " `total_received` = `total_received` + %lld, "
+                        " `idx` = `idx` - 1 "
+                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                        curr->ymd_,
+                        prev->prevYmd_, prev->prevTxId_,
+                        prev->ymd_, prev->txId_,
+                        prev->balanceDiff_ * -1,
+                        (prev->balanceDiff_ > 0 ? prev->balanceDiff_ * -1 : 0),
+                        curr->addressId_, curr->txId_);
+  dbExplorer_.updateOrThrowEx(sql , 1);
+}
+
+// 交换相邻节点，当前节点前移
+void Parser::moveForwardAddressTxNode(const LastestAddressInfo *addr,
+                                      AddressTxNode *curr) {
+  //
+  // 顺序调整示意：   1, 2(prevNode), 3(curr), 4   ->   1, 3, 2, 4
+  //
+  assert(curr->prevTxId_ != 0);
+  string sql;
+  AddressTxNode prevNode;
+  _getAddressTxNode(curr->prevTxId_, addr, &prevNode);
+
+  _switchAddressTxNode(&prevNode, curr);
 }
 
 // 交换相邻节点，当前节点后移
-void Parser::moveBackwardAddressTxNode(AddressTxNode *node) {
-  // TODO
+void Parser::moveBackwardAddressTxNode(const LastestAddressInfo *addr,
+                                       AddressTxNode *curr) {
+  //
+  // 顺序调整示意：   1, 2(curr), 3(nextNode), 4   ->   1, 3, 2, 4
+  //
+  assert(curr->nextTxId_ != 0);
+  string sql;
+  AddressTxNode nextNode;
+  _getAddressTxNode(curr->nextTxId_, addr, &nextNode);
+
+  _switchAddressTxNode(curr, &nextNode);
 }
 
 // 接收一个新的交易
@@ -1480,11 +1577,9 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
 
   for (auto &it : addressBalance) {
     const int64_t addrID       = it.first;
-    const int64_t balanceDiff  = it.second;
 
     // 获取地址信息
-    _getAddressInfo(dbExplorer_, addrID);
-    LastestAddressInfo *addr = gAddrTxCache.find(addrID)->second;
+    LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
 
     // 当前节点
     AddressTxNode currNode;
@@ -1492,16 +1587,19 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
     //
     // 保障确认的节点在上一个确认节点的后方
     //
-    do {
+    while (1) {
       _getAddressTxNode(txLog2->txId_, addr, &currNode);
 
       // 涉及移动节点的情形: 即将确认的节点不在上一个确认节点的后方，即中间掺杂了其他交易
+      // 若前面无节点，两个值均为零
       if (addr->lastConfirmedTxId_ == currNode.prevTxId_) {
         break;
       }
       // 向前移动本节点
       moveForwardAddressTxNode(&currNode);
-    } while (1);
+    };
+    // 最后一个确认的ymd必然小于等于当前即将确认的ymd
+    assert(addr->lastConfirmedTxYmd_ <= currNode.ymd_);
 
     //
     // ymd 不一致，需要更新数据至目标表中
@@ -1556,8 +1654,7 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
 //    const int64_t balanceDiff  = it.second;
 
     // 获取地址信息
-    _getAddressInfo(dbExplorer_, addrID);
-    LastestAddressInfo *addr = gAddrTxCache.find(addrID)->second;
+    LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
 
     // 当前节点
     AddressTxNode currNode;
@@ -1848,8 +1945,7 @@ void Parser::_rejectAddressTxs(class TxLog2 *txLog2,
     //
     // 当前要reject的记录不是最后一条记录：需要移动节点
     //
-    _getAddressInfo(dbExplorer_, addrID);
-    LastestAddressInfo *addr = gAddrTxCache.find(addrID)->second;
+    LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
     AddressTxNode currNode;  // 当前节点
 
     do {

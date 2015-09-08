@@ -46,12 +46,15 @@ RawBlock::RawBlock(const int64_t blockId, const int32_t height, const int32_t ch
 
 ////////////////////////////  LastestAddressInfo  //////////////////////////////
 
-LastestAddressInfo::LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd,
+LastestAddressInfo::LastestAddressInfo(int64_t addrId,
+                                       int32_t beginTxYmd, int32_t endTxYmd,
                                        int64_t beginTxId, int64_t endTxId,
                                        int64_t unconfirmedReceived, int64_t unconfirmedSent,
                                        int32_t lastConfirmedTxYmd, int64_t lastConfirmedTxId,
                                        int64_t totalReceived, int64_t totalSent,
                                        int64_t txCount) {
+  addrId_  = addrId;
+
   beginTxYmd_    = beginTxYmd;
   endTxYmd_      = endTxYmd;
   beginTxId_     = beginTxId;
@@ -70,6 +73,8 @@ LastestAddressInfo::LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd,
 }
 
 LastestAddressInfo::LastestAddressInfo(const LastestAddressInfo &a) {
+  addrId_  = a.addrId_;
+
   beginTxYmd_    = a.beginTxYmd_;
   endTxYmd_      = a.endTxYmd_;
   beginTxId_     = a.beginTxId_;
@@ -1161,7 +1166,8 @@ static void _getAddressInfo(MySQLConnection &db, const int64_t addrID) {
       THROW_EXCEPTION_DBEX("can't find address record, addrId: %lld", addrID);
     }
     row = res.nextRow();
-    auto ptr = new LastestAddressInfo(atoi(row[0]),     // beginTxYmd
+    auto ptr = new LastestAddressInfo(addrID,
+                                      atoi(row[0]),     // beginTxYmd
                                       atoi(row[2]),     // endTxYmd
                                       atoi64(row[1]),   // beginTxId
                                       atoi64(row[3]),   // endTxId
@@ -1308,11 +1314,8 @@ void _accpetTx_insertTx(MySQLConnection &db, class TxLog2 *txLog2, int64_t value
   db.updateOrThrowEx(sql, 1);
 }
 
-// insert unconfirmed txs
-static
-void _accpetTx_insertUnconfirmedTx(MySQLConnection &db, class TxLog2 *txLog2,
-                          const int32_t unconfirmedTxsCount,
-                          const int64_t unconfirmedTxsSize) {
+
+void Parser::addUnconfirmedTx(class TxLog2 *txLog2) {
   string sql;
   const string nowStr = date("%F %T");
 
@@ -1326,19 +1329,67 @@ void _accpetTx_insertUnconfirmedTx(MySQLConnection &db, class TxLog2 *txLog2,
                         txLog2->blkId_, txLog2->txHash_.ToString().c_str(),
                         (int32_t)(txLog2->txHex_.length() / 2),
                         nowStr.c_str());
-  db.updateOrThrowEx(sql, 1);
+  dbExplorer_.updateOrThrowEx(sql, 1);
 
   //
   // 0_explorer_meta
   //
+  // jiexi.unconfirmed_txs.count
+  //
+  unconfirmedTxsCount_++;
   sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %d, `updated_at`='%s' "
                         " WHERE `key` = 'jiexi.unconfirmed_txs.count' ",
-                        unconfirmedTxsCount, nowStr.c_str());
-  db.updateOrThrowEx(sql, 1);
+                        unconfirmedTxsCount_, nowStr.c_str());
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  //
+  // jiexi.unconfirmed_txs.size
+  //
+  unconfirmedTxsSize_ += txLog2->txHex_.length() / 2;
   sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %d, `updated_at`='%s' "
                         " WHERE `key` = 'jiexi.unconfirmed_txs.size' ",
-                        unconfirmedTxsSize, nowStr.c_str());
-  db.updateOrThrowEx(sql, 1);
+                        unconfirmedTxsSize_, nowStr.c_str());
+  dbExplorer_.updateOrThrowEx(sql, 1);
+}
+
+void Parser::removeUnconfirmedTx(class TxLog2 *txLog2) {
+  string sql;
+  const string nowStr = date("%F %T");
+  sql = Strings::Format("DELETE FROM `0_unconfirmed_txs` WHERE `tx_hash`='%s'",
+                        txLog2->txHash_.ToString().c_str());
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  //
+  // 0_explorer_meta
+  //
+  // jiexi.unconfirmed_txs.count
+  //
+  unconfirmedTxsCount_--;
+  assert(unconfirmedTxsCount_ >= 0);
+  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %d, `updated_at`='%s' "
+                        " WHERE `key` = 'jiexi.unconfirmed_txs.count' ",
+                        unconfirmedTxsCount_, nowStr.c_str());
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  //
+  // jiexi.unconfirmed_txs.size
+  //
+  unconfirmedTxsSize_ -= txLog2->txHex_.length() / 2;
+  assert(unconfirmedTxsSize_ >= 0);
+  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %d, `updated_at`='%s' "
+                        " WHERE `key` = 'jiexi.unconfirmed_txs.size' ",
+                        unconfirmedTxsSize_, nowStr.c_str());
+  dbExplorer_.updateOrThrowEx(sql, 1);
+}
+
+// 交换相邻节点，当前节点前移
+void Parser::moveForwardAddressTxNode (AddressTxNode *node) {
+  // TODO
+}
+
+// 交换相邻节点，当前节点后移
+void Parser::moveBackwardAddressTxNode(AddressTxNode *node) {
+  // TODO
 }
 
 // 接收一个新的交易
@@ -1385,9 +1436,7 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   _accpetTx_insertTx(dbExplorer_, txLog2, valueIn);
 
   // 处理未确认计数器和记录
-  unconfirmedTxsCount_++;
-  unconfirmedTxsSize_ += txLog2->txHex_.length() / 2;
-  _accpetTx_insertUnconfirmedTx(dbExplorer_, txLog2, unconfirmedTxsCount_, unconfirmedTxsSize_);
+  addUnconfirmedTx(txLog2);
 }
 
 
@@ -1396,9 +1445,9 @@ static void _getTxAddressBlance(class TxLog2 *txLog2,
   // TODO
 }
 
-static void _getAddressTxNode(const int64_t addrId, const int64_t txId,
-                              LastestAddressInfo *addr, AddressTxNode *node) {
-
+void Parser::_getAddressTxNode(const int64_t txId,
+                               const LastestAddressInfo *addr, AddressTxNode *node) {
+  // TODO
 }
 
 // confirm tx (address node)
@@ -1408,16 +1457,6 @@ static void _confirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr,
 
   // 变更地址未确认额度
 }
-
-// 交换相邻的节点, 向前移动本节点
-static void _moveForwardAddressTxNode(AddressTxNode *node) {
-  // TODO
-}
-
-//// 交换相邻的节点, 向后移动本节点
-//static void _moveBackwardAddressTxNode() {
-//  // TODO
-//}
 
 // 更新后续节点的 ymd
 static void _changeYmdAddressTxNode(AddressTxNode *node, const int32_t ymd) {
@@ -1454,14 +1493,14 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
     // 保障确认的节点在上一个确认节点的后方
     //
     do {
-      _getAddressTxNode(addrID, txLog2->txId_, addr, &currNode);
+      _getAddressTxNode(txLog2->txId_, addr, &currNode);
 
       // 涉及移动节点的情形: 即将确认的节点不在上一个确认节点的后方，即中间掺杂了其他交易
-      if (addr->lastConfirmedTxYmd_ == currNode.prevYmd_) {
+      if (addr->lastConfirmedTxId_ == currNode.prevTxId_) {
         break;
       }
       // 向前移动本节点
-      _moveForwardAddressTxNode(&currNode);
+      moveForwardAddressTxNode(&currNode);
     } while (1);
 
     //
@@ -1475,7 +1514,7 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
     // 需要移动该节点之后的（包含本节点）至 txLog2->ymd_ 所在的表里
     if (currNode.ymd_ < txLog2->ymd_) {
       _changeYmdAddressTxNode(&currNode, txLog2->ymd_);
-      _getAddressTxNode(addrID, txLog2->txId_, addr, &currNode);
+      _getAddressTxNode(txLog2->txId_, addr, &currNode);
     }
 
     //
@@ -1486,6 +1525,9 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
   } /* /for */
 
   // TODO: 变更 table.txs_xxxx
+
+  // 处理未确认计数器和记录
+  removeUnconfirmedTx(txLog2);
 }
 
 // unconfirm tx (address node)
@@ -1519,7 +1561,7 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
 
     // 当前节点
     AddressTxNode currNode;
-    _getAddressTxNode(addrID, txLog2->txId_, addr, &currNode);
+    _getAddressTxNode(txLog2->txId_, addr, &currNode);
 
     // 反确认
     _unconfirmAddressTxNode(&currNode, addr);
@@ -1527,6 +1569,8 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
   
   // TODO: 变更 table.txs_xxxx
 
+  // 处理未确认计数器和记录
+  addUnconfirmedTx(txLog2);
 }
 
 // 回滚一个块操作
@@ -1593,9 +1637,9 @@ void _unremoveUnspentOutputs(MySQLConnection &db, CacheManager *cache,
   assert(res.numRows() == 1);
 
   // 获取地址
-  const string s = string(row[0]);
+  const string s      = string(row[0]);
   const int64_t value = atoi64(row[1]);
-  const string ids = string(row[2]);
+  const string ids    = string(row[2]);
 
   vector<string> addressIdsStrVec = split(s, '|');
   n = -1;
@@ -1632,12 +1676,10 @@ void _rejectTxInputs(MySQLConnection &db, CacheManager *cache,
   const CTransaction &tx = txLog2->tx_;
   const int32_t blockHeight = txLog2->blkHeight_;
   const int64_t txId = txLog2->txId_;
+  const int32_t ymd = 0;  // TODO
 
   string sql;
-  int n = -1;
   for (auto &in : tx.vin) {
-    n++;
-
     // 非 coinbase 无需处理前向交易
     if (tx.IsCoinBase()) { continue; }
 
@@ -1655,8 +1697,7 @@ void _rejectTxInputs(MySQLConnection &db, CacheManager *cache,
 
     // 重新插入 address_unspent_outputs_xxxx 相关记录
     _unremoveUnspentOutputs(db, cache, blockHeight, prevTxId, prevPos,
-                            addressBalance,
-                            atoi(date("%Y%m%d", txLog->blockTimestamp_).c_str()));
+                            addressBalance, ymd);
 
     if (cache != nullptr) {
       // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
@@ -1665,7 +1706,7 @@ void _rejectTxInputs(MySQLConnection &db, CacheManager *cache,
     }
   } /* /for */
 
-  // 删除 table.tx_inputs_xxxx 记录
+  // 删除 table.tx_inputs_xxxx 记录， coinbase tx 也有 tx_inputs_xxxx 记录
   sql = Strings::Format("DELETE FROM `tx_inputs_%04d` WHERE `tx_id`=%lld ",
                         txId % 100, txId);
   db.updateOrThrowEx(sql, (int32_t)tx.vin.size());
@@ -1678,7 +1719,6 @@ void _rejectTxOutputs(MySQLConnection &db, CacheManager *cache,
                       map<int64_t, int64_t> &addressBalance) {
   const CTransaction &tx = txLog2->tx_;
   const int64_t txId = txLog2->txId_;
-//  const int32_t ymd = atoi(date("%Y%m%d", txLog->blockTimestamp_).c_str());
   const int32_t ymd = 0;  // TODO
 
   int n;
@@ -1750,89 +1790,85 @@ void _rejectTxOutputs(MySQLConnection &db, CacheManager *cache,
 }
 
 
-// 回滚：变更地址&地址对应交易记录
-static
-void _rejectAddressTxs(MySQLConnection &db, class TxLog2 *txLog2,
-                       const map<int64_t, int64_t> &addressBalance) {
-  MySQLResult res;
-  char **row;
+// 移除地址交易节点 (含地址信息变更)
+void Parser::_removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node) {
   string sql;
 
-  // 前面步骤会确保该表已经存在
-//  const int32_t ymd = atoi(date("%Y%m%d", txLog->blockTimestamp_).c_str());
-  const int32_t ymd = 0;  // TODO
+  // 设置倒数第二条记录 next 记录为空, 如果存在的话
+  if (node->prevYmd_ != 0) {
+    assert(node->prevTxId_ != 0);
 
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=0, `next_tx_id`=0 "
+                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                          tableIdx_AddrTxs(node->prevYmd_),
+                          addr->addrId_, node->prevTxId_);
+    dbExplorer_.updateOrThrowEx(sql, 1);
+  }
+
+  // 删除最后一条记录
+  sql = Strings::Format("DELETE FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                        tableIdx_AddrTxs(node->ymd_), addr->addrId_, node->txId_);
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  // 更新地址信息
+  const int64_t received = (node->balanceDiff_ > 0 ? node->balanceDiff_ : 0);
+  const int64_t sent     = (node->balanceDiff_ < 0 ? node->balanceDiff_ * -1 : 0);
+
+  // 移除的节点必然是未确认的，需要 unconfirmed_xxxx 余额变更
+  sql = Strings::Format("UPDATE `addresses_%04d` SET `tx_count`=`tx_count`-1, "
+                        " `total_received` = `total_received` - %lld,"
+                        " `total_sent`     = `total_sent`     - %lld,"
+                        " `unconfirmed_received` = `unconfirmed_received` - %lld,"
+                        " `unconfirmed_sent`     = `unconfirmed_sent`     - %lld,"
+                        " `end_tx_ymd`=%d, `end_tx_id`=%lld, %s `updated_at`='%s' "
+                        " WHERE `id`=%lld ",
+                        tableIdx_Addr(addr->addrId_),
+                        received, sent, received, sent,
+                        node->prevYmd_, node->prevTxId_,
+                        // 没有倒数第二条，重置起始位置为空
+                        node->prevYmd_ == 0 ? "`begin_tx_id`=0,`begin_tx_ymd`=0," : "",
+                        date("%F %T").c_str(), addr->addrId_);
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  addr->txCount_--;
+  addr->totalReceived_ -= received;
+  addr->totalSent_     -= sent;
+  addr->unconfirmedReceived_ -= received;
+  addr->unconfirmedSent_     -= sent;
+  addr->endTxYmd_ = node->prevYmd_;
+  addr->endTxId_  = node->prevTxId_;
+}
+
+
+// 回滚：变更地址&地址对应交易记录
+void Parser::_rejectAddressTxs(class TxLog2 *txLog2,
+                               const map<int64_t, int64_t> &addressBalance) {
   for (auto &it : addressBalance) {
     const int64_t addrID      = it.first;
-    const int64_t balanceDiff = it.second;
-
-    // 获取地址信息
-    string addrTableName = Strings::Format("addresses_%04d", tableIdx_Addr(addrID));
-    sql = Strings::Format("SELECT `end_tx_ymd`,`end_tx_id`,(`total_received`-`total_sent`) "
-                          " FROM `%s` WHERE `id`=%lld ",
-                          addrTableName.c_str(), addrID);
-    db.query(sql, res);
-    assert(res.numRows() == 1);
-    row = res.nextRow();
-
-    const int32_t endTxYmd   = atoi(row[0]);
-    const int64_t endTxId    = atoi64(row[1]);
-    const int64_t curBalance = atoi64(row[2]);
-
+    //
     // 当前要reject的记录不是最后一条记录：需要移动节点
-    if (endTxYmd != ymd || endTxId != txLog2->txId_) {
-      THROW_EXCEPTION_DBEX("address's last tx NOT match, addrId: %lld, "
-                           "last ymd(%lld) should be %lld, "
-                           "last txId(%lld) should be %lld",
-                           addrID, endTxYmd, ymd, endTxId, txLog->txId_);
-    }
+    //
+    _getAddressInfo(dbExplorer_, addrID);
+    LastestAddressInfo *addr = gAddrTxCache.find(addrID)->second;
+    AddressTxNode currNode;  // 当前节点
 
-    // 获取最后一条记录，提取其前向记录，倒数第二条记录，如果存在的话
-    int64_t end2TxId = 0;
-    int32_t end2TxYmd = 0;
-    sql = Strings::Format("SELECT `prev_ymd`, `prev_tx_id` "
-                          " FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                          tableIdx_AddrTxs(endTxYmd), addrID, endTxId);
-    db.query(sql, res);
-    if (res.numRows() == 1) {
-      row = res.nextRow();
-      end2TxYmd = atoi(row[0]);
-      end2TxId  = atoi64(row[1]);
-      if (end2TxYmd != 0) {
-        assert(end2TxId != 0);
-        // 设置倒数第二条记录 next 记录为空
-        sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=0, `next_tx_id`=0 "
-                              " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                              tableIdx_AddrTxs(end2TxYmd), addrID, end2TxId);
-        db.updateOrThrowEx(sql, 1);
+    do {
+      _getAddressTxNode(txLog2->txId_, addr, &currNode);
+
+      // 涉及移动节点的情形: 当前节点并非最后一个节点
+      if (addr->endTxId_ == currNode.txId_) {
+        break;
       }
-    }
+      // 向后移动本节点
+      moveBackwardAddressTxNode(&currNode);
+    } while (1);
+    assert(addr->endTxId_ == currNode.txId_);
 
-    // 删除最后一条记录
-    sql = Strings::Format("DELETE FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                          tableIdx_AddrTxs(ymd), addrID, txLog2->txId_);
-    db.updateOrThrowEx(sql, 1);
-
-    // 更新地址信息
-    sql = Strings::Format("UPDATE `%s` SET `tx_count`=`tx_count`-1, "
-                          " `total_received` = `total_received` - %lld,"
-                          " `total_sent`     = `total_sent`     - %lld,"
-                          " `end_tx_ymd`=%d, `end_tx_id`=%lld, %s `updated_at`='%s' "
-                          " WHERE `id`=%lld ",
-                          addrTableName.c_str(),
-                          (balanceDiff > 0 ? balanceDiff : 0),
-                          (balanceDiff < 0 ? balanceDiff * -1 : 0),
-                          end2TxYmd, end2TxId,
-                          // 没有倒数第二条，重置起始位置为空
-                          end2TxYmd == 0 ? "`begin_tx_id`=0,`begin_tx_ymd`=0," : "",
-                          date("%F %T").c_str(), addrID);
-    db.updateOrThrowEx(sql, 1);
-
-    // 清理地址的缓存
-    gAddrTxCache.erase(addrID);
-
+    // 移除本节点 (含地址信息变更)
+    _removeAddressTxNode(addr, &currNode);
   } /* /for */
 }
+
 
 static
 void _rejectTx(MySQLConnection &db, CacheManager *cache, class TxLog2 *txLog2) {
@@ -1847,17 +1883,8 @@ void _rejectTx(MySQLConnection &db, CacheManager *cache, class TxLog2 *txLog2) {
   }
 }
 
-// rollback unconfirmed txs
-void _rejectUnconfirmedTx(MySQLConnection &db, class TxLog2 *txLog2) {
-  string sql;
-  sql = Strings::Format("DELETE FROM `0_unconfirmed_txs` WHERE `tx_hash`='%s'",
-                        txLog2->txHash_.ToString().c_str());
-  db.updateOrThrowEx(sql, 1);
 
-  // TODO: 计数器
-}
-
-// 回滚一个交易
+// 回滚一个交易, reject 的交易都是未确认的交易
 void Parser::rejectTx(class TxLog2 *txLog2) {
   // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
   map<int64_t, int64_t> addressBalance;
@@ -1867,9 +1894,8 @@ void Parser::rejectTx(class TxLog2 *txLog2) {
   _rejectAddressTxs(dbExplorer_, txLog2, addressBalance);
   _rejectTx        (dbExplorer_, cache_, txLog2);
 
-  if (txLog->blkHeight_ == -1) {  // 高度为-1表示临时块
-    _rejectUnconfirmedTx(dbExplorer_, txLog2);
-  }
+  // 处理未确认计数器和记录
+  removeUnconfirmedTx(txLog2);
 }
 
 // 获取上次 txlog2 的进度ID

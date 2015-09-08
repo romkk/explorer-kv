@@ -73,6 +73,7 @@ public:
 ////////////////////////////  LastestAddressInfo  ///////////////////////////////
 class LastestAddressInfo {
 public:
+  int64_t addrId_;
   int32_t beginTxYmd_;
   int32_t endTxYmd_;
   int64_t beginTxId_;
@@ -89,7 +90,8 @@ public:
 
   int64_t txCount_;
 
-  LastestAddressInfo(int32_t beginTxYmd, int32_t endTxYmd,
+  LastestAddressInfo(int64_t addrId,
+                     int32_t beginTxYmd, int32_t endTxYmd,
                      int64_t beginTxId, int64_t endTxId,
                      int64_t unconfirmedReceived, int64_t unconfirmedSent,
                      int32_t lastConfirmedTxYmd, int64_t lastConfirmedTxId,
@@ -189,7 +191,7 @@ public:
 ///////////////////////////////  AddressTxNode  /////////////////////////////////
 class AddressTxNode {
 public:
-  int32_t ymd_;  // 复制使用 memcpy(), 保持 ymd_ 为第一个字段
+  int32_t ymd_;  // 初始化、复制时使用 memcpy(), 保持 ymd_ 为第一个字段
   int32_t txHeight_;
   int64_t addressId_;
   int64_t txId_;
@@ -239,6 +241,21 @@ private:
   void confirmTx  (class TxLog2 *txLog2);
   void unconfirmTx(class TxLog2 *txLog2);
   void rejectTx   (class TxLog2 *txLog2);
+
+  // 操作 tx 的辅助函数
+  void _getAddressTxNode(const int64_t txId,
+                         const LastestAddressInfo *addr, AddressTxNode *node);
+  void _removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node);
+
+  void _rejectAddressTxs(class TxLog2 *txLog2, const map<int64_t, int64_t> &addressBalance);
+
+  // 未确认交易池
+  void addUnconfirmedTx   (class TxLog2 *txLog2);
+  void removeUnconfirmedTx(class TxLog2 *txLog2);
+
+  // 移动地址交易节点
+  void moveForwardAddressTxNode (AddressTxNode *node);
+  void moveBackwardAddressTxNode(AddressTxNode *node);
 
   void writeLastProcessTxlogTime();
 

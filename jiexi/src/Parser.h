@@ -207,6 +207,7 @@ public:
 
   AddressTxNode();
   AddressTxNode(const AddressTxNode &node);
+  void reset();
 };
 
 /////////////////////////////////  Parser  ////////////////////////////////////

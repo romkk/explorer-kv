@@ -443,6 +443,10 @@ AddressTxNode::AddressTxNode(const AddressTxNode &node) {
   memcpy(&ymd_, &node.ymd_, sizeof(AddressTxNode));
 }
 
+void AddressTxNode::reset() {
+  memset(&ymd_, 0, sizeof(AddressTxNode));
+}
+
 
 /////////////////////////////////  Parser  ///////////////////////////////////
 Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
@@ -1542,9 +1546,70 @@ static void _getTxAddressBlance(class TxLog2 *txLog2,
   // TODO
 }
 
+int32_t prevYmd(const int32_t ymd) {
+  // 转为时间戳
+  const string s = Strings::Format("%d", ymd) + " 00:00:00";
+  const time_t t = str2time(s.c_str(), "%Y%m%d %H:%M:%S");
+  // 向前步进一天
+  return atoi(date("%Y%m%d", t - 86400).c_str());
+}
+
 void Parser::_getAddressTxNode(const int64_t txId,
                                const LastestAddressInfo *addr, AddressTxNode *node) {
-  // TODO
+  // 这里涉及的Node通常是最近的，故从最后一个ymd向前找
+  int32_t ymd = addr->endTxYmd_;
+  string sql;
+  MySQLResult res;
+  char **row = nullptr;
+
+  node->reset();
+
+  while (ymd >= addr->beginTxYmd_) {
+    const int32_t currTableIdx = tableIdx_AddrTxs(ymd);
+    sql = Strings::Format("SELECT `tx_height`, `total_received`, `balance_diff`, "
+                          "  `balance_final`, `idx`, `prev_ymd`, "
+                          "  `next_ymd`, `prev_tx_id`, `next_tx_id` "
+                          " FROM `address_txs_%d` "
+                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                          currTableIdx, addr->addrId_, txId);
+    dbExplorer_.query(sql, res);
+
+    // 没找到，则向前找一个表查找，按天向前移动，直至发生更换表索引
+    if (res.numRows() == 0) {
+      while (1) {
+      	ymd = prevYmd(ymd);
+        if (ymd < addr->beginTxYmd_) {
+          break;
+        }
+        if (tableIdx_AddrTxs(ymd) == currTableIdx) {
+          continue;
+        }
+      }
+      continue;
+    }
+
+    row = res.nextRow();
+
+    node->ymd_ = ymd;
+    node->txHeight_  = atoi(row[0]);
+    node->addressId_ = addr->addrId_;
+    node->txId_      = txId;
+    node->totalReceived_ = atoi64(row[1]);
+    node->balanceDiff_   = atoi64(row[2]);
+    node->balanceFinal_  = atoi64(row[3]);
+    node->idx_      = atoi64(row[4]);
+    node->prevYmd_  = atoi(row[5]);
+    node->nextYmd_  = atoi(row[6]);
+    node->prevTxId_ = atoi64(row[7]);
+    node->nextTxId_ = atoi64(row[8]);
+
+    break;
+  } /* /while */
+
+  if (node->ymd_ == 0) {  // 必须获取到数据
+    THROW_EXCEPTION_DBEX("can't find address_tx, address_id: %lld, tx_id: %lld",
+                         addr->addrId_, txId);
+  }
 }
 
 // confirm tx (address node)
@@ -1596,7 +1661,7 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
         break;
       }
       // 向前移动本节点
-      moveForwardAddressTxNode(&currNode);
+      moveForwardAddressTxNode(addr, &currNode);
     };
     // 最后一个确认的ymd必然小于等于当前即将确认的ymd
     assert(addr->lastConfirmedTxYmd_ <= currNode.ymd_);
@@ -1672,9 +1737,7 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
 
 // 回滚一个块操作
 void Parser::rejectBlock(TxLog2 *txLog2) {
-  MySQLResult res;
   string sql;
-  char **row = nullptr;
 
   // 获取块Raw Hex
   string blkRawHex;

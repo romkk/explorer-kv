@@ -251,9 +251,13 @@ private:
 
   void _rejectAddressTxs(class TxLog2 *txLog2, const map<int64_t, int64_t> &addressBalance);
 
+  // 确认交易节点 & 反确认
+  void _confirmAddressTxNode  (AddressTxNode *node, LastestAddressInfo *addr, const int32_t height);
+  void _unconfirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr);
+
   // 未确认交易池
-  void addUnconfirmedTx   (class TxLog2 *txLog2);
-  void removeUnconfirmedTx(class TxLog2 *txLog2);
+  void addUnconfirmedTxPool   (class TxLog2 *txLog2);
+  void removeUnconfirmedTxPool(class TxLog2 *txLog2);
 
   // 更新记录至目标YMD
   void _changeYmdAddressTxNode_R(const LastestAddressInfo *addr,

@@ -1337,7 +1337,7 @@ void _accpetTx_insertTx(MySQLConnection &db, class TxLog2 *txLog2, int64_t value
 }
 
 
-void Parser::addUnconfirmedTx(class TxLog2 *txLog2) {
+void Parser::addUnconfirmedTxPool(class TxLog2 *txLog2) {
   string sql;
   const string nowStr = date("%F %T");
 
@@ -1374,7 +1374,7 @@ void Parser::addUnconfirmedTx(class TxLog2 *txLog2) {
   dbExplorer_.updateOrThrowEx(sql, 1);
 }
 
-void Parser::removeUnconfirmedTx(class TxLog2 *txLog2) {
+void Parser::removeUnconfirmedTxPool(class TxLog2 *txLog2) {
   string sql;
   const string nowStr = date("%F %T");
   sql = Strings::Format("DELETE FROM `0_unconfirmed_txs` WHERE `tx_hash`='%s'",
@@ -1538,7 +1538,7 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   _accpetTx_insertTx(dbExplorer_, txLog2, valueIn);
 
   // 处理未确认计数器和记录
-  addUnconfirmedTx(txLog2);
+  addUnconfirmedTxPool(txLog2);
 }
 
 
@@ -1614,13 +1614,39 @@ void Parser::_getAddressTxNode(const int64_t txId,
 }
 
 // confirm tx (address node)
-static void _confirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr,
-                                  const int32_t height) {
-  // TODO
+void Parser::_confirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr,
+                                   const int32_t height) {
+  string sql;
 
+  //
   // 更新 address_txs_<yyyymm>.tx_height
+  //
+  sql = Strings::Format("UPDATE `address_txs_%d` SET `tx_height`=%d "
+                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                        tableIdx_AddrTxs(node->ymd_), height,
+                        node->addressId_, node->idx_);
+  dbExplorer_.updateOrThrowEx(sql, 1);
 
-  // 变更地址未确认额度
+  //
+  // 变更地址未确认额度等信息
+  //
+  const int64_t received = (node->balanceDiff_ > 0 ? node->balanceDiff_ : 0);
+  const int64_t sent     = (node->balanceDiff_ < 0 ? node->balanceDiff_ * -1 : 0);
+
+  sql = Strings::Format("UPDATE `addresses_%04d` SET "
+                        " `unconfirmed_received` = `unconfirmed_received` - %lld,"
+                        " `unconfirmed_sent`     = `unconfirmed_sent`     - %lld,"
+                        " `last_confirmed_tx_ymd`=%d, `last_confirmed_tx_id`=%lld, "
+                        " `updated_at`='%s' WHERE `id`=%lld ",
+                        tableIdx_Addr(addr->addrId_),
+                        received, sent, node->ymd_, node->txId_,
+                        date("%F %T").c_str(), addr->addrId_);
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  addr->unconfirmedReceived_ -= received;
+  addr->unconfirmedSent_     -= sent;
+  addr->lastConfirmedTxId_  = node->txId_;
+  addr->lastConfirmedTxYmd_ = node->ymd_;
 }
 
 // 更新后续节点的 ymd
@@ -1709,7 +1735,7 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
       THROW_EXCEPTION_DBEX("currNode.ymd_: %d > txLog2->ymd_: %d",
                            currNode.ymd_, txLog2->ymd_);
     }
-    // 需要移动的情形：上一个确认在7月份，未确认的也在7月份，此时确认7月份的交易至8月份
+    // 需要移动的情形：上一个确认在7月份，未确认的也在7月份，此时确认7月份的未确认交易至8月份
     // 需要移动该节点之后的（包含本节点）至 txLog2->ymd_ 所在的表里
     if (currNode.ymd_ < txLog2->ymd_) {
       _changeYmdAddressTxNode_R(addr, txLog2->ymd_, &currNode);
@@ -1720,21 +1746,54 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
     // 确认
     //
     _confirmAddressTxNode(&currNode, addr, txLog2->blkHeight_);
-
   } /* /for */
 
   // TODO: 变更 table.txs_xxxx
 
   // 处理未确认计数器和记录
-  removeUnconfirmedTx(txLog2);
+  removeUnconfirmedTxPool(txLog2);
 }
 
 // unconfirm tx (address node)
-static
-void _unconfirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr) {
-  // 更新 address_txs_<yyyymm>.tx_height
+void Parser::_unconfirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr) {
+  string sql;
 
-  // 变更地址未确认额度
+  //
+  // 更新 address_txs_<yyyymm>.tx_height
+  //
+  sql = Strings::Format("UPDATE `address_txs_%d` SET `tx_height`=0 "
+                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                        tableIdx_AddrTxs(node->ymd_),
+                        node->addressId_, node->idx_);
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  //
+  // 变更地址未确认额度等信息
+  //
+  const int64_t received = (node->balanceDiff_ > 0 ? node->balanceDiff_ : 0);
+  const int64_t sent     = (node->balanceDiff_ < 0 ? node->balanceDiff_ * -1 : 0);
+
+  AddressTxNode prevNode;
+  if (node->prevTxId_) {
+    _getAddressTxNode(node->prevTxId_, addr, &prevNode);
+  }
+
+  sql = Strings::Format("UPDATE `addresses_%04d` SET "
+                        " `unconfirmed_received` = `unconfirmed_received` + %lld,"
+                        " `unconfirmed_sent`     = `unconfirmed_sent`     + %lld,"
+                        " `last_confirmed_tx_ymd`=%d, `last_confirmed_tx_id`=%lld, "
+                        " `updated_at`='%s' WHERE `id`=%lld ",
+                        tableIdx_Addr(addr->addrId_),
+                        received, sent,
+                        (node->prevTxId_ ? prevNode.ymd_  : 0),
+                        (node->prevTxId_ ? prevNode.txId_ : 0),
+                        date("%F %T").c_str(), addr->addrId_);
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  addr->unconfirmedReceived_ -= received;
+  addr->unconfirmedSent_     -= sent;
+  addr->lastConfirmedTxId_  = (node->prevTxId_ ? prevNode.txId_ : 0);
+  addr->lastConfirmedTxYmd_ = (node->prevTxId_ ? prevNode.ymd_  : 0);
 }
 
 // 取消交易的确认
@@ -1768,7 +1827,7 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
   // TODO: 变更 table.txs_xxxx
 
   // 处理未确认计数器和记录
-  addUnconfirmedTx(txLog2);
+  addUnconfirmedTxPool(txLog2);
 }
 
 // 回滚一个块操作
@@ -2001,7 +2060,7 @@ void Parser::_removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node)
     dbExplorer_.updateOrThrowEx(sql, 1);
   }
 
-  // 删除最后一条记录
+  // 删除最后一个交易节点记录
   sql = Strings::Format("DELETE FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
                         tableIdx_AddrTxs(node->ymd_), addr->addrId_, node->txId_);
   dbExplorer_.updateOrThrowEx(sql, 1);
@@ -2055,7 +2114,7 @@ void Parser::_rejectAddressTxs(class TxLog2 *txLog2,
         break;
       }
       // 向后移动本节点
-      moveBackwardAddressTxNode(&currNode);
+      moveBackwardAddressTxNode(addr, &currNode);
     } while (1);
     assert(addr->endTxId_ == currNode.txId_);
 
@@ -2086,11 +2145,11 @@ void Parser::rejectTx(class TxLog2 *txLog2) {
 
   _rejectTxInputs  (dbExplorer_, cache_, txLog2, addressBalance);
   _rejectTxOutputs (dbExplorer_, cache_, txLog2, addressBalance);
-  _rejectAddressTxs(dbExplorer_, txLog2, addressBalance);
+  _rejectAddressTxs(txLog2, addressBalance);
   _rejectTx        (dbExplorer_, cache_, txLog2);
 
   // 处理未确认计数器和记录
-  removeUnconfirmedTx(txLog2);
+  removeUnconfirmedTxPool(txLog2);
 }
 
 // 获取上次 txlog2 的进度ID

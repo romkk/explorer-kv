@@ -1418,7 +1418,8 @@ void Parser::_switchAddressTxNode(AddressTxNode *prev, AddressTxNode *curr) {
     // 涉及指向，不涉及金额变化
     sql = Strings::Format("UPDATE `address_txs_%d` SET `prev_ymd`=%d, `prev_tx_id`=%lld "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                          curr->nextYmd_, curr->prevYmd_, curr->prevTxId_,
+                          tableIdx_AddrTxs(curr->nextYmd_),
+                          curr->prevYmd_, curr->prevTxId_,
                           curr->addressId_, curr->nextTxId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
   }
@@ -1427,7 +1428,7 @@ void Parser::_switchAddressTxNode(AddressTxNode *prev, AddressTxNode *curr) {
   if (prev->prevTxId_ > 0) {
     sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d, `next_tx_id`=%lld "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                          prev->prevYmd_, curr->ymd_, curr->txId_,
+                          tableIdx_AddrTxs(prev->prevYmd_), curr->ymd_, curr->txId_,
                           curr->addressId_, prev->prevTxId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
   }
@@ -1440,7 +1441,7 @@ void Parser::_switchAddressTxNode(AddressTxNode *prev, AddressTxNode *curr) {
                         " `total_received` = `total_received` + %lld, "
                         " `idx` = `idx` + 1 "
                         " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                        curr->prevYmd_,
+                        tableIdx_AddrTxs(curr->prevYmd_),
                         curr->ymd_, curr->txId_,
                         curr->nextYmd_, curr->nextTxId_,
                         curr->balanceDiff_,
@@ -1456,7 +1457,7 @@ void Parser::_switchAddressTxNode(AddressTxNode *prev, AddressTxNode *curr) {
                         " `total_received` = `total_received` + %lld, "
                         " `idx` = `idx` - 1 "
                         " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                        curr->ymd_,
+                        tableIdx_AddrTxs(curr->ymd_),
                         prev->prevYmd_, prev->prevTxId_,
                         prev->ymd_, prev->txId_,
                         prev->balanceDiff_ * -1,
@@ -1541,7 +1542,7 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
 }
 
 
-static void _getTxAddressBlance(class TxLog2 *txLog2,
+static void _getTxAddressBalance(class TxLog2 *txLog2,
                                 map<int64_t, int64_t> *addressBalance) {
   // TODO
 }
@@ -1615,15 +1616,49 @@ void Parser::_getAddressTxNode(const int64_t txId,
 // confirm tx (address node)
 static void _confirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr,
                                   const int32_t height) {
+  // TODO
+
   // 更新 address_txs_<yyyymm>.tx_height
 
   // 变更地址未确认额度
 }
 
 // 更新后续节点的 ymd
-static void _changeYmdAddressTxNode(AddressTxNode *node, const int32_t ymd) {
-  // TODO
-  // 该节点之后的（包含本节点）全部移动至 ymd 表中去
+// 该节点之后的（包含本节点）全部移动至 ymd 表中去
+void Parser::_changeYmdAddressTxNode_R(const LastestAddressInfo *addr,
+                                       const int32_t targetYmd, AddressTxNode *node) {
+  string sql;
+
+  if (tableIdx_AddrTxs(targetYmd) == tableIdx_AddrTxs(node->ymd_)) {
+    return;
+  }
+
+  // 插入记录至新表
+  const string fields = "`address_id`, `tx_id`, `tx_height`, `total_received`, "
+  "`balance_diff`, `balance_final`, `idx`, `ymd`, `prev_ymd`, "
+  "`prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`";
+  sql = Strings::Format("INSERT INTO `address_txs_%d` (%s) "
+                        " SELECT %s FROM `address_txs_%d` "
+                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                        tableIdx_AddrTxs(targetYmd), fields.c_str(),
+                        tableIdx_AddrTxs(node->ymd_), fields.c_str(),
+                        node->addressId_, node->txId_);
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  // 删除旧记录
+  sql = Strings::Format("DELETE FROM `address_txs_%d` "
+                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                        tableIdx_AddrTxs(node->ymd_), node->addressId_, node->txId_);
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  // 调整后续记录
+  if (node->nextTxId_ && tableIdx_AddrTxs(node->nextYmd_) < tableIdx_AddrTxs(targetYmd)) {
+    AddressTxNode nextNode;
+    _getAddressTxNode(node->nextTxId_, addr, &nextNode);
+
+    // -R
+    _changeYmdAddressTxNode_R(addr, targetYmd, &nextNode);
+  }
 }
 
 // 确认一个交易
@@ -1636,7 +1671,7 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
   // 拿到关联地址的变迁记录，可能需要调整交易链
   map<int64_t/* addrID */, int64_t/*  balance diff */> addressBalance;
   if (addressBalanceCache_.count(txLog2->txHash_) == 0) {
-    _getTxAddressBlance(txLog2, &addressBalance);
+    _getTxAddressBalance(txLog2, &addressBalance);
     addressBalanceCache_[txLog2->txHash_] = addressBalance;
   }
 
@@ -1674,9 +1709,10 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
       THROW_EXCEPTION_DBEX("currNode.ymd_: %d > txLog2->ymd_: %d",
                            currNode.ymd_, txLog2->ymd_);
     }
+    // 需要移动的情形：上一个确认在7月份，未确认的也在7月份，此时确认7月份的交易至8月份
     // 需要移动该节点之后的（包含本节点）至 txLog2->ymd_ 所在的表里
     if (currNode.ymd_ < txLog2->ymd_) {
-      _changeYmdAddressTxNode(&currNode, txLog2->ymd_);
+      _changeYmdAddressTxNode_R(addr, txLog2->ymd_, &currNode);
       _getAddressTxNode(txLog2->txId_, addr, &currNode);
     }
 
@@ -1710,7 +1746,7 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
   // 拿到关联地址的变迁记录
   map<int64_t/* addrID */, int64_t/*  balance diff */> addressBalance;
   if (addressBalanceCache_.count(txLog2->txHash_) == 0) {
-    _getTxAddressBlance(txLog2, &addressBalance);
+    _getTxAddressBalance(txLog2, &addressBalance);
     addressBalanceCache_[txLog2->txHash_] = addressBalance;
   }
 

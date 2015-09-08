@@ -255,10 +255,15 @@ private:
   void addUnconfirmedTx   (class TxLog2 *txLog2);
   void removeUnconfirmedTx(class TxLog2 *txLog2);
 
+  // 更新记录至目标YMD
+  void _changeYmdAddressTxNode_R(const LastestAddressInfo *addr,
+                                 const int32_t targetYmd, AddressTxNode *node);
+
   // 移动地址交易节点
   void _switchAddressTxNode(AddressTxNode *prevNode, AddressTxNode *currNode);
   void moveForwardAddressTxNode (const LastestAddressInfo *addr, AddressTxNode *node);
   void moveBackwardAddressTxNode(const LastestAddressInfo *addr, AddressTxNode *node);
+
 
   void writeLastProcessTxlogTime();
 

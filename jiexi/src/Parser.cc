@@ -1693,6 +1693,7 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
   // confirm: 变更为确认（设定块高度值等），若不是紧接着上个已确认的交易，则调整交易链。
   //          若该交易涉及日期变更（从上月末变更为下月初），则需要移动其后所有的tx至新日期表中
   //
+  string sql;
 
   // 拿到关联地址的变迁记录，可能需要调整交易链
   map<int64_t/* addrID */, int64_t/*  balance diff */> addressBalance;
@@ -1748,7 +1749,10 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
     _confirmAddressTxNode(&currNode, addr, txLog2->blkHeight_);
   } /* /for */
 
-  // TODO: 变更 table.txs_xxxx
+  // table.txs_xxxx
+  sql = Strings::Format("UPDATE `txs_%04d` SET `height`=%d WHERE `tx_id`=%lld ",
+                        tableIdx_Tx(txLog2->txId_), txLog2->blkHeight_, txLog2->txId_);
+  dbExplorer_.updateOrThrowEx(sql, 1);
 
   // 处理未确认计数器和记录
   removeUnconfirmedTxPool(txLog2);
@@ -1801,6 +1805,7 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
   //
   // unconfirm: 解除最后一个已确认的交易（重置块高度零等），必然是最近确认交易，不涉及调整交易链
   //
+  string sql;
 
   // 拿到关联地址的变迁记录
   map<int64_t/* addrID */, int64_t/*  balance diff */> addressBalance;
@@ -1811,7 +1816,6 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
 
   for (auto &it : addressBalance) {
     const int64_t addrID       = it.first;
-//    const int64_t balanceDiff  = it.second;
 
     // 获取地址信息
     LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
@@ -1823,8 +1827,11 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
     // 反确认
     _unconfirmAddressTxNode(&currNode, addr);
   } /* /for */
-  
-  // TODO: 变更 table.txs_xxxx
+
+  // table.txs_xxxx
+  sql = Strings::Format("UPDATE `txs_%04d` SET `height`=0 WHERE `tx_id`=%lld ",
+                        tableIdx_Tx(txLog2->txId_), txLog2->txId_);
+  dbExplorer_.updateOrThrowEx(sql, 1);
 
   // 处理未确认计数器和记录
   addUnconfirmedTxPool(txLog2);

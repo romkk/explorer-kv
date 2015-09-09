@@ -1192,10 +1192,12 @@ static LastestAddressInfo *_getAddressInfo(MySQLConnection &db, const int64_t ad
     it = gAddrTxCache.find(addrID);
 
     // clear, 数量限制，防止长时间运行后占用过多内存
-    const int32_t kExpiredDays = 2;
-    if (gAddrTxCache.size() > 500 * 10000) {
+    const size_t  kMaxCacheCount  = IsDebug() ? 10000 : 500 * 10000;
+    const int32_t kExpiredSeconds = IsDebug() ? 1800  : 86400 * 3;
+    if (gAddrTxCache.size() > kMaxCacheCount) {
+      LOG_INFO("clear gAddrTxCache begin, count: %llu", gAddrTxCache.size());
       for (auto it2 = gAddrTxCache.begin(); it2 != gAddrTxCache.end(); ) {
-        if (it2->second->lastUseTime_ + 86400 * kExpiredDays > now) {
+        if (it2->second->lastUseTime_ + kExpiredSeconds > now) {
           it2++;
           continue;
         }
@@ -1203,6 +1205,7 @@ static LastestAddressInfo *_getAddressInfo(MySQLConnection &db, const int64_t ad
         delete it2->second;
         gAddrTxCache.erase(it2++);
       }
+      LOG_INFO("clear gAddrTxCache end, count: %llu", gAddrTxCache.size());
     }
   }
 
@@ -1431,7 +1434,7 @@ void Parser::_switchAddressTxNode(LastestAddressInfo *addr,
                           " `end_tx_id`=%lld, `end_tx_ymd`=%d"
                           " WHERE `address_id`=%lld ",
                           tableIdx_Addr(addr->addrId_),
-                          curr->prevTxId_, curr->prevYmd_, curr->addressId_);
+                          curr->prevTxId_, curr->prevYmd_, addr->addrId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
     addr->endTxId_  = curr->prevTxId_;
     addr->endTxYmd_ = curr->prevYmd_;
@@ -1452,7 +1455,7 @@ void Parser::_switchAddressTxNode(LastestAddressInfo *addr,
                           " `begin_tx_id`=%lld, `begin_tx_ymd`=%d"
                           " WHERE `address_id`=%lld ",
                           tableIdx_Addr(addr->addrId_),
-                          curr->txId_, curr->ymd_, curr->addressId_);
+                          curr->txId_, curr->ymd_, addr->addrId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
     addr->beginTxId_  = curr->txId_;
     addr->beginTxYmd_ = curr->ymd_;
@@ -1502,7 +1505,6 @@ void Parser::moveForwardAddressTxNode(LastestAddressInfo *addr,
   // 顺序调整示意：   1, 2(prevNode), 3(curr), 4   ->   1, 3, 2, 4
   //
   assert(curr->prevTxId_ != 0);
-  string sql;
   AddressTxNode prevNode;
   _getAddressTxNode(curr->prevTxId_, addr, &prevNode);
 
@@ -1516,7 +1518,6 @@ void Parser::moveBackwardAddressTxNode(LastestAddressInfo *addr,
   // 顺序调整示意：   1, 2(curr), 3(nextNode), 4   ->   1, 3, 2, 4
   //
   assert(curr->nextTxId_ != 0);
-  string sql;
   AddressTxNode nextNode;
   _getAddressTxNode(curr->nextTxId_, addr, &nextNode);
 
@@ -1682,8 +1683,7 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
   const int kMaxItemsCount     = IsDebug() ? 5000 : 50 * 10000;
   const time_t kExpiredSeconds = IsDebug() ? 1800 : 86400 * 3;
   if (addressBalanceCache_.size() > kMaxItemsCount) {
-    LOG_DEBUG("clear addressBalanceCache_ start, count: %lld",
-              addressBalanceCache_.size());
+    LOG_INFO("clear addressBalanceCache start, count: %llu", addressBalanceCache_.size());
 
       // 删掉最近未使用的tx
     for (auto it = txsTime_.begin(); it != txsTime_.end(); ) {
@@ -1701,8 +1701,7 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
         it++;
       }
     }
-    LOG_DEBUG("clear addressBalanceCache_ end, count: %lld",
-              addressBalanceCache_.size());
+    LOG_INFO("clear addressBalanceCache end, count: %llu", addressBalanceCache_.size());
     assert(addressBalanceCache_.size() == txsTime_.size());
   }
 
@@ -2261,14 +2260,14 @@ void Parser::_removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node)
 void Parser::_rejectAddressTxs(class TxLog2 *txLog2,
                                const map<int64_t, int64_t> &addressBalance) {
   for (auto &it : addressBalance) {
-    const int64_t addrID      = it.first;
+    const int64_t addrID = it.first;
     //
     // 当前要reject的记录不是最后一条记录：需要移动节点
     //
     LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
     AddressTxNode currNode;  // 当前节点
 
-    do {
+    while (1) {
       _getAddressTxNode(txLog2->txId_, addr, &currNode);
 
       // 涉及移动节点的情形: 当前节点并非最后一个节点
@@ -2277,7 +2276,7 @@ void Parser::_rejectAddressTxs(class TxLog2 *txLog2,
       }
       // 向后移动本节点
       moveBackwardAddressTxNode(addr, &currNode);
-    } while (1);
+    }
     assert(addr->endTxId_ == currNode.txId_);
 
     // 移除本节点 (含地址信息变更)
@@ -2299,22 +2298,21 @@ void _rejectTx(MySQLConnection &db, CacheManager *cache, class TxLog2 *txLog2) {
   }
 }
 
+static
+int32_t _getTxYmd(MySQLConnection &db, const int64_t txId) {
+  MySQLResult res;
+  string sql = Strings::Format("SELECT `ymd` FROM `txs_%04d` WHERE `tx_id`=%lld ",
+                               tableIdx_Tx(txId), txId);
+  db.query(sql, res);
+  assert(res.numRows() == 1);
+  char **row = res.nextRow();
+  return atoi(row[0]);
+}
 
 // 回滚一个交易, reject 的交易都是未确认的交易
 void Parser::rejectTx(class TxLog2 *txLog2) {
-  int32_t ymd = 0;
   map<int64_t, int64_t> addressBalance;
-
-  {
-    AddressTxNode node;
-    auto addressBalance2 = _getTxAddressBalance(txLog2);
-    LastestAddressInfo *addr = _getAddressInfo(dbExplorer_,
-                                               // first address ID
-                                               addressBalance2->begin()->first);
-    _getAddressTxNode(txLog2->txId_, addr, &node);
-    ymd = node.ymd_;
-  }
-  assert(ymd > 0);
+  const int32_t ymd = _getTxYmd(dbExplorer_, txLog2->txId_);
 
   _rejectTxInputs  (dbExplorer_, cache_, txLog2, ymd, addressBalance);
   _rejectTxOutputs (dbExplorer_, cache_, txLog2, ymd, addressBalance);

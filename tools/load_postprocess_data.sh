@@ -43,6 +43,9 @@ fi
 #### insert table
 sql='load data local infile "%s" into table %s fields terminated by ","'
 
+#
+# 这些表有数据库自增键，而CSV中没有，所以这里需要再次列出表列名称，利用数据库完成ID的自增
+#
 case "$table" in
     address_unspent_outputs_*)
         sql="$sql (address_id, tx_id, position, position2, block_height, value, output_script_type, created_at);"

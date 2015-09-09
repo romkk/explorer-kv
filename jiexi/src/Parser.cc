@@ -26,7 +26,6 @@
 #include "Parser.h"
 #include "Common.h"
 #include "Util.h"
-#include "Log2Producer.h"
 
 #include "bitcoin/base58.h"
 #include "bitcoin/util.h"
@@ -523,6 +522,23 @@ bool Parser::init() {
     dbExplorer_.updateOrThrowEx(sql, 2);
   }
 
+  //
+  // 获取最近 2016 个块的时间戳
+  //
+  {
+    sql = Strings::Format("SELECT * FROM (SELECT `timestamp`,`height` FROM `0_blocks`"
+                          "  WHERE `chain_id` = 0 ORDER BY `height` DESC LIMIT 2016) "
+                          " AS `t1` ORDER BY `height` ASC ");
+    dbExplorer_.query(sql, res);
+    if (res.numRows() == 0) {
+      THROW_EXCEPTION_DBEX("can't find max block timestamp");
+    }
+    while ((row = res.nextRow()) != nullptr) {
+      blkTs_.pushBlock(atoi(row[1]), atoi64(row[0]));
+    }
+    LOG_INFO("found max block timestamp: %lld", blkTs_.getMaxTimestamp());
+  }
+
   return true;
 }
 
@@ -708,7 +724,7 @@ void Parser::updateLastTxlog2Id(const int64_t newId) {
 
 void _insertBlock(MySQLConnection &db, const CBlock &blk,
                   const int64_t blockId, const int32_t height,
-                  const int32_t blockBytes) {
+                  const int32_t blockBytes, const int64_t maxBlockTimestamp) {
   CBlockHeader header = blk.GetBlockHeader();  // alias
   string prevBlockHash = header.hashPrevBlock.ToString();
   MySQLResult res;
@@ -758,16 +774,16 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
     const int64_t rewardFees  = blk.vtx[0].GetValueOut() - rewardBlock;
     assert(rewardFees >= 0);
     string sql1 = Strings::Format("INSERT INTO `0_blocks` (`block_id`, `height`, `hash`,"
-                                  " `version`, `mrkl_root`, `timestamp`, `bits`, `nonce`,"
+                                  " `version`, `mrkl_root`, `timestamp`,`max_timestamp`, `bits`, `nonce`,"
                                   " `prev_block_id`, `prev_block_hash`, `next_block_id`, "
                                   " `next_block_hash`, `chain_id`, `size`,"
                                   " `difficulty`, `difficulty_double`, "
                                   " `tx_count`, `reward_block`, `reward_fees`, "
                                   " `created_at`) VALUES ("
-                                  // 1. `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`
+                                  // 1. `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`,
                                   " %lld, %d, '%s', %d, '%s', %u, "
-                                  // 2. `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
-                                  " %u, %u, %lld, '%s', "
+                                  // 2. `max_timestamp`, `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
+                                  " %lld, %u, %u, %lld, '%s', "
                                   // 3. `next_block_id`, `next_block_hash`, `chain_id`, `size`,
                                   " 0, '', %d, %d, "
                                   // 4. `difficulty`, `difficulty_double`, `tx_count`,
@@ -779,7 +795,7 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
                                   header.GetHash().ToString().c_str(),
                                   header.nVersion,
                                   header.hashMerkleRoot.ToString().c_str(),
-                                  (uint32_t)header.nTime,
+                                  (uint32_t)header.nTime, maxBlockTimestamp,
                                   // 2.
                                   header.nBits, header.nNonce, prevBlockId, prevBlockHash.c_str(),
                                   // 3.
@@ -867,9 +883,12 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
   }
   txsHash2ids(hashVec, hash2id);
 
+  // 先加入到块时间戳里，重新计算时间戳. 回滚块的时候是最后再 pop 块
+  blkTs_.pushBlock(txLog2->blkHeight_, blk.GetBlockTime());
+
   // 插入数据至 table.0_blocks
   _insertBlock(dbExplorer_, blk, txLog2->blkId_,
-               txLog2->blkHeight_, (int32_t)blkRawHex.length()/2);
+               txLog2->blkHeight_, (int32_t)blkRawHex.length()/2, blkTs_.getMaxTimestamp());
 
   // 插入数据至 table.block_txs_xxxx
   _insertBlockTxs(dbExplorer_, blk, txLog2->blkId_, hash2id);
@@ -2024,6 +2043,9 @@ void Parser::rejectBlock(TxLog2 *txLog2) {
   sql = Strings::Format("DELETE FROM `block_txs_%04d` WHERE `block_id`=%lld",
                         tableIdx_BlockTxs(txLog2->blkId_), txLog2->blkId_);
   dbExplorer_.updateOrThrowEx(sql, (int32_t)blk.vtx.size());
+
+  // 移除块时间戳
+  blkTs_.popBlock();
 
   if (cacheEnable_) {
     // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache

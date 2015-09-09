@@ -18,9 +18,12 @@
 #ifndef Explorer_Parser_h
 #define Explorer_Parser_h
 
+
 #include "Common.h"
-#include "Util.h"
 #include "MySQLConnection.h"
+#include "Log2Producer.h"
+#include "Util.h"
+
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
 
@@ -226,6 +229,9 @@ private:
   int32_t unconfirmedTxsCount_;
 
   map<uint256/* tx hash */, map<int64_t/* addrID */, int64_t/* balance diff */> > addressBalanceCache_;
+
+  // 块最大时间戳
+  BlockTimestamp blkTs_;
 
   bool tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId);
 

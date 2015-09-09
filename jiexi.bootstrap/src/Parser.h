@@ -159,7 +159,6 @@ struct BlockInfo {
   int32_t chainId_;
   int32_t size_;
   uint64_t diff_;
-  double  diffDouble_;
   int32_t txCount_;
   int64_t rewardBlock_;
   int64_t rewardFee_;

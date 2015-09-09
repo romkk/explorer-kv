@@ -726,18 +726,24 @@ void _saveBlock(BlockInfo &b, FILE *f, FileWriter *fwriter) {
   // 保存当前Block, table.0_blocks, 字段顺序严格按照表顺序
   // `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`, `curr_max_timestamp`,
   // `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
-  // `next_block_id`, `next_block_hash`, `chain_id`, `size`,
-  // `difficulty`, `difficulty_double`,`tx_count`, `reward_block`, `reward_fees`, `relayed_by`, `created_at`
-  line = Strings::Format("%lld,%d,%s,%d,%s,%u,%u,%u,%lld,"
+  // `next_block_id`, `next_block_hash`, `chain_id`, `size`, `pool_difficulty`,
+  // `difficulty`, `difficulty_double`,`tx_count`,
+  // `reward_block`, `reward_fees`, `relayed_by`, `created_at`
+  double diffDobule = 0.0;
+  BitsToDifficulty(b.header_.nBits, diffDobule);
+  const uint64_t pdiff = TargetToPdiff(b.blockHash_);
+  
+  line = Strings::Format("%lld,%d,%s,%d,%s,%u,%lld,%u,%u,"
                          "%lld,%s,%lld,%s,"
-                         "%d,%f,%d,%llu,%d,%lld,%lld,0,%s",
+                         "%d,%d,%llu,%llu,%f,%d,%lld,%lld,0,%s",
                          b.blockId_, b.height_, b.blockHash_.ToString().c_str(),
                          b.header_.nVersion, b.header_.hashMerkleRoot.ToString().c_str(),
                          (uint32_t)b.header_.nTime, b.currMaxTimestamp_, b.header_.nBits, b.header_.nNonce,
                          b.prevBlockId_, b.header_.hashPrevBlock.ToString().c_str(),
                          b.nextBlockId_, b.nextBlockHash_.ToString().c_str(),
-                         b.chainId_, b.size_, b.diff_, b.diffDouble_, b.txCount_,
-                         b.rewardBlock_, b.rewardFee_, date("%F %T").c_str());
+                         b.chainId_, b.size_, pdiff, b.diff_, diffDobule,
+                         b.txCount_, b.rewardBlock_,
+                         b.rewardFee_, date("%F %T").c_str());
   fwriter->append(line, f);
 }
 
@@ -753,7 +759,6 @@ void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
   cur.blockHash_ = blk.GetHash();
   cur.chainId_   = chainId;
   BitsToDifficulty(header.nBits, cur.diff_);
-  BitsToDifficulty(header.nBits, cur.diffDouble_);
   cur.header_    = header;
   cur.height_    = height;
   cur.currMaxTimestamp_ = blkTs_.getMaxTimestamp();

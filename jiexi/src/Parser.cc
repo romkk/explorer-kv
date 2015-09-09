@@ -726,6 +726,7 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
                   const int64_t blockId, const int32_t height,
                   const int32_t blockBytes, const int64_t maxBlockTimestamp) {
   CBlockHeader header = blk.GetBlockHeader();  // alias
+  uint256 blockHash = blk.GetHash();
   string prevBlockHash = header.hashPrevBlock.ToString();
   MySQLResult res;
   char **row = nullptr;
@@ -769,6 +770,7 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
     double difficulty_double = 0.0;
     BitsToDifficulty(header.nBits, difficulty);
     BitsToDifficulty(header.nBits, difficulty_double);
+    const uint64_t pdiff = TargetToPdiff(blockHash);
 
     const int64_t rewardBlock = GetBlockValue(height, 0);
     const int64_t rewardFees  = blk.vtx[0].GetValueOut() - rewardBlock;
@@ -777,7 +779,7 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
                                   " `version`, `mrkl_root`, `timestamp`,`curr_max_timestamp`, `bits`, `nonce`,"
                                   " `prev_block_id`, `prev_block_hash`, `next_block_id`, "
                                   " `next_block_hash`, `chain_id`, `size`,"
-                                  " `difficulty`, `difficulty_double`, "
+                                  " `pool_difficulty`,`difficulty`, `difficulty_double`, "
                                   " `tx_count`, `reward_block`, `reward_fees`, "
                                   " `created_at`) VALUES ("
                                   // 1. `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`,
@@ -786,13 +788,13 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
                                   " %lld, %u, %u, %lld, '%s', "
                                   // 3. `next_block_id`, `next_block_hash`, `chain_id`, `size`,
                                   " 0, '', %d, %d, "
-                                  // 4. `difficulty`, `difficulty_double`, `tx_count`,
-                                  " %llu, %f, %d, "
+                                  // 4. `pool_difficulty`,`difficulty`, `difficulty_double`, `tx_count`,
+                                  " %llu, %llu, %f, %d, "
                                   // 5. `reward_block`, `reward_fees`, `created_at`
                                   " %lld, %lld, '%s');",
                                   // 1.
                                   blockId, height,
-                                  header.GetHash().ToString().c_str(),
+                                  blockHash.ToString().c_str(),
                                   header.nVersion,
                                   header.hashMerkleRoot.ToString().c_str(),
                                   (uint32_t)header.nTime, maxBlockTimestamp,
@@ -801,7 +803,7 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
                                   // 3.
                                   0/* chainId */, blockBytes,
                                   // 4.
-                                  difficulty, difficulty_double, blk.vtx.size(),
+                                  pdiff, difficulty, difficulty_double, blk.vtx.size(),
                                   // 5.
                                   rewardBlock, rewardFees, date("%F %T").c_str());
     db.updateOrThrowEx(sql1, 1);

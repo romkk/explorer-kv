@@ -254,6 +254,7 @@ CREATE TABLE `0_blocks` (
   `next_block_hash` char(64) NOT NULL,
   `chain_id` int(11) NOT NULL,
   `size` int(11) NOT NULL,
+  `pool_difficulty` bigint(20) NOT NULL,
   `difficulty` bigint(20) NOT NULL,
   `difficulty_double` decimal(32,4) NOT NULL DEFAULT '0.0000',
   `tx_count` int(11) NOT NULL,

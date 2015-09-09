@@ -267,9 +267,10 @@ private:
                                  const int32_t targetYmd, AddressTxNode *node);
 
   // 移动地址交易节点
-  void _switchAddressTxNode(AddressTxNode *prevNode, AddressTxNode *currNode);
-  void moveForwardAddressTxNode (const LastestAddressInfo *addr, AddressTxNode *node);
-  void moveBackwardAddressTxNode(const LastestAddressInfo *addr, AddressTxNode *node);
+  void _switchAddressTxNode(LastestAddressInfo *addr,
+                            AddressTxNode *prevNode, AddressTxNode *currNode);
+  void moveForwardAddressTxNode (LastestAddressInfo *addr, AddressTxNode *node);
+  void moveBackwardAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node);
 
 
   void writeLastProcessTxlogTime();

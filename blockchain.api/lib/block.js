@@ -9,6 +9,10 @@ var _ = require('lodash');
 
 class Block {
     constructor(row) {
+        if (row.prev_block_hash == '0000000000000000000000000000000000000000000000000000000000000000') {
+            row.prev_block_hash = null;
+        }
+        
         this.attrs = row;
     }
 

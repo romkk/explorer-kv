@@ -40,10 +40,14 @@ CREATE TABLE `addresses_%04d` (
   `tx_count` int(11) NOT NULL DEFAULT '0',
   `total_received` bigint(20) NOT NULL DEFAULT '0',
   `total_sent` bigint(20) NOT NULL DEFAULT '0',
+  `unconfirmed_received` bigint(20) NOT NULL DEFAULT '0',
+  `unconfirmed_sent` bigint(20) NOT NULL DEFAULT '0',
   `begin_tx_id` bigint(20) NOT NULL DEFAULT '0',
   `begin_tx_ymd` int(11) NOT NULL DEFAULT '0',
   `end_tx_id` bigint(20) NOT NULL DEFAULT '0',
   `end_tx_ymd` int(11) NOT NULL DEFAULT '0',
+  `last_confirmed_tx_id` bigint(20) NOT NULL DEFAULT '0',
+  `last_confirmed_tx_ymd` int(11) NOT NULL DEFAULT '0',
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
   PRIMARY KEY (`id`),
@@ -74,7 +78,7 @@ CREATE TABLE `txs_%04d` (
   `tx_id` bigint(20) NOT NULL,
   `hash` char(64) NOT NULL,
   `height` bigint(20) NOT NULL,
-  `block_timestamp` bigint(20) NOT NULL,
+  `ymd` int(11) NOT NULL,
   `is_coinbase` tinyint(1) NOT NULL,
   `version` int(11) NOT NULL,
   `lock_time` bigint(20) NOT NULL,
@@ -241,6 +245,7 @@ CREATE TABLE `0_blocks` (
   `version` int(11) NOT NULL,
   `mrkl_root` char(64) NOT NULL,
   `timestamp` bigint(20) NOT NULL,
+  `curr_max_timestamp` bigint(20) NOT NULL,
   `bits` bigint(20) NOT NULL,
   `nonce` bigint(20) NOT NULL,
   `prev_block_id` bigint(20) NOT NULL,
@@ -249,8 +254,9 @@ CREATE TABLE `0_blocks` (
   `next_block_hash` char(64) NOT NULL,
   `chain_id` int(11) NOT NULL,
   `size` int(11) NOT NULL,
+  `pool_difficulty` bigint(20) NOT NULL,
   `difficulty` bigint(20) NOT NULL,
-  `difficulty_double` decimal(32,4) NOT NULL DEFAULT '0.0',
+  `difficulty_double` decimal(32,4) NOT NULL DEFAULT '0.0000',
   `tx_count` int(11) NOT NULL,
   `reward_block` bigint(20) NOT NULL,
   `reward_fees` bigint(20) NOT NULL,
@@ -258,10 +264,23 @@ CREATE TABLE `0_blocks` (
   `created_at` datetime NOT NULL,
   PRIMARY KEY (`block_id`),
   UNIQUE KEY `block_hash` (`hash`),
-  UNIQUE KEY `height_chain_id` (`height`,`chain_id`)
+  UNIQUE KEY `height_chain_id` (`height`,`chain_id`),
+  KEY `curr_max_timestamp` (`curr_max_timestamp`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 echo "$blocks"
+
+memrepo_txs='
+DROP TABLE IF EXISTS `0_memrepo_txs`;
+CREATE TABLE `0_memrepo_txs` (
+  `position` bigint(20) NOT NULL AUTO_INCREMENT,
+  `tx_hash` char(64) NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`position`),
+  UNIQUE KEY `tx_hash` (`tx_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
+
+echo "$memrepo_txs"
 
 unconfirmed_txs='
 DROP TABLE IF EXISTS `0_unconfirmed_txs`;
@@ -269,6 +288,7 @@ CREATE TABLE `0_unconfirmed_txs` (
   `position` int(11) NOT NULL,
   `block_id` bigint(20) NOT NULL,
   `tx_hash` char(64) NOT NULL,
+  `size` int(11) NOT NULL,
   `created_at` datetime NOT NULL,
   PRIMARY KEY (`position`),
   UNIQUE KEY `tx_hash` (`tx_hash`)

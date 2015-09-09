@@ -42,7 +42,7 @@ add_library(explorer STATIC ${LIB_SOURCES})
 
 file(GLOB TPARSER_SOURCES src/tparser/*.cc)
 add_executable(tparser ${TPARSER_SOURCES})
-target_link_libraries(tparser explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${SSDB_LIBRARIES} -lcurl)
+target_link_libraries(tparser explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${SSDB_LIBRARIES} -lpthread -lcurl)
 
 file(GLOB LOG1PRODUCER_SOURCES src/log1producer/*.cc)
 add_executable(log1producer ${LOG1PRODUCER_SOURCES})

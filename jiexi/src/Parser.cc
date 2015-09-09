@@ -450,7 +450,7 @@ void AddressTxNode::reset() {
 /////////////////////////////////  Parser  ///////////////////////////////////
 Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
 running_(true), isReverse_(false), reverseEndTxlog2ID_(0), cache_(nullptr),
-unconfirmedTxsSize_(0), unconfirmedTxsCount_(0)
+unconfirmedTxsSize_(0), unconfirmedTxsCount_(0), blkTs_(2016)
 {
   // setup cache manager: SSDB
   cacheEnable_ = Config::GConfig.getBool("ssdb.enable", false);
@@ -774,7 +774,7 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
     const int64_t rewardFees  = blk.vtx[0].GetValueOut() - rewardBlock;
     assert(rewardFees >= 0);
     string sql1 = Strings::Format("INSERT INTO `0_blocks` (`block_id`, `height`, `hash`,"
-                                  " `version`, `mrkl_root`, `timestamp`,`max_timestamp`, `bits`, `nonce`,"
+                                  " `version`, `mrkl_root`, `timestamp`,`curr_max_timestamp`, `bits`, `nonce`,"
                                   " `prev_block_id`, `prev_block_hash`, `next_block_id`, "
                                   " `next_block_hash`, `chain_id`, `size`,"
                                   " `difficulty`, `difficulty_double`, "
@@ -782,7 +782,7 @@ void _insertBlock(MySQLConnection &db, const CBlock &blk,
                                   " `created_at`) VALUES ("
                                   // 1. `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`,
                                   " %lld, %d, '%s', %d, '%s', %u, "
-                                  // 2. `max_timestamp`, `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
+                                  // 2. `curr_max_timestamp`, `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
                                   " %lld, %u, %u, %lld, '%s', "
                                   // 3. `next_block_id`, `next_block_hash`, `chain_id`, `size`,
                                   " 0, '', %d, %d, "

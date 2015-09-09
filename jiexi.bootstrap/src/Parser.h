@@ -279,7 +279,7 @@ class PreParser {
                      int64_t &valueIn, map<string, int64_t> &addressBalance);
   void parseTxSelf(const int32_t height, const int64_t txId, const uint256 &txHash,
                    const CTransaction &tx, const int64_t valueIn,
-                   const uint32_t ntime);
+                   const int32_t ymd);
   void handleAddressTxs(const map<string, int64_t> &addressBalance,
                         const int64_t txId, const int32_t ymd, const int32_t height);
 

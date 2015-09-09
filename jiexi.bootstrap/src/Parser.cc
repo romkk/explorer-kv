@@ -865,7 +865,7 @@ void PreParser::parseTxInputs(const CTransaction &tx, const int64_t txId,
 
 void PreParser::parseTxSelf(const int32_t height, const int64_t txId, const uint256 &txHash,
                             const CTransaction &tx, const int64_t valueIn,
-                            const uint32_t nTime) {
+                            const int32_t ymd) {
   int64_t fee = 0;
   string s;
   const int64_t valueOut = tx.GetValueOut();
@@ -881,11 +881,11 @@ void PreParser::parseTxSelf(const int32_t height, const int64_t txId, const uint
   const string txHex = HexStr(ssTx.begin(), ssTx.end());
 
   // table.txs_xxxx
-  // `tx_id`, `hash`, `height`, `block_timestamp`,`is_coinbase`,
+  // `tx_id`, `hash`, `height`, `ymd`,`is_coinbase`,
   // `version`, `lock_time`, `size`, `fee`, `total_in_value`,
   // `total_out_value`, `inputs_count`, `outputs_count`, `created_at`
-  s = Strings::Format("%lld,%s,%d,%u,%d,%d,%u,%d,%lld,%lld,%lld,%d,%d,%s",
-                      txId, txHash.ToString().c_str(), height, nTime,
+  s = Strings::Format("%lld,%s,%d,%d,%d,%d,%u,%d,%lld,%lld,%lld,%d,%d,%s",
+                      txId, txHash.ToString().c_str(), height, ymd,
                       tx.IsCoinBase() ? 1 : 0, tx.nVersion, tx.nLockTime,
                       txHex.length()/2, fee, valueIn, valueOut,
                       tx.vin.size(), tx.vout.size(),
@@ -994,11 +994,13 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
   // ouputs
   txHandler_->addOutputs(tx, addrHandler_, height, addressBalance);
 
+  // 根据修正时间存储
+  const int32_t ymd = atoi(date("%Y%m%d", blkTs_.getMaxTimestamp()).c_str());
+
   // tx self
   parseTxSelf(height, txId, txHash, tx, valueIn, nTime);
 
   // 处理地址变更
-  const int32_t ymd = atoi(date("%Y%m%d", nTime).c_str());
   handleAddressTxs(addressBalance, txId, ymd, height);
 }
 

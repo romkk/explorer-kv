@@ -236,11 +236,16 @@ void AddrHandler::dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs,
     // address tx
     _saveAddrTx(it, fAddrTxs[tableIdx_AddrTxs(it->addrTx_.ymd_)], fwriter_);
 
-    // address
-    s = Strings::Format("%lld,%s,%lld,%lld,%lld,%lld,%d,%lld,%d,%s,%s",
+    // table.addresses_0000
+    //  `id`, `address`, `tx_count`, `total_received`, `total_sent`,
+    //  `unconfirmed_received`, `unconfirmed_sent`, `begin_tx_id`, `begin_tx_ymd`,
+    //  `end_tx_id`, `end_tx_ymd`, `last_confirmed_tx_id`,
+    //  `last_confirmed_tx_ymd`, `created_at`, `updated_at`
+    s = Strings::Format("%lld,%s,%lld,%lld,%lld,"
+                        "0,0,%lld,%d,%lld,%d,%lld,%d,%s,%s",
                         it->addrId_, it->addrStr_, it->idx_, it->totalReceived_,
                         it->totalSent_, it->beginTxId_, it->beginTxYmd_,
-                        it->endTxId_, it->endTxYmd_,
+                        it->endTxId_, it->endTxYmd_, it->endTxId_, it->endTxYmd_,
                         now.c_str(), now.c_str());
     fwriter_->append(s, fAddrs_[tableIdx_Addr(it->addrId_)]);
   }
@@ -998,7 +1003,7 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
   const int32_t ymd = atoi(date("%Y%m%d", blkTs_.getMaxTimestamp()).c_str());
 
   // tx self
-  parseTxSelf(height, txId, txHash, tx, valueIn, nTime);
+  parseTxSelf(height, txId, txHash, tx, valueIn, ymd);
 
   // 处理地址变更
   handleAddressTxs(addressBalance, txId, ymd, height);

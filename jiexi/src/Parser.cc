@@ -1557,8 +1557,7 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   _accpetTx_insertTxOutputs(dbExplorer_, cache_, txLog2, addressBalance);
 
   // 缓存 addressBalance, 减少 confirm tx 操作时查找关联地址变更记录的开销
-  assert(addressBalanceCache_.find(txLog2->txHash_) == addressBalanceCache_.end());
-  addressBalanceCache_[txLog2->txHash_] = addressBalance;
+  _setTxAddressBalance(txLog2, addressBalance);
 
   // 变更地址相关信息
   _accpetTx_insertAddressTxs(dbExplorer_, txLog2, addressBalance);
@@ -1570,8 +1569,23 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   addUnconfirmedTxPool(txLog2);
 }
 
+// 设置地址的余额变更情况
+void Parser::_setTxAddressBalance(class TxLog2 *txLog2,
+                                  const map<int64_t, int64_t> &addressBalance) {
+  assert(addressBalanceCache_.find(txLog2->txHash_) == addressBalanceCache_.end());
+  addressBalanceCache_[txLog2->txHash_] = addressBalance;
+
+  // 读取一次：更新tx的最后读取时间
+  _getTxAddressBalance(txLog2);
+}
+
 // 获取tx对应各个地址的余额变更情况
 map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
+  // 存放每个tx的读取时间
+  static map<uint256, time_t> txsTime_;
+
+  txsTime_[txLog2->txHash_] = time(nullptr);
+
   if (addressBalanceCache_.find(txLog2->txHash_) != addressBalanceCache_.end()) {
     return &(addressBalanceCache_[txLog2->txHash_]);
   }
@@ -1660,6 +1674,39 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
   // 设置缓存
   addressBalanceCache_[txLog2->txHash_] = addressBalance;
 
+  //
+  // 删掉过期的数据
+  //
+  // 超过 50万 记录数则触发, 每天大约TX数量, 1000 * 144 = 14万
+  // debug 模式提前触发
+  const int kMaxItemsCount     = IsDebug() ? 5000 : 50 * 10000;
+  const time_t kExpiredSeconds = IsDebug() ? 1800 : 86400 * 3;
+  if (addressBalanceCache_.size() > kMaxItemsCount) {
+    LOG_DEBUG("clear addressBalanceCache_ start, count: %lld",
+              addressBalanceCache_.size());
+
+      // 删掉最近未使用的tx
+    for (auto it = txsTime_.begin(); it != txsTime_.end(); ) {
+      if (it->second + kExpiredSeconds < time(nullptr)) {
+        txsTime_.erase(it++);
+      } else {
+        it++;
+      }
+    }
+    // 已 txsTime_ 涉及的 tx 为准，不存在的都删除
+    for (auto it = addressBalanceCache_.begin(); it != addressBalanceCache_.end(); ) {
+      if (txsTime_.count(it->first) == 0) {
+        addressBalanceCache_.erase(it++);
+      } else {
+        it++;
+      }
+    }
+    LOG_DEBUG("clear addressBalanceCache_ end, count: %lld",
+              addressBalanceCache_.size());
+    assert(addressBalanceCache_.size() == txsTime_.size());
+  }
+
+  assert(addressBalanceCache_.count(txLog2->txHash_) != 0);
   return &(addressBalanceCache_[txLog2->txHash_]);
 }
 
@@ -1870,9 +1917,6 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
 
   // 处理未确认计数器和记录
   removeUnconfirmedTxPool(txLog2);
-
-  // 通常确认后即可删除余额变更记录的缓存
-  addressBalanceCache_.erase(txLog2->txHash_);
 }
 
 // unconfirm tx (address node)

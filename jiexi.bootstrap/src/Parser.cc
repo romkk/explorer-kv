@@ -555,10 +555,49 @@ void FileWriter::threadConsume() {
 
 
 
+///////////////////////////////  BlockTimestamp  /////////////////////////////////
+BlockTimestamp::BlockTimestamp(const int32_t limit): limit_(limit),currMax_(0) {
+}
+
+int64_t BlockTimestamp::getMaxTimestamp() const {
+  return currMax_;
+}
+
+void BlockTimestamp::pushBlock(const int32_t height, const int64_t ts) {
+  assert(blkTimestamps_.find(height) == blkTimestamps_.end());
+  blkTimestamps_[height] = ts;
+  if (ts > currMax_) {
+    currMax_ = ts;
+  } else {
+    LOG_WARN("block %lld timestamp(%lld) is less than curr max: %lld",
+             height, ts, currMax_);
+  }
+
+  // 检查数量限制，超出后移除首个元素
+  while (blkTimestamps_.size() > limit_) {
+    blkTimestamps_.erase(blkTimestamps_.begin());
+  }
+}
+
+void BlockTimestamp::popBlock() {
+  assert(blkTimestamps_.size() > 0);
+  // map 尾部的 key 最大，也意味着块最高
+  blkTimestamps_.erase(std::prev(blkTimestamps_.end()));
+
+  currMax_ = 0;
+  for (auto it : blkTimestamps_) {
+    if (currMax_ < it.second) {
+      currMax_ = it.second;
+    }
+  }
+}
+
+
+
 ////////////////////////////////////////////////////////////////////////////////
 //--------------------------------- PreParser ----------------------------------
 ////////////////////////////////////////////////////////////////////////////////
-PreParser::PreParser() {
+PreParser::PreParser(): blkTs_(2016) {
   stopHeight_  = (int32_t)Config::GConfig.getInt("raw.max.block.height", -1);
   filePreTx_   = Config::GConfig.get("pre.tx.output.file", "");
   filePreAddr_ = Config::GConfig.get("pre.address.output.file", "");
@@ -680,19 +719,19 @@ void PreParser::init() {
 void _saveBlock(BlockInfo &b, FILE *f, FileWriter *fwriter) {
   string line;
   // 保存当前Block, table.0_blocks, 字段顺序严格按照表顺序
-  // `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`,
+  // `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`, `curr_max_timestamp`,
   // `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
   // `next_block_id`, `next_block_hash`, `chain_id`, `size`,
-  // `difficulty`, `tx_count`, `reward_block`, `reward_fees`, `relayed_by`, `created_at`
-  line = Strings::Format("%lld,%d,%s,%d,%s,%u,%u,%u,"
+  // `difficulty`, `difficulty_double`,`tx_count`, `reward_block`, `reward_fees`, `relayed_by`, `created_at`
+  line = Strings::Format("%lld,%d,%s,%d,%s,%u,%u,%u,%lld,"
                          "%lld,%s,%lld,%s,"
-                         "%d,%d,%llu,%d,%lld,%lld,0,%s",
+                         "%d,%f,%d,%llu,%d,%lld,%lld,0,%s",
                          b.blockId_, b.height_, b.blockHash_.ToString().c_str(),
                          b.header_.nVersion, b.header_.hashMerkleRoot.ToString().c_str(),
-                         (uint32_t)b.header_.nTime, b.header_.nBits, b.header_.nNonce,
+                         (uint32_t)b.header_.nTime, b.currMaxTimestamp_, b.header_.nBits, b.header_.nNonce,
                          b.prevBlockId_, b.header_.hashPrevBlock.ToString().c_str(),
                          b.nextBlockId_, b.nextBlockHash_.ToString().c_str(),
-                         b.chainId_, b.size_, b.diff_, b.txCount_,
+                         b.chainId_, b.size_, b.diff_, b.diffDouble_, b.txCount_,
                          b.rewardBlock_, b.rewardFee_, date("%F %T").c_str());
   fwriter->append(line, f);
 }
@@ -702,13 +741,17 @@ void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
                            const int32_t chainId) {
   CBlockHeader header = blk.GetBlockHeader();  // alias
 
+  blkTs_.pushBlock(height, header.GetBlockTime());
+
   BlockInfo cur;
   cur.blockId_   = blockId;
   cur.blockHash_ = blk.GetHash();
   cur.chainId_   = chainId;
   BitsToDifficulty(header.nBits, cur.diff_);
+  BitsToDifficulty(header.nBits, cur.diffDouble_);
   cur.header_    = header;
   cur.height_    = height;
+  cur.currMaxTimestamp_ = blkTs_.getMaxTimestamp();
   cur.nextBlockHash_ = uint256();
   cur.nextBlockId_   = 0;
   cur.prevBlockId_   = 0;

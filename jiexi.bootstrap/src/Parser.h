@@ -152,12 +152,14 @@ struct BlockInfo {
   uint256 blockHash_;
   CBlockHeader header_;
   int32_t height_;
+  int64_t currMaxTimestamp_;
   int64_t prevBlockId_;
   int64_t nextBlockId_;
   uint256 nextBlockHash_;
   int32_t chainId_;
   int32_t size_;
   uint64_t diff_;
+  double  diffDouble_;
   int32_t txCount_;
   int64_t rewardBlock_;
   int64_t rewardFee_;
@@ -220,6 +222,22 @@ public:
   void append(const string &s, FILE *f);
 };
 
+///////////////////////////////  BlockTimestamp  /////////////////////////////////
+class BlockTimestamp {
+  int32_t limit_;
+  int64_t currMax_;
+  map<int32_t, int64_t> blkTimestamps_;  // height <-> timestamp
+
+public:
+  BlockTimestamp(const int32_t limit);
+  int64_t getMaxTimestamp() const;
+  void pushBlock(const int32_t height, const int64_t ts);
+  void popBlock();
+};
+
+
+/////////////////////////////////  PreParser  //////////////////////////////////
+
 class PreParser {
   atomic<bool> running_;
   int32_t curHeight_;
@@ -246,6 +264,9 @@ class PreParser {
   size_t txCount_;
 
   int32_t stopHeight_;
+
+  // 块最大时间戳
+  BlockTimestamp blkTs_;
 
   // parse block
   void parseBlock(const CBlock &blk, const int64_t blockId,

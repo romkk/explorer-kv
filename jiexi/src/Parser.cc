@@ -585,12 +585,13 @@ void Parser::run() {
     }
 
     if (txLog2.type_ == LOG2TYPE_TX_ACCEPT) {
-      if (txLog2.tx_.IsCoinBase()) {
-        acceptBlock(&txLog2, blockHash);
-      }
       acceptTx(&txLog2);
     }
     else if (txLog2.type_ == LOG2TYPE_TX_CONFIRM) {
+      // confirm 时才能 acceptBlock()
+      if (txLog2.tx_.IsCoinBase()) {
+        acceptBlock(&txLog2, blockHash);
+      }
       confirmTx(&txLog2);
     }
     else if (txLog2.type_ == LOG2TYPE_TX_UNCONFIRM) {
@@ -1068,13 +1069,15 @@ void _accpetTx_insertTxOutputs(MySQLConnection &db, CacheManager *cache,
   set<string> allAddresss;
 
   // 提取涉及到的所有地址
+  n = -1;
   for (auto &out : txLog2->tx_.vout) {
+    n++;
     txnouttype type;
     vector<CTxDestination> addresses;
     int nRequired;
     if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-      LOG_WARN("extract destinations failure, txId: %lld, hash: %s",
-               txLog2->txId_, txLog2->tx_.GetHash().ToString().c_str());
+      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
+               txLog2->txId_, txLog2->tx_.GetHash().ToString().c_str(), n);
       continue;
     }
     for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
@@ -1106,8 +1109,8 @@ void _accpetTx_insertTxOutputs(MySQLConnection &db, CacheManager *cache,
     vector<CTxDestination> addresses;
     int nRequired;
     if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
-               txLog2->txId_, txLog2->tx_.GetHash().ToString().c_str(), n);
+      // 前面已经输出过日志，不再重复
+      continue;
     }
 
     // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
@@ -1618,6 +1621,7 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
   string sql;
   char **row;
   set<string> allAddresss;
+  int n;
 
   //
   // vin
@@ -1648,13 +1652,15 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
   // vout
   //
   // 提取涉及到的所有地址
+  n = -1;
   for (auto &out : txLog2->tx_.vout) {
+    n++;
     txnouttype type;
     vector<CTxDestination> addresses;
     int nRequired;
     if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-      LOG_WARN("extract destinations failure, txId: %lld, hash: %s",
-               txLog2->txId_, txLog2->tx_.GetHash().ToString().c_str());
+      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
+               txLog2->txId_, txLog2->tx_.GetHash().ToString().c_str(), n);
       continue;
     }
     for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
@@ -1666,17 +1672,14 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
   map<string, int64_t> addrMap;
   GetAddressIds(dbExplorer_, allAddresss, addrMap);
 
-  int n = -1;
   for (auto &out : txLog2->tx_.vout) {
-    n++;
     string addressStr;
     string addressIdsStr;
     txnouttype type;
     vector<CTxDestination> addresses;
     int nRequired;
     if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
-               txLog2->txId_, txLog2->tx_.GetHash().ToString().c_str(), n);
+      continue;
     }
 
     // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
@@ -2167,13 +2170,15 @@ void _rejectTxOutputs(MySQLConnection &db, CacheManager *cache,
   string sql;
 
   // 提取涉及到的所有地址
+  n = -1;
   for (auto &out : tx.vout) {
+    n++;
     txnouttype type;
     vector<CTxDestination> addresses;
     int nRequired;
     if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-      LOG_WARN("extract destinations failure, txId: %lld, hash: %s",
-               txId, tx.GetHash().ToString().c_str());
+      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
+               txId, tx.GetHash().ToString().c_str(), n);
       continue;
     }
     for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
@@ -2201,8 +2206,7 @@ void _rejectTxOutputs(MySQLConnection &db, CacheManager *cache,
     vector<CTxDestination> addresses;
     int nRequired;
     if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
-               txId, tx.GetHash().ToString().c_str(), n);
+      continue;
     }
 
     // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011

@@ -381,7 +381,7 @@ void Log2Producer::syncLog1() {
   } /* /for */
 
   if (!syncSuccess) {
-    THROW_EXCEPTION_DBEX("sync log0 failure");
+    THROW_EXCEPTION_DBEX("sync log1 failure");
   }
 }
 

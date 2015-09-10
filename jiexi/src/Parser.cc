@@ -447,6 +447,81 @@ void AddressTxNode::reset() {
 }
 
 
+
+/////////////////////////////////  TxInfo  ///////////////////////////////////
+TxInfo::TxInfo(const int64_t txId, const string &hex):
+txId_(txId), hex_(hex), count_(0), useTime_(0)
+{
+}
+TxInfo::TxInfo(const TxInfo &t) {
+  txId_    = t.txId_;
+  hex_     = t.hex_;
+  count_   = t.count_;
+  useTime_ = t.useTime_;
+}
+TxInfo::TxInfo():txId_(0), hex_(), count_(0), useTime_(0) {
+}
+
+
+
+/////////////////////////////////  TxInfoCache  ///////////////////////////////////
+TxInfoCache::TxInfoCache() {
+  lastClearTime_ = time(nullptr);
+}
+
+void TxInfoCache::getTxInfo(MySQLConnection &db,
+                            const uint256 hash, int64_t *txId, string *hex) {
+  if (cache_.find(hash) == cache_.end()) {
+    string sql;
+    MySQLResult res;
+    char **row;
+    const string txHashStr = hash.ToString();
+
+    //
+    // get hex, id from DB
+    //
+    sql = Strings::Format("SELECT `hex`,`id` FROM `raw_txs_%04d` WHERE `tx_hash` = '%s' ",
+                          HexToDecLast2Bytes(txHashStr) % 64, txHashStr.c_str());
+    db.query(sql, res);
+    if (res.numRows() == 0) {
+      THROW_EXCEPTION_DBEX("can't find raw tx by hash: %s", txHashStr.c_str());
+    }
+    row = res.nextRow();
+    const string hex = string(row[0]);
+    TxInfo txInfo(atoi64(row[1]), hex);
+    cache_[hash] = txInfo;
+  }
+
+  const time_t now = time(nullptr);
+  auto it = cache_.find(hash);
+  assert(it != cache_.end());
+
+  *txId = it->second.txId_;
+  *hex  = it->second.hex_;
+  it->second.useTime_ = now;
+  it->second.count_++;
+
+  // 一般而言，大部分 tx 会短时间内使用两次，一次是 accept, 一次是 confirm
+  // 目标是让这部分 tx confirm 时少读取一次，提高 confirm 时的速度
+  if (it->second.count_ >= 2) {
+    cache_.erase(it);
+  }
+
+  // 触发回收空间，删除长时间没有使用的
+  map<uint256, TxInfo> cacheNew;
+  if (lastClearTime_ + 86400 < now) {
+    lastClearTime_ = now;
+    for (auto it2 = cache_.begin(); it2 != cache_.end(); it2++) {
+      if (it->second.useTime_ + 86400 < now) {
+        continue;
+      }
+      cacheNew[it2->first] = it2->second;
+    }
+    cache_.swap(cacheNew);
+  }
+}
+
+
 /////////////////////////////////  Parser  ///////////////////////////////////
 Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
 running_(true), isReverse_(false), reverseEndTxlog2ID_(0), cache_(nullptr),
@@ -1211,14 +1286,14 @@ static LastestAddressInfo *_getAddressInfo(MySQLConnection &db, const int64_t ad
                                       atoi64(row[9]),   // lastConfirmedTxId
                                       atoi64(row[4]),   // totalReceived
                                       atoi64(row[5]),   // totalSent
-                                      atoi64(row[6]));  // totalSent
+                                      atoi64(row[6]));  // totalCount
 
     gAddrTxCache[addrID] = ptr;
     it = gAddrTxCache.find(addrID);
 
     // clear, 数量限制，防止长时间运行后占用过多内存
-    const size_t  kMaxCacheCount  = IsDebug() ? 10000 : 500 * 10000;
-    const int32_t kExpiredSeconds = IsDebug() ? 1800  : 86400 * 3;
+    const size_t  kMaxCacheCount  = IsDebug() ? 20*10000 : 1000*10000;
+    const int32_t kExpiredSeconds = IsDebug() ? 3600*5 : 86400 * 3;
     if (gAddrTxCache.size() > kMaxCacheCount) {
       LOG_INFO("clear gAddrTxCache begin, count: %llu", gAddrTxCache.size());
       for (auto it2 = gAddrTxCache.begin(); it2 != gAddrTxCache.end(); ) {
@@ -1696,8 +1771,8 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
   //
   // 超过 50万 记录数则触发, 每天大约TX数量, 1000 * 144 = 14万
   // debug 模式提前触发
-  const int kMaxItemsCount     = IsDebug() ? 5000 : 50 * 10000;
-  const time_t kExpiredSeconds = IsDebug() ? 1800 : 86400 * 3;
+  const int kMaxItemsCount     = IsDebug() ? 10000 : 100 * 10000;
+  const time_t kExpiredSeconds = IsDebug() ? 3600*3 : 86400 * 3;
   if (addressBalanceCache_.size() > kMaxItemsCount) {
     LOG_INFO("clear addressBalanceCache start, count: %llu", addressBalanceCache_.size());
 
@@ -2366,34 +2441,6 @@ int64_t Parser::getLastTxLog2Id() {
   return lastID;
 }
 
-// 获取tx Hash & ID
-static void _getTxInfo(MySQLConnection &db, class TxLog2 *txLog2) {
-  MySQLResult res;
-  string sql;
-  char **row;
-  const string txHashStr = txLog2->txHash_.ToString();
-
-  //
-  // get hex, id from DB
-  //
-  sql = Strings::Format("SELECT `hex`,`id` FROM `raw_txs_%04d` WHERE `tx_hash` = '%s' ",
-                        HexToDecLast2Bytes(txHashStr) % 64, txHashStr.c_str());
-  db.query(sql, res);
-  if (res.numRows() == 0) {
-    THROW_EXCEPTION_DBEX("can't find raw tx by hash: %s", txHashStr.c_str());
-  }
-  row = res.nextRow();
-  txLog2->txHex_ = string(row[0]);
-  txLog2->txId_  = atoi64(row[1]);
-
-  //
-  // Decode Tx Hex
-  //
-  if (!DecodeHexTx(txLog2->tx_, txLog2->txHex_)) {
-    THROW_EXCEPTION_DBEX("TX decode failed, hex: %s", txLog2->txHex_.c_str());
-  }
-}
-
 bool Parser::tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId) {
   MySQLResult res;
   char **row = nullptr;
@@ -2461,7 +2508,13 @@ bool Parser::tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId) {
            txLog2->txHash_.ToString().c_str(), txLog2->createdAt_.c_str());
 
   // find raw tx hex & id
-  _getTxInfo(dbExplorer_, txLog2);
+  {
+    txInfoCache_.getTxInfo(dbExplorer_, txLog2->txHash_,
+                           &(txLog2->txId_), &(txLog2->txHex_));
+    if (!DecodeHexTx(txLog2->tx_, txLog2->txHex_)) {
+      THROW_EXCEPTION_DBEX("TX decode failed, hex: %s", txLog2->txHex_.c_str());
+    }
+  }
 
   return true;
 }

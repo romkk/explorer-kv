@@ -213,6 +213,31 @@ public:
   void reset();
 };
 
+///////////////////////////////  TxInfo  /////////////////////////////////
+class TxInfo {
+public:
+  int64_t txId_;
+  string  hex_;
+  int32_t count_;
+  time_t  useTime_;
+
+  TxInfo(const int64_t txId, const string &hex);
+  TxInfo(const TxInfo &t);
+  TxInfo();
+};
+
+
+///////////////////////////////  TxInfoCache  /////////////////////////////////
+class TxInfoCache {
+  time_t lastClearTime_;
+  map<uint256, TxInfo> cache_;
+
+public:
+  TxInfoCache();
+  void getTxInfo(MySQLConnection &db, const uint256 hash, int64_t *txId, string *hex);
+};
+
+
 /////////////////////////////////  Parser  ////////////////////////////////////
 class Parser {
 private:
@@ -232,6 +257,9 @@ private:
 
   // 块最大时间戳
   BlockTimestamp blkTs_;
+
+  // 交易信息(id, hex等）缓存
+  TxInfoCache txInfoCache_;
 
   bool tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId);
 

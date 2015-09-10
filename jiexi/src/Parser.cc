@@ -513,11 +513,11 @@ bool Parser::init() {
     dbExplorer_.query(sql, res);
     row = res.nextRow();
     unconfirmedTxsCount_ = atoi(row[0]);
-    unconfirmedTxsSize_  = atoi64(row[0]);
+    unconfirmedTxsSize_  = atoi64(row[1]);
 
     sql = Strings::Format("INSERT INTO `0_explorer_meta` (`key`, `value`, `created_at`, `updated_at`)"
-                          " VALUES ('jiexi.unconfirmed_txs.count',  %d, NOW(), NOW()), "
-                          "        ('jiexi.unconfirmed_txs.size', %lld, NOW(), NOW()) ",
+                          " VALUES ('jiexi.unconfirmed_txs.count',  '%d', NOW(), NOW()), "
+                          "        ('jiexi.unconfirmed_txs.size', '%lld', NOW(), NOW()) ",
                           unconfirmedTxsCount_, unconfirmedTxsSize_);
     dbExplorer_.updateOrThrowEx(sql, 2);
   }
@@ -1108,10 +1108,11 @@ void _accpetTx_insertTxOutputs(MySQLConnection &db, CacheManager *cache,
     txnouttype type;
     vector<CTxDestination> addresses;
     int nRequired;
-    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-      // 前面已经输出过日志，不再重复
-      continue;
-    }
+    ExtractDestinations(out.scriptPubKey, type, addresses, nRequired);
+
+    // 解地址可能失败，但依然有 tx_outputs_xxxx 记录
+    // 输出无有效地址的奇葩TX:
+    //   testnet3: e920604f540fec21f66b6a94d59ca8b1fbde27fc7b4bc8163b3ede1a1f90c245
 
     // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
     int i = -1;
@@ -1386,7 +1387,7 @@ void Parser::addUnconfirmedTxPool(class TxLog2 *txLog2) {
   // jiexi.unconfirmed_txs.count
   //
   unconfirmedTxsCount_++;
-  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %d, `updated_at`='%s' "
+  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%d', `updated_at`='%s' "
                         " WHERE `key` = 'jiexi.unconfirmed_txs.count' ",
                         unconfirmedTxsCount_, nowStr.c_str());
   dbExplorer_.updateOrThrowEx(sql, 1);
@@ -1395,7 +1396,7 @@ void Parser::addUnconfirmedTxPool(class TxLog2 *txLog2) {
   // jiexi.unconfirmed_txs.size
   //
   unconfirmedTxsSize_ += txLog2->txHex_.length() / 2;
-  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %d, `updated_at`='%s' "
+  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%lld', `updated_at`='%s' "
                         " WHERE `key` = 'jiexi.unconfirmed_txs.size' ",
                         unconfirmedTxsSize_, nowStr.c_str());
   dbExplorer_.updateOrThrowEx(sql, 1);
@@ -1415,7 +1416,7 @@ void Parser::removeUnconfirmedTxPool(class TxLog2 *txLog2) {
   //
   unconfirmedTxsCount_--;
   assert(unconfirmedTxsCount_ >= 0);
-  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %d, `updated_at`='%s' "
+  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%d', `updated_at`='%s' "
                         " WHERE `key` = 'jiexi.unconfirmed_txs.count' ",
                         unconfirmedTxsCount_, nowStr.c_str());
   dbExplorer_.updateOrThrowEx(sql, 1);
@@ -1425,7 +1426,7 @@ void Parser::removeUnconfirmedTxPool(class TxLog2 *txLog2) {
   //
   unconfirmedTxsSize_ -= txLog2->txHex_.length() / 2;
   assert(unconfirmedTxsSize_ >= 0);
-  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = %d, `updated_at`='%s' "
+  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%lld', `updated_at`='%s' "
                         " WHERE `key` = 'jiexi.unconfirmed_txs.size' ",
                         unconfirmedTxsSize_, nowStr.c_str());
   dbExplorer_.updateOrThrowEx(sql, 1);
@@ -1673,24 +1674,15 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
   GetAddressIds(dbExplorer_, allAddresss, addrMap);
 
   for (auto &out : txLog2->tx_.vout) {
-    string addressStr;
-    string addressIdsStr;
     txnouttype type;
     vector<CTxDestination> addresses;
     int nRequired;
-    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-      continue;
-    }
+    ExtractDestinations(out.scriptPubKey, type, addresses, nRequired);
 
     // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
-    int i = -1;
     for (auto &addr : addresses) {
-      i++;
       const string addrStr = CBitcoinAddress(addr).ToString();
       const int64_t addrId = addrMap[addrStr];
-      addressStr    += addrStr + ",";
-      addressIdsStr += Strings::Format("%lld", addrId) + ",";
-
       // 增加每个地址的余额
       addressBalance[addrId] += out.nValue;
     }
@@ -1709,7 +1701,7 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
   if (addressBalanceCache_.size() > kMaxItemsCount) {
     LOG_INFO("clear addressBalanceCache start, count: %llu", addressBalanceCache_.size());
 
-      // 删掉最近未使用的tx
+    // 删掉最近未使用的tx
     for (auto it = txsTime_.begin(); it != txsTime_.end(); ) {
       if (it->second + kExpiredSeconds < time(nullptr)) {
         txsTime_.erase(it++);
@@ -1810,7 +1802,7 @@ void Parser::_confirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr
   sql = Strings::Format("UPDATE `address_txs_%d` SET `tx_height`=%d "
                         " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                         tableIdx_AddrTxs(node->ymd_), height,
-                        node->addressId_, node->idx_);
+                        node->addressId_, node->txId_);
   dbExplorer_.updateOrThrowEx(sql, 1);
 
   //
@@ -2205,9 +2197,7 @@ void _rejectTxOutputs(MySQLConnection &db, CacheManager *cache,
     txnouttype type;
     vector<CTxDestination> addresses;
     int nRequired;
-    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-      continue;
-    }
+    ExtractDestinations(out.scriptPubKey, type, addresses, nRequired);
 
     // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
     int i = -1;

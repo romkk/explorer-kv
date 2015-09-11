@@ -27,6 +27,26 @@ var schema = {
             }
         },
         required: ['hex']
+    },
+
+    verifymessage: {
+        type: 'object',
+        properties: {
+            message: {
+                type: 'string',
+                minLength: 1
+            },
+            signature: {
+                type: 'string',
+                minLength: 1
+            },
+            address: {
+                type: 'string',
+                minLength: 33,
+                maxLength: 35
+            }
+        },
+        required: ['message', 'signature', 'address']
     }
 
 };

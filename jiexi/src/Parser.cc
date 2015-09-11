@@ -560,6 +560,7 @@ bool Parser::init() {
   string sql;
   MySQLResult res;
   char **row = nullptr;
+  const string nowStr = date("%F %T");
 
   if (!dbExplorer_.ping()) {
     LOG_FATAL("connect to explorer DB failure");
@@ -589,10 +590,12 @@ bool Parser::init() {
     unconfirmedTxsCount_ = atoi(row[0]);
     unconfirmedTxsSize_  = atoi64(row[1]);
 
+    // 严禁使用MYSQL函数NOW()，防止时区错乱
     sql = Strings::Format("INSERT INTO `0_explorer_meta` (`key`, `value`, `created_at`, `updated_at`)"
-                          " VALUES ('jiexi.unconfirmed_txs.count',  '%d', NOW(), NOW()), "
-                          "        ('jiexi.unconfirmed_txs.size', '%lld', NOW(), NOW()) ",
-                          unconfirmedTxsCount_, unconfirmedTxsSize_);
+                          " VALUES ('jiexi.unconfirmed_txs.count',  '%d', '%s', '%s'), "
+                          "        ('jiexi.unconfirmed_txs.size', '%lld', '%s', '%s') ",
+                          unconfirmedTxsCount_, nowStr.c_str(), nowStr.c_str(),
+                          unconfirmedTxsSize_), nowStr.c_str(), nowStr.c_str();
     dbExplorer_.updateOrThrowEx(sql, 2);
   }
 

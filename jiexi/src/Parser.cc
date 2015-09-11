@@ -595,7 +595,7 @@ bool Parser::init() {
                           " VALUES ('jiexi.unconfirmed_txs.count',  '%d', '%s', '%s'), "
                           "        ('jiexi.unconfirmed_txs.size', '%lld', '%s', '%s') ",
                           unconfirmedTxsCount_, nowStr.c_str(), nowStr.c_str(),
-                          unconfirmedTxsSize_), nowStr.c_str(), nowStr.c_str();
+                          unconfirmedTxsSize_, nowStr.c_str(), nowStr.c_str());
     dbExplorer_.updateOrThrowEx(sql, 2);
   }
 

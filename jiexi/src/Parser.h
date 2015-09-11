@@ -29,11 +29,8 @@
 
 #include "SSDB_client.h"
 
-#define TXLOG_STATUS_INIT 100
-#define TXLOG_STATUS_DONE 1000
-
-#define TXLOG_TYPE_ACCEPT   1
-#define TXLOG_TYPE_ROLLBACK 2
+// tparser的异常，整数
+#define EXCEPTION_TPARSER_TX_INVALID_INPUT 100
 
 inline int32_t tableIdx_Addr(const int64_t addrId) {
   return (int32_t)(addrId / BILLION % 64);
@@ -278,6 +275,10 @@ private:
   void unconfirmTx(class TxLog2 *txLog2);
   void rejectTx   (class TxLog2 *txLog2);
 
+  //
+  void _accpetTx_insertTxInputs(TxLog2 *txLog2, map<int64_t, int64_t> &addressBalance,
+                                int64_t &valueIn);
+
   // 获取tx对应各个地址的余额变更情况
   map<int64_t, int64_t> *_getTxAddressBalance(class TxLog2 *txLog2);
   void _setTxAddressBalance(class TxLog2 *txLog2, const map<int64_t, int64_t> &addressBalanceCache);
@@ -321,7 +322,7 @@ public:
 
   void setReverseMode(const int64_t endTxlogID);
 
-  bool txsHash2ids(const std::set<uint256> &hashVec,
+  void txsHash2ids(const std::set<uint256> &hashVec,
                    std::map<uint256, int64_t> &hash2id);
 
 };

@@ -521,7 +521,6 @@ void TxInfoCache::getTxInfo(MySQLConnection &db,
   }
 }
 
-
 /////////////////////////////////  Parser  ///////////////////////////////////
 Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
 running_(true), isReverse_(false), reverseEndTxlog2ID_(0), cache_(nullptr),
@@ -634,76 +633,85 @@ void Parser::run() {
   }
 
   while (running_) {
-    lastTxLog2Id = getLastTxLog2Id();
+    try {
+      lastTxLog2Id = getLastTxLog2Id();
 
-    if (tryFetchTxLog2(&txLog2, lastTxLog2Id) == false) {
-      sleepMs(100);
+      if (tryFetchTxLog2(&txLog2, lastTxLog2Id) == false) {
+        sleepMs(100);
+        continue;
+      }
+
+      // 反向消费，达到停止txlog ID
+      if (txLog2.id_ < reverseEndTxlog2ID_) {
+        LOG_WARN("current txlogs2 ID (%lld) is less than stop ID (%lld), stopping...",
+                 txLog2.id_, reverseEndTxlog2ID_);
+        stop();
+        break;
+      }
+
+      // 检测 address_txs_<YYYYMM> 是否存在
+      checkTableAddressTxs(txLog2.maxBlkTimestamp_);
+
+      //
+      // DB START TRANSACTION
+      //
+      if (!dbExplorer_.execute("START TRANSACTION")) {
+        goto error;
+      }
+
+      if (txLog2.type_ == LOG2TYPE_TX_ACCEPT) {
+        //
+        // acceptTx() 时，当前向交易不存在，我们则删除掉当前 txlog2，并抛出异常。
+        //
+        acceptTx(&txLog2);
+      }
+      else if (txLog2.type_ == LOG2TYPE_TX_CONFIRM) {
+        // confirm 时才能 acceptBlock()
+        if (txLog2.tx_.IsCoinBase()) {
+          acceptBlock(&txLog2, blockHash);
+        }
+        confirmTx(&txLog2);
+      }
+      else if (txLog2.type_ == LOG2TYPE_TX_UNCONFIRM) {
+        unconfirmTx(&txLog2);
+      }
+      else if (txLog2.type_ == LOG2TYPE_TX_REJECT) {
+        if (txLog2.tx_.IsCoinBase()) {
+          rejectBlock(&txLog2);
+        }
+        rejectTx(&txLog2);
+      }
+      else {
+        LOG_FATAL("invalid txlog2 type: %d", txLog2.type_);
+      }
+
+      // 设置为当前的ID，该ID不一定连续，不可以 lastID++
+      updateLastTxlog2Id(txLog2.id_);
+
+      //
+      // DB COMMIT
+      //
+      if (!dbExplorer_.execute("COMMIT")) {
+        goto error;
+      }
+      lastTxLog2 = txLog2;
+
+      writeLastProcessTxlogTime();
+
+      if (cache_ != nullptr) {
+        cache_->commit();
+      }
+
+      if (blockHash.length()) {  // 目前仅用在URL回调上，仅使用一次
+        callBlockRelayParseUrl(blockHash);
+        blockHash.clear();
+      }
+    } /* /try */
+    catch (int e) {
+      // 整数异常，都是可以继续的异常
+      LOG_FATAL("tparser:run exception: %d", e);
       continue;
     }
-
-    // 反向消费，达到停止txlog ID
-    if (txLog2.id_ < reverseEndTxlog2ID_) {
-      LOG_WARN("current txlogs2 ID (%lld) is less than stop ID (%lld), stopping...",
-               txLog2.id_, reverseEndTxlog2ID_);
-      stop();
-      break;
-    }
-
-    // 检测 address_txs_<YYYYMM> 是否存在
-    checkTableAddressTxs(txLog2.maxBlkTimestamp_);
-
-    //
-    // DB START TRANSACTION
-    //
-    if (!dbExplorer_.execute("START TRANSACTION")) {
-      goto error;
-    }
-
-    if (txLog2.type_ == LOG2TYPE_TX_ACCEPT) {
-      acceptTx(&txLog2);
-    }
-    else if (txLog2.type_ == LOG2TYPE_TX_CONFIRM) {
-      // confirm 时才能 acceptBlock()
-      if (txLog2.tx_.IsCoinBase()) {
-        acceptBlock(&txLog2, blockHash);
-      }
-      confirmTx(&txLog2);
-    }
-    else if (txLog2.type_ == LOG2TYPE_TX_UNCONFIRM) {
-      unconfirmTx(&txLog2);
-    }
-    else if (txLog2.type_ == LOG2TYPE_TX_REJECT) {
-      if (txLog2.tx_.IsCoinBase()) {
-        rejectBlock(&txLog2);
-      }
-      rejectTx(&txLog2);
-    }
-    else {
-      LOG_FATAL("invalid txlog2 type: %d", txLog2.type_);
-    }
-
-    // 设置为当前的ID，该ID不一定连续，不可以 lastID++
-    updateLastTxlog2Id(txLog2.id_);
-
-    //
-    // DB COMMIT
-    //
-    if (!dbExplorer_.execute("COMMIT")) {
-      goto error;
-    }
-    lastTxLog2 = txLog2;
-
-    writeLastProcessTxlogTime();
-
-    if (cache_ != nullptr) {
-      cache_->commit();
-    }
-
-    if (blockHash.length()) {  // 目前仅用在URL回调上，仅使用一次
-      callBlockRelayParseUrl(blockHash);
-      blockHash.clear();
-    }
-
   } /* /while */
 
   //
@@ -764,7 +772,7 @@ void Parser::checkTableAddressTxs(const uint32_t timestamp) {
 }
 
 // 根据Hash，查询ID
-bool Parser::txsHash2ids(const std::set<uint256> &hashVec,
+void Parser::txsHash2ids(const std::set<uint256> &hashVec,
                          std::map<uint256, int64_t> &hash2id) {
   MySQLResult res;
   string sql;
@@ -780,15 +788,13 @@ bool Parser::txsHash2ids(const std::set<uint256> &hashVec,
                           HexToDecLast2Bytes(hashStr) % 64, hashStr.c_str());
     dbExplorer_.query(sql, res);
     if (res.numRows() != 1) {
-      LOG_FATAL("can't find tx's ID, hash: %s", hashStr.c_str());
-      return false;
+      THROW_EXCEPTION_DBEX("can't find tx's ID, hash: %s", hashStr.c_str());
     }
     row = res.nextRow();
     hash2id.insert(std::make_pair(hash, atoi64(row[0])));
   }
 
   assert(hash2id.size() >= hashVec.size());
-  return true;
 }
 
 void Parser::updateLastTxlog2Id(const int64_t newId) {
@@ -1039,10 +1045,9 @@ DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t po
   return o;
 }
 
-static
-void _accpetTx_insertTxInputs(MySQLConnection &db, CacheManager *cache,
-                              TxLog2 *txLog2, map<int64_t, int64_t> &addressBalance,
-                              int64_t &valueIn) {
+void Parser::_accpetTx_insertTxInputs(TxLog2 *txLog2,
+                                      map<int64_t, int64_t> &addressBalance,
+                                      int64_t &valueIn) {
   int n;
   const string tableName = Strings::Format("tx_inputs_%04d", txLog2->txId_ % 100);
   const string now = date("%F %T");
@@ -1076,7 +1081,7 @@ void _accpetTx_insertTxInputs(MySQLConnection &db, CacheManager *cache,
     } else
     {
       prevHash = in.prevout.hash;
-      prevTxId = txHash2Id(db, prevHash);
+      prevTxId = txHash2Id(dbExplorer_, prevHash);
       prevPos  = (int32_t)in.prevout.n;
 
       // 将前向交易标记为已花费
@@ -1086,13 +1091,35 @@ void _accpetTx_insertTxInputs(MySQLConnection &db, CacheManager *cache,
                             " AND `spent_tx_id`=0 AND `spent_position`=-1 ",
                             prevTxId % 100, txLog2->txId_, n,
                             prevTxId, prevPos);
-      db.updateOrThrowEx(sql, 1);
+      if (dbExplorer_.update(sql) != 1) {
+        assert(isReverse_ == false);
+        assert(txLog2->type_ == LOG2TYPE_TX_ACCEPT);
+        //
+        // 说明前向交易不存在，忽略该 txlog2
+        // accept tx 前向 tx 不存在时，跳过某个 txlog2. 因为 log1producer 初始化
+        // 同步时，追 bitcoind 会忽略中间的tx（tx很久都没有得到确认），而后某个tx依赖此，
+        // 则导致无法accept后一个tx.
+        //
+        // 意味这条 txlog2 会引发系统异常，我们删除掉这条 txlog2
+        //
+        dbExplorer_.execute("ROLLBACK");  // 回滚掉当前事务
+        // 执行删除
+        LOG_WARN("delete txlog2: %s", txLog2->toString().c_str());
+        string delSql = Strings::Format("DELETE FROM `0_txlogs2` WHERE `id`=%lld", txLog2->id_);
+        dbExplorer_.updateOrThrowEx(delSql, 1);
+
+        // 抛出异常
+        LOG_FATAL("invalid input: %lld:%s:%d, prev output: %lld:%s:%d",
+                  txLog2->txId_, txLog2->txHash_.ToString().c_str(), n,
+                  prevTxId, prevHash.ToString().c_str(), prevPos);
+        throw EXCEPTION_TPARSER_TX_INVALID_INPUT;
+      }
 
       // 将 address_unspent_outputs_xxxx 相关记录删除
-      _removeUnspentOutputs(db, prevTxId, prevPos, addressBalance);
+      _removeUnspentOutputs(dbExplorer_, prevTxId, prevPos, addressBalance);
 
       // 插入当前交易的inputs
-      DBTxOutput dbTxOutput = getTxOutput(db, prevTxId, prevPos);
+      DBTxOutput dbTxOutput = getTxOutput(dbExplorer_, prevTxId, prevPos);
       if (dbTxOutput.txId == 0) {
         THROW_EXCEPTION_DBEX("can't find tx output, txId: %lld, hash: %s, position: %d",
                              prevTxId, prevHash.ToString().c_str(), prevPos);
@@ -1109,19 +1136,19 @@ void _accpetTx_insertTxInputs(MySQLConnection &db, CacheManager *cache,
                                        now.c_str()));
       valueIn += dbTxOutput.value;
 
-      if (cache != nullptr) {
+      if (cache_ != nullptr) {
         // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
         // 遍历inputs所关联tx，全部删除： tx_{hash}
-        cache->insertKV(Strings::Format("tx_%s", prevHash.ToString().c_str()));
+        cache_->insertKV(Strings::Format("tx_%s", prevHash.ToString().c_str()));
 
         // 清理所有输入地址
         if (dbTxOutput.address.length()) {
           auto addrStrVec = split(dbTxOutput.address, '|');
           for (auto &singleAddrStr : addrStrVec) {
-            cache->insertKV(Strings::Format("addr_%s", singleAddrStr.c_str()));
+            cache_->insertKV(Strings::Format("addr_%s", singleAddrStr.c_str()));
             // 清理 address_txs_xxxx 的缓存计数器
-            cache->insertHashSet(singleAddrStr, Strings::Format("address_txs_%d",
-                                                                tableIdx_AddrTxs(txLog2->ymd_)));
+            cache_->insertHashSet(singleAddrStr, Strings::Format("address_txs_%d",
+                                                                 tableIdx_AddrTxs(txLog2->ymd_)));
           }
         }
       }
@@ -1129,7 +1156,7 @@ void _accpetTx_insertTxInputs(MySQLConnection &db, CacheManager *cache,
   } /* /for */
 
   // 执行插入 inputs
-  if (!multiInsert(db, tableName, fields, values)) {
+  if (!multiInsert(dbExplorer_, tableName, fields, values)) {
     THROW_EXCEPTION_DBEX("insert inputs fail, txId: %lld, hash: %s",
                          txLog2->txId_, txLog2->tx_.GetHash().ToString().c_str());
   }
@@ -1652,7 +1679,7 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   map<int64_t/* addrID */, int64_t/*  balance diff */> addressBalance;
 
   // 处理inputs
-  _accpetTx_insertTxInputs(dbExplorer_, cache_, txLog2, addressBalance, valueIn);
+  _accpetTx_insertTxInputs(txLog2, addressBalance, valueIn);
 
   // 处理outputs
   _accpetTx_insertTxOutputs(dbExplorer_, cache_, txLog2, addressBalance);

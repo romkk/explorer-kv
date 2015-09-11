@@ -1590,13 +1590,13 @@ void Parser::_switchAddressTxNode(LastestAddressInfo *addr,
 
   //
   // 变更前向节点，节点2: 指向 & 金额
-  //
+  // 由于 idx 是唯一键（无法直接交换）：先重置为 -1，最后再变更
   sql = Strings::Format("UPDATE `address_txs_%d` "
                         " SET `prev_ymd`=%d, `prev_tx_id`=%lld, "
                         "     `next_ymd`=%d, `next_tx_id`=%lld, "
                         " `balance_final`  = `balance_final`  + %lld, "
                         " `total_received` = `total_received` + %lld, "
-                        " `idx` = `idx` + 1 "
+                        " `idx` = -1 "
                         " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                         tableIdx_AddrTxs(curr->prevYmd_),
                         curr->ymd_, curr->txId_,
@@ -1623,6 +1623,15 @@ void Parser::_switchAddressTxNode(LastestAddressInfo *addr,
                         (prev->balanceDiff_ > 0 ? prev->balanceDiff_ * -1 : 0),
                         curr->addressId_, curr->txId_);
   dbExplorer_.updateOrThrowEx(sql , 1);
+
+  // 节点2: 变更的idx
+  sql = Strings::Format("UPDATE `address_txs_%d` "
+                        " SET `idx` = %lld "
+                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                        tableIdx_AddrTxs(curr->prevYmd_),
+                        curr->idx_,
+                        curr->addressId_, curr->prevTxId_);
+  dbExplorer_.updateOrThrowEx(sql , 1);
 }
 
 // 交换相邻节点，当前节点前移
@@ -1635,6 +1644,8 @@ void Parser::moveForwardAddressTxNode(LastestAddressInfo *addr,
   AddressTxNode prevNode;
   _getAddressTxNode(curr->prevTxId_, addr, &prevNode);
 
+  LOG_INFO("moveForwardAddressTxNode, address_id: %lld, prev: %lld, curr: %lld",
+           addr->addrId_, prevNode.txId_, curr->txId_);
   _switchAddressTxNode(addr, &prevNode, curr);
 }
 
@@ -1648,6 +1659,8 @@ void Parser::moveBackwardAddressTxNode(LastestAddressInfo *addr,
   AddressTxNode nextNode;
   _getAddressTxNode(curr->nextTxId_, addr, &nextNode);
 
+  LOG_INFO("moveBackwardAddressTxNode, address_id: %lld, curr: %lld, next: %lld",
+           addr->addrId_, curr->txId_, nextNode.txId_);
   _switchAddressTxNode(addr, curr, &nextNode);
 }
 

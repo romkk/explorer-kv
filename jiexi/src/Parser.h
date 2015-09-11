@@ -278,6 +278,7 @@ private:
   //
   void _accpetTx_insertTxInputs(TxLog2 *txLog2, map<int64_t, int64_t> &addressBalance,
                                 int64_t &valueIn);
+  bool hasAccepted(class TxLog2 *txLog2);
 
   // 获取tx对应各个地址的余额变更情况
   map<int64_t, int64_t> *_getTxAddressBalance(class TxLog2 *txLog2);

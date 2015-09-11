@@ -670,6 +670,15 @@ void Parser::run() {
         if (txLog2.tx_.IsCoinBase()) {
           acceptBlock(&txLog2, blockHash);
         }
+        //
+        // 有可能因为前向交易不存在，导致该tx没有被accept，但log2producer认为accept过了
+        // 所以，这里检测一下，若没有accept，则执行accept操作
+        //
+        if (!hasAccepted(&txLog2)) {
+          txLog2.type_ = LOG2TYPE_TX_ACCEPT;
+          acceptTx(&txLog2);
+          txLog2.type_ = LOG2TYPE_TX_CONFIRM;
+        }
         confirmTx(&txLog2);
       }
       else if (txLog2.type_ == LOG2TYPE_TX_UNCONFIRM) {
@@ -729,6 +738,24 @@ void Parser::run() {
 error:
   dbExplorer_.execute("ROLLBACK");
   return;
+}
+
+bool Parser::hasAccepted(class TxLog2 *txLog2) {
+  MySQLResult res;
+  string sql;
+  char **row = nullptr;
+  const string hash = txLog2->txHash_.ToString();
+
+  // 存在于 table.txs_xxxx 表中，说明已经 accept 处理过了
+  sql = Strings::Format("SELECT `height` FROM `txs_%04d` WHERE `hash` = '%s'",
+                        HexToDecLast2Bytes(hash) % 64, hash.c_str());
+  dbExplorer_.query(sql, res);
+  if (res.numRows() == 1) {
+    row = res.nextRow();
+    assert(atoi(row[0]) == 0);  // 确认数应该为零
+    return true;
+  }
+  return false;
 }
 
 

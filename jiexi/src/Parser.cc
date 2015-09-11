@@ -674,10 +674,16 @@ void Parser::run() {
         // 有可能因为前向交易不存在，导致该tx没有被accept，但log2producer认为accept过了
         // 所以，这里检测一下，若没有accept，则执行accept操作
         //
+        const int32_t blockHeight = txLog2.blkHeight_;
+        const int64_t blockId     = txLog2.blkId_;
         if (!hasAccepted(&txLog2)) {
           txLog2.type_ = LOG2TYPE_TX_ACCEPT;
+          txLog2.blkHeight_ = -1;
+          txLog2.blkId_     = -1;
           acceptTx(&txLog2);
           txLog2.type_ = LOG2TYPE_TX_CONFIRM;
+          txLog2.blkHeight_ = blockHeight;
+          txLog2.blkId_     = blockId;
         }
         confirmTx(&txLog2);
       }
@@ -1586,7 +1592,7 @@ void Parser::_switchAddressTxNode(LastestAddressInfo *addr,
     // 没有后续节点4，变更地址的尾交易信息
     sql = Strings::Format("UPDATE `addresses_%04d` SET "
                           " `end_tx_id`=%lld, `end_tx_ymd`=%d"
-                          " WHERE `address_id`=%lld ",
+                          " WHERE `id`=%lld ",
                           tableIdx_Addr(addr->addrId_),
                           curr->prevTxId_, curr->prevYmd_, addr->addrId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
@@ -1607,7 +1613,7 @@ void Parser::_switchAddressTxNode(LastestAddressInfo *addr,
     // 没有节点1，变更地址的头交易信息
     sql = Strings::Format("UPDATE `addresses_%04d` SET "
                           " `begin_tx_id`=%lld, `begin_tx_ymd`=%d"
-                          " WHERE `address_id`=%lld ",
+                          " WHERE `id`=%lld ",
                           tableIdx_Addr(addr->addrId_),
                           curr->txId_, curr->ymd_, addr->addrId_);
     dbExplorer_.updateOrThrowEx(sql , 1);

@@ -24,6 +24,8 @@
 #include "Log2Producer.h"
 #include "Util.h"
 
+#include "inotify-cxx.h"
+
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
 
@@ -238,6 +240,9 @@ public:
 /////////////////////////////////  Parser  ////////////////////////////////////
 class Parser {
 private:
+  mutex lock_;
+  Condition changed_;
+
   atomic<bool> running_;
   MySQLConnection dbExplorer_;
 
@@ -254,6 +259,13 @@ private:
 
   // 交易信息(id, hex等）缓存
   TxInfoCache txInfoCache_;
+
+  // notify
+  string notifyFileLog2Producer_;
+  Inotify inotify_;
+  thread watchNotifyThread_;
+
+  void threadWatchNotifyFile();
 
   bool tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId);
 

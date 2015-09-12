@@ -533,6 +533,10 @@ unconfirmedTxsSize_(0), unconfirmedTxsCount_(0), blkTs_(2016)
                               (int32_t)Config::GConfig.getInt("ssdb.port"),
                               Config::GConfig.get("url.file.dir", ""));
   }
+  notifyFileLog2Producer_ = Config::GConfig.get("notify.log2producer.file");
+  if (notifyFileLog2Producer_.empty()) {
+    THROW_EXCEPTION_DBEX("empty config: notify.log2producer.file");
+  }
 }
 
 Parser::~Parser() {
@@ -542,6 +546,10 @@ Parser::~Parser() {
     delete cache_;
     cache_ = nullptr;
   }
+
+  if (watchNotifyThread_.joinable()) {
+    watchNotifyThread_.join();
+  }
 }
 
 void Parser::stop() {
@@ -549,6 +557,9 @@ void Parser::stop() {
     running_ = false;
     LOG_INFO("stop tparser");
   }
+
+  inotify_.RemoveAll();
+  changed_.notify_all();
 }
 
 bool Parser::init() {
@@ -611,9 +622,46 @@ bool Parser::init() {
     LOG_INFO("found max block timestamp: %lld", blkTs_.getMaxTimestamp());
   }
 
+  watchNotifyThread_ = thread(&Parser::threadWatchNotifyFile, this);
+
   return true;
 }
 
+void Parser::threadWatchNotifyFile() {
+  try {
+    //
+    // IN_CLOSE_NOWRITE :
+    //     一个以只读方式打开的文件或目录被关闭
+    //     A file or directory that had been open read-only was closed.
+    // `cat FILE` 可触发该事件
+    //
+    InotifyWatch watch(notifyFileLog2Producer_, IN_CLOSE_NOWRITE);
+    inotify_.Add(watch);
+    LOG_INFO("watching notify file: %s", notifyFileLog2Producer_.c_str());
+
+    while (running_) {
+      inotify_.WaitForEvents();
+
+      size_t count = inotify_.GetEventCount();
+      while (count > 0) {
+        InotifyEvent event;
+        bool got_event = inotify_.GetEvent(&event);
+
+        if (got_event) {
+          string mask_str;
+          event.DumpTypes(mask_str);
+          LOG_DEBUG("get inotify event, mask: %s", mask_str.c_str());
+        }
+        count--;
+
+        // notify other threads
+        changed_.notify_all();
+      }
+    } /* /while */
+  } catch (InotifyException &e) {
+    THROW_EXCEPTION_DBEX("Inotify exception occured: %s", e.GetMessage().c_str());
+  }
+}
 
 void Parser::run() {
   TxLog2 txLog2, lastTxLog2;
@@ -625,7 +673,9 @@ void Parser::run() {
       lastTxLog2Id = getLastTxLog2Id();
 
       if (tryFetchTxLog2(&txLog2, lastTxLog2Id) == false) {
-        sleepMs(100);
+        UniqueLock ul(lock_);
+        // 默认等待N毫秒，直至超时，中间有人触发，则立即continue读取记录
+        changed_.wait_for(ul, chrono::milliseconds(10*1000));
         continue;
       }
 

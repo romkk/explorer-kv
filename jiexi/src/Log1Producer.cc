@@ -213,6 +213,7 @@ Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileHandler_(nullptr),
 {
   log1Dir_ = Config::GConfig.get("log1.dir");
   log0Dir_ = Config::GConfig.get("log0.dir");
+  notifyFile_ = log1Dir_ + "/NOTIFY_LOG1_TO_LOG2";
 }
 
 Log1Producer::~Log1Producer() {
@@ -254,6 +255,15 @@ void Log1Producer::init() {
     if (it == end) {
       THROW_EXCEPTION_DBEX("log0dir files are empty: %s/files", log0Dir_.c_str());
     }
+  }
+
+  // 创建通知文件
+  {
+    FILE *f = fopen(notifyFile_.c_str(), "w");
+    if (f == nullptr) {
+      THROW_EXCEPTION_DBEX("create file fail: %s", notifyFile_.c_str());
+    }
+    fclose(f);
   }
 
   //
@@ -662,6 +672,16 @@ void Log1Producer::run() {
   } /* /while */
 }
 
+void Log1Producer::doNotifyLog2Producer() {
+  //
+  // 只读打开后就关闭掉，会产生一个通知事件，由 log2producer 捕获
+  //     IN_CLOSE_NOWRITE: 一个以只读方式打开的文件或目录被关闭。
+  //
+  FILE *f = fopen(notifyFile_.c_str(), "r");
+  assert(f != nullptr);
+  fclose(f);
+}
+
 void Log1Producer::writeLog1(const int32_t type, const string &line) {
   //
   // 写 log1 日志
@@ -684,7 +704,12 @@ void Log1Producer::writeLog1(const int32_t type, const string &line) {
     THROW_EXCEPTION_DBEX("fwrite return size_t(%llu) is NOT match line length: %llu, file: %s",
                          res, logLine.length(), file.c_str());
   }
-  fflush(log1FileHandler_);
+  fflush(log1FileHandler_);  // fwrite 后执行 fflush 保证其他程序立即可以读取到
+
+  // 写完成后，再执行通知
+  // 如果 log2producer 直接监听日志文件的 IN_MODIFY 时间，可能读取不到完整的一行，未写完
+  // 就触发了 IN_MODIFY 时间，所以用单独文件去触发通知
+  doNotifyLog2Producer();
 
   //
   // 切换 log1 日志：超过最大文件长度则关闭文件，下次写入时会自动打开新的文件
@@ -711,15 +736,21 @@ void Log1Producer::writeLog1(const int32_t type, const string &line) {
 
 void Log1Producer::writeLog1Tx(const CTransaction &tx) {
   const string hex = EncodeHexTx(tx);
+  const string hashStr = tx.GetHash().ToString();
   writeLog1(Log1::TYPE_TX,
-            Strings::Format("%s|%s", tx.GetHash().ToString().c_str(), hex.c_str()));
+            Strings::Format("%s|%s", hashStr.c_str(), hex.c_str()));
+
+  LOG_INFO("write log1 tx: %s", hashStr.c_str());
 }
 
 void Log1Producer::writeLog1Block(const int32_t height, const CBlock &block) {
   CDataStream ssBlock(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
   ssBlock << block;
   std::string strHex = HexStr(ssBlock.begin(), ssBlock.end());
+  const string hashStr = block.GetHash().ToString();
   writeLog1(Log1::TYPE_BLOCK,
-            Strings::Format("%d|%s|%s", height,
-                            block.GetHash().ToString().c_str(), strHex.c_str()));
+            Strings::Format("%d|%s|%s", height, hashStr.c_str(), strHex.c_str()));
+
+  LOG_INFO("write log1 block(%d): %s", height, hashStr.c_str());
 }
+

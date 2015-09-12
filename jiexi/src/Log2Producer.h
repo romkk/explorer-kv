@@ -24,6 +24,8 @@
 #include "MySQLConnection.h"
 #include "Util.h"
 
+#include "inotify-cxx.h"
+
 #include "bitcoin/core.h"
 
 #include <iostream>
@@ -123,6 +125,9 @@ public:
 
 ///////////////////////////////  Log2Producer  /////////////////////////////////
 class Log2Producer {
+  mutex lock_;
+  Condition changed_;
+
   atomic<bool> running_;
   MySQLConnection db_;
   MemTxRepository memRepo_;
@@ -140,6 +145,12 @@ class Log2Producer {
   /* log2 */
   int32_t log2BlockHeight_;
   uint256 log2BlockHash_;
+
+  // notify
+  string notifyFileLog1Producer_;
+  string notifyFileTParser_;
+  Inotify inotify_;
+  thread watchNotifyThread_;
 
   // 检测环境
   void checkEnvironment();
@@ -159,7 +170,11 @@ class Log2Producer {
   void handleBlockAccept  (Log1 &log1Item);
   void handleBlockRollback(Log1 &log1Item);
 
+  void doNotifyTParser();
+
   void commitBatch(const size_t expectAffectedRows);
+
+  void threadWatchNotifyFile();
 
 public:
   Log2Producer();

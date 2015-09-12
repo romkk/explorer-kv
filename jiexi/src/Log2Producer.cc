@@ -217,9 +217,15 @@ Log2Producer::Log2Producer(): running_(false),
 db_(Config::GConfig.get("mysql.uri")), blkTs_(2016)
 {
   log1Dir_ = Config::GConfig.get("log1.dir");
+  notifyFileTParser_      = log1Dir_ + "/NOTIFY_LOG2_TO_TPARSER";
+  notifyFileLog1Producer_ = log1Dir_ + "/NOTIFY_LOG1_TO_LOG2";
 }
 
 Log2Producer::~Log2Producer() {
+  changed_.notify_all();
+  if (watchNotifyThread_.joinable()) {
+    watchNotifyThread_.join();
+  }
 }
 
 static void _initLog2_loadMemrepoTxs(MySQLConnection &db,
@@ -383,6 +389,15 @@ void Log2Producer::syncLog1() {
   if (!syncSuccess) {
     THROW_EXCEPTION_DBEX("sync log1 failure");
   }
+
+  // 创建通知文件
+  {
+    FILE *f = fopen(notifyFileTParser_.c_str(), "w");
+    if (f == nullptr) {
+      THROW_EXCEPTION_DBEX("create file fail: %s", notifyFileTParser_.c_str());
+    }
+    fclose(f);
+  }
 }
 
 void Log2Producer::tryRemoveOldLog1() {
@@ -490,11 +505,16 @@ void Log2Producer::init() {
   checkEnvironment();
   initLog2();
   syncLog1();
+
+  watchNotifyThread_ = thread(&Log2Producer::threadWatchNotifyFile, this);
 }
 
 void Log2Producer::stop() {
   LOG_INFO("stop log2producer...");
   running_ = false;
+
+  inotify_.RemoveAll();
+  changed_.notify_all();
 }
 
 void Log2Producer::handleTx(Log1 &log1Item) {
@@ -747,6 +767,52 @@ void Log2Producer::handleBlock(Log1 &log1Item) {
   }
 }
 
+void Log2Producer::doNotifyTParser() {
+  //
+  // 只读打开后就关闭掉，会产生一个通知事件，由 log2producer 捕获
+  //     IN_CLOSE_NOWRITE: 一个以只读方式打开的文件或目录被关闭。
+  //
+  FILE *f = fopen(notifyFileTParser_.c_str(), "r");
+  assert(f != nullptr);
+  fclose(f);
+}
+
+void Log2Producer::threadWatchNotifyFile() {
+  try {
+    //
+    // IN_CLOSE_NOWRITE :
+    //     一个以只读方式打开的文件或目录被关闭
+    //     A file or directory that had been open read-only was closed.
+    // `cat FILE` 可触发该事件
+    //
+    InotifyWatch watch(notifyFileLog1Producer_, IN_CLOSE_NOWRITE);
+    inotify_.Add(watch);
+    LOG_INFO("watching notify file: %s", notifyFileLog1Producer_.c_str());
+
+    while (running_) {
+      inotify_.WaitForEvents();
+
+      size_t count = inotify_.GetEventCount();
+      while (count > 0) {
+        InotifyEvent event;
+        bool got_event = inotify_.GetEvent(&event);
+
+        if (got_event) {
+          string mask_str;
+          event.DumpTypes(mask_str);
+          LOG_DEBUG("get inotify event, mask_str: %s", mask_str.c_str());
+        }
+        count--;
+
+        // notify other threads
+        changed_.notify_all();
+      }
+    } /* /while */
+  } catch (InotifyException &e) {
+    THROW_EXCEPTION_DBEX("Inotify exception occured: %s", e.GetMessage().c_str());
+  }
+}
+
 void Log2Producer::run() {
   LogScope ls("Log2Producer::run()");
 
@@ -755,10 +821,12 @@ void Log2Producer::run() {
     tryReadLog1(lines);
 
     if (!running_) { break; }
+
     if (lines.size() == 0) {
-      sleepMs(200);
+      UniqueLock ul(lock_);
+      // 默认等待N毫秒，直至超时，中间有人触发，则立即continue读取记录
+      changed_.wait_for(ul, chrono::milliseconds(10*1000));
       continue;
-      // TODO: 可改进为监听文件事件代替sleep操作，减少轮询且提高效率
     }
 
     for (const auto &line : lines) {
@@ -777,6 +845,10 @@ void Log2Producer::run() {
         THROW_EXCEPTION_DBEX("invalid log1 type, log line: %s", line.c_str());
       }
     } /* /for */
+
+    // 通知
+    doNotifyTParser();
+
   } /* /while */
 }
 

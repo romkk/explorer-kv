@@ -91,6 +91,7 @@ class Log1Producer {
 
   // 最近N个块链
   Chain chain_;
+  string notifyFile_;
 
 
   /****************** log0 ******************/
@@ -107,6 +108,8 @@ class Log1Producer {
 
   void tryRemoveOldLog0();  // 移除旧的log0日志
   void tryReadLog0(vector<string> &lines);
+
+  void doNotifyLog2Producer();
 
   // 初始化 log1
   void initLog1();

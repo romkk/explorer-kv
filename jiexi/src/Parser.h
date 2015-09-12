@@ -241,9 +241,6 @@ private:
   atomic<bool> running_;
   MySQLConnection dbExplorer_;
 
-  bool isReverse_;
-  int64_t reverseEndTxlog2ID_;
-
   CacheManager *cache_;
   bool cacheEnable_;
 
@@ -320,8 +317,6 @@ public:
   bool init();
   void run();
   void stop();
-
-  void setReverseMode(const int64_t endTxlogID);
 
   void txsHash2ids(const std::set<uint256> &hashVec,
                    std::map<uint256, int64_t> &hash2id);

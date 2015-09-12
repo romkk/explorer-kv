@@ -523,7 +523,7 @@ void TxInfoCache::getTxInfo(MySQLConnection &db,
 
 /////////////////////////////////  Parser  ///////////////////////////////////
 Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
-running_(true), isReverse_(false), reverseEndTxlog2ID_(0), cache_(nullptr),
+running_(true), cache_(nullptr),
 unconfirmedTxsSize_(0), unconfirmedTxsCount_(0), blkTs_(2016)
 {
   // setup cache manager: SSDB
@@ -542,11 +542,6 @@ Parser::~Parser() {
     delete cache_;
     cache_ = nullptr;
   }
-}
-
-void Parser::setReverseMode(const int64_t endTxlogID) {
-  isReverse_  = true;
-  reverseEndTxlog2ID_ = endTxlogID;
 }
 
 void Parser::stop() {
@@ -625,16 +620,6 @@ void Parser::run() {
   string blockHash;  // 目前仅用在URL回调上
   int64_t lastTxLog2Id = 0;
 
-  //
-  // 启动时：如果是反向消费，则需要将 lastTxLog2Id 向后加一。即使 lastTxLog2Id 不连续也OK。
-  //
-  if (isReverse_) {
-    lastTxLog2Id = getLastTxLog2Id();
-    updateLastTxlog2Id(lastTxLog2Id + 1);
-    LOG_INFO("[reverse start] set lastTxLog2Id from %lld to %lld",
-             lastTxLog2Id, lastTxLog2Id + 1);
-  }
-
   while (running_) {
     try {
       lastTxLog2Id = getLastTxLog2Id();
@@ -642,14 +627,6 @@ void Parser::run() {
       if (tryFetchTxLog2(&txLog2, lastTxLog2Id) == false) {
         sleepMs(100);
         continue;
-      }
-
-      // 反向消费，达到停止txlog ID
-      if (txLog2.id_ < reverseEndTxlog2ID_) {
-        LOG_WARN("current txlogs2 ID (%lld) is less than stop ID (%lld), stopping...",
-                 txLog2.id_, reverseEndTxlog2ID_);
-        stop();
-        break;
       }
 
       // 检测 address_txs_<YYYYMM> 是否存在
@@ -731,16 +708,6 @@ void Parser::run() {
       continue;
     }
   } /* /while */
-
-  //
-  // 终止时：如果是反向消费，则需要将txlog offset向前减一。即使txlogID不连续也OK。
-  //
-  if (isReverse_) {
-    lastTxLog2Id = getLastTxLog2Id();
-    updateLastTxlog2Id(lastTxLog2Id - 1);
-    LOG_INFO("[reverse end] set lastTxLog2Id from %lld to %lld",
-             lastTxLog2Id, lastTxLog2Id - 1);
-  }
 
   return;
 
@@ -1128,7 +1095,6 @@ void Parser::_accpetTx_insertTxInputs(TxLog2 *txLog2,
                             prevTxId % 100, txLog2->txId_, n,
                             prevTxId, prevPos);
       if (dbExplorer_.update(sql) != 1) {
-        assert(isReverse_ == false);
         assert(txLog2->type_ == LOG2TYPE_TX_ACCEPT);
         //
         // 说明前向交易不存在，忽略该 txlog2
@@ -2522,21 +2488,13 @@ bool Parser::tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId) {
   char **row = nullptr;
   string sql;
 
-  if (isReverse_) {
-    // 反向消费
-//    sql = Strings::Format(" SELECT `id`, "
-//                          "   `block_height`,`tx_hash`,`created_at` "
-//                          " FROM `0_txlogs2` "
-//                          " WHERE `id` < %lld ORDER BY `id` DESC LIMIT 1 ",
-//                          lastTxLogOffset);
-  } else {
-    // batch_id 为 -1 表示最后的临时记录
-    sql = Strings::Format(" SELECT `id`,`type`,`block_height`,`block_id`, "
-                          " `max_block_timestamp`, `tx_hash`,`created_at` "
-                          " FROM `0_txlogs2` "
-                          " WHERE `id` > %lld AND `batch_id` <> -1 ORDER BY `id` ASC LIMIT 1 ",
-                          lastId);
-  }
+  // batch_id 为 -1 表示最后的临时记录
+  sql = Strings::Format(" SELECT `id`,`type`,`block_height`,`block_id`, "
+                        " `max_block_timestamp`, `tx_hash`,`created_at` "
+                        " FROM `0_txlogs2` "
+                        " WHERE `id` > %lld AND `batch_id` <> -1 ORDER BY `id` ASC LIMIT 1 ",
+                        lastId);
+
   dbExplorer_.query(sql, res);
   if (res.numRows() == 0) {
     return false;
@@ -2560,26 +2518,9 @@ bool Parser::tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId) {
     return false;
   }
 
-  // 反向消费，需要翻转类型
-  if (isReverse_) {
-    // TODO
-//    if (txLog2->type_ == LOG2TYPE_TX_ACCEPT) {
-//      txLog2->type_ = LOG2TYPE_TX_REJECT;
-//    }
-//    else if (txLog2->type_ == LOG2TYPE_TX_CONFIRM) {
-//      txLog2->type_ = LOG2TYPE_TX_UNCONFIRM;
-//    }
-//    else if (txLog2->type_ == LOG2TYPE_TX_UNCONFIRM) {
-//      txLog2->type_ = LOG2TYPE_TX_CONFIRM;
-//    }
-//    else if (txLog2->type_ == LOG2TYPE_TX_REJECT) {
-//      txLog2->type_ = LOG2TYPE_TX_ACCEPT;
-//    }
-  }
-
   LOG_INFO("process txlog2(%c), logId: %d, type: %d, "
            "height: %d, tx hash: %s, created: %s",
-           isReverse_ ? '-' : '+',
+           '+',
            txLog2->id_, txLog2->type_, txLog2->blkHeight_,
            txLog2->txHash_.ToString().c_str(), txLog2->createdAt_.c_str());
 

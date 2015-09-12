@@ -655,6 +655,11 @@ void Log1Producer::tryReadLog0(vector<string> &lines) {
   log0Ifstream.seekg(log0FileOffset_, log0Ifstream.beg);
   string line;
   while (getline(log0Ifstream, line)) {  // getline()读不到内容，则会关闭 ifstream
+    if (log0Ifstream.eof()) {
+      // eof 表示没有遇到 \n 就抵达文件尾部了，通常意味着未完全读取一行
+      // 读取完最后一行后，再读取一次，才会导致 eof() 为 true
+      break;
+    }
     lines.push_back(line);
     log0FileOffset_ = log0Ifstream.tellg();
 

@@ -213,7 +213,7 @@ Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileHandler_(nullptr),
 {
   log1Dir_ = Config::GConfig.get("log1.dir");
   log0Dir_ = Config::GConfig.get("log0.dir");
-  notifyFile_ = log1Dir_ + "/NOTIFY_LOG1_TO_LOG2";
+  notifyFileLog2Producer_ = log1Dir_ + "/NOTIFY_LOG1_TO_LOG2";
 }
 
 Log1Producer::~Log1Producer() {
@@ -228,11 +228,19 @@ Log1Producer::~Log1Producer() {
     fclose(log1FileHandler_);
     log1FileHandler_ = nullptr;
   }
+
+  changed_.notify_all();
+  if (watchNotifyThread_.joinable()) {
+    watchNotifyThread_.join();
+  }
 }
 
 void Log1Producer::stop() {
   LOG_INFO("stop log1producer...");
   running_ = false;
+
+  inotify_.RemoveAll();
+  changed_.notify_all();
 }
 
 //
@@ -257,15 +265,6 @@ void Log1Producer::init() {
     }
   }
 
-  // 创建通知文件
-  {
-    FILE *f = fopen(notifyFile_.c_str(), "w");
-    if (f == nullptr) {
-      THROW_EXCEPTION_DBEX("create file fail: %s", notifyFile_.c_str());
-    }
-    fclose(f);
-  }
-
   //
   // 1. 初始化 log1
   //
@@ -280,6 +279,55 @@ void Log1Producer::init() {
   // 3. 与 log0 同步 (同步即初试化)
   //
   syncLog0();
+
+
+  // 创建通知文件，通知 log2producer
+  {
+    FILE *f = fopen(notifyFileLog2Producer_.c_str(), "w");
+    if (f == nullptr) {
+      THROW_EXCEPTION_DBEX("create file fail: %s", notifyFileLog2Producer_.c_str());
+    }
+    fclose(f);
+  }
+  watchNotifyThread_ = thread(&Log1Producer::threadWatchNotifyFile, this);
+}
+
+void Log1Producer::threadWatchNotifyFile() {
+  const string watchLog0DataDir = log0Dir_ + "/files";
+  try {
+    //
+    // IN_CLOSE_WRITE:  一个打开的，等待写入的文件或目录被关闭
+    // IN_MODIFY     :  被监控项目或者被监控目录中的条目被修改过。例如，一个打开的文件被修改
+    //
+    // `touch FILE` 可触发该事件
+    //
+    InotifyWatch watch(watchLog0DataDir, IN_MODIFY | IN_CLOSE_WRITE);
+    inotify_.Add(watch);
+    LOG_INFO("watching notify file: %s", watchLog0DataDir.c_str());
+
+    while (running_) {
+      inotify_.WaitForEvents();
+
+      size_t count = inotify_.GetEventCount();
+      while (count > 0) {
+        InotifyEvent event;
+        bool got_event = inotify_.GetEvent(&event);
+
+        if (got_event) {
+          string mask_str;
+          event.DumpTypes(mask_str);
+          LOG_DEBUG("get inotify event, file: %s, mask: %s",
+                    event.GetName().c_str(), mask_str.c_str());
+        }
+        count--;
+
+        // notify other threads
+        changed_.notify_all();
+      }
+    } /* /while */
+  } catch (InotifyException &e) {
+    THROW_EXCEPTION_DBEX("Inotify exception occured: %s", e.GetMessage().c_str());
+  }
 }
 
 // 初始化 log1
@@ -641,7 +689,9 @@ void Log1Producer::run() {
 
     if (!running_) { break; }
     if (lines.size() == 0) {
-      sleep(1);
+      UniqueLock ul(lock_);
+      // 默认等待N毫秒，直至超时，中间有人触发，则立即continue读取记录
+      changed_.wait_for(ul, chrono::milliseconds(3*1000));
       continue;
     }
 
@@ -677,7 +727,7 @@ void Log1Producer::doNotifyLog2Producer() {
   // 只读打开后就关闭掉，会产生一个通知事件，由 log2producer 捕获
   //     IN_CLOSE_NOWRITE: 一个以只读方式打开的文件或目录被关闭。
   //
-  FILE *f = fopen(notifyFile_.c_str(), "r");
+  FILE *f = fopen(notifyFileLog2Producer_.c_str(), "r");
   assert(f != nullptr);
   fclose(f);
 }

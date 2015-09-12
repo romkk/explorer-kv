@@ -24,6 +24,8 @@
 #include "Util.h"
 #include "utilities_js.hpp"
 
+#include "inotify-cxx.h"
+
 #include "bitcoin/core.h"
 
 #include <iostream>
@@ -79,6 +81,8 @@ public:
 
 //////////////////////////////  Log1Producer  //////////////////////////////////
 class Log1Producer {
+  mutex lock_;
+  Condition changed_;
   atomic<bool> running_;
 
   /****************** log1 ******************/
@@ -91,11 +95,14 @@ class Log1Producer {
 
   // 最近N个块链
   Chain chain_;
-  string notifyFile_;
-
 
   /****************** log0 ******************/
   string log0Dir_;
+
+  // notify
+  string notifyFileLog2Producer_;
+  Inotify inotify_;
+  thread watchNotifyThread_;
 
   // 最后消费的文件以及游标
   int32_t log0FileIndex_;
@@ -110,6 +117,7 @@ class Log1Producer {
   void tryReadLog0(vector<string> &lines);
 
   void doNotifyLog2Producer();
+  void threadWatchNotifyFile();
 
   // 初始化 log1
   void initLog1();

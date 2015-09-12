@@ -389,15 +389,6 @@ void Log2Producer::syncLog1() {
   if (!syncSuccess) {
     THROW_EXCEPTION_DBEX("sync log1 failure");
   }
-
-  // 创建通知文件
-  {
-    FILE *f = fopen(notifyFileTParser_.c_str(), "w");
-    if (f == nullptr) {
-      THROW_EXCEPTION_DBEX("create file fail: %s", notifyFileTParser_.c_str());
-    }
-    fclose(f);
-  }
 }
 
 void Log2Producer::tryRemoveOldLog1() {
@@ -506,6 +497,14 @@ void Log2Producer::init() {
   initLog2();
   syncLog1();
 
+  // 创建通知文件, 通知 tparser 的
+  {
+    FILE *f = fopen(notifyFileTParser_.c_str(), "w");
+    if (f == nullptr) {
+      THROW_EXCEPTION_DBEX("create file fail: %s", notifyFileTParser_.c_str());
+    }
+    fclose(f);
+  }
   watchNotifyThread_ = thread(&Log2Producer::threadWatchNotifyFile, this);
 }
 
@@ -800,7 +799,7 @@ void Log2Producer::threadWatchNotifyFile() {
         if (got_event) {
           string mask_str;
           event.DumpTypes(mask_str);
-          LOG_DEBUG("get inotify event, mask_str: %s", mask_str.c_str());
+          LOG_DEBUG("get inotify event, mask: %s", mask_str.c_str());
         }
         count--;
 

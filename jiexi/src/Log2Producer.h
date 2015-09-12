@@ -171,10 +171,9 @@ class Log2Producer {
   void handleBlockRollback(Log1 &log1Item);
 
   void doNotifyTParser();
+  void threadWatchNotifyFile();
 
   void commitBatch(const size_t expectAffectedRows);
-
-  void threadWatchNotifyFile();
 
 public:
   Log2Producer();

@@ -17,8 +17,8 @@ function encode(str) {
 }
 
 class STSToken {
-    constructor(name, wid) {
-        this.name = name;
+    constructor(email, wid) {
+        this.email = email;
         this.wid = wid;
         this.body = this.signature = null;
     }
@@ -65,7 +65,7 @@ class STSToken {
             //Timestamp: '2015-07-27T09:14:26Z',
             Action: 'GetFederationToken',
             StsVersion: '1',
-            Name: 'bm' + this.name,
+            Name: 'bm' + this.email,
             Policy: JSON.stringify(this.policy()),
             DurationSeconds: String(config.get('oss.durationSeconds'))
         };
@@ -107,8 +107,8 @@ class STSToken {
         return JSON.parse(res);
     }
 
-    static async make(name, wid) {
-        return (await new STSToken(name, wid).prepareBody().sign().req());
+    static async make(email, wid) {
+        return (await new STSToken(email, wid).prepareBody().sign().req());
     }
 }
 

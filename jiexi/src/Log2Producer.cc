@@ -219,6 +219,16 @@ db_(Config::GConfig.get("mysql.uri")), blkTs_(2016)
   log1Dir_ = Config::GConfig.get("log1.dir");
   notifyFileTParser_      = log1Dir_ + "/NOTIFY_LOG2_TO_TPARSER";
   notifyFileLog1Producer_ = log1Dir_ + "/NOTIFY_LOG1_TO_LOG2";
+
+  // 创建通知文件, 通知 tparser 的
+  {
+    FILE *f = fopen(notifyFileTParser_.c_str(), "w");
+    if (f == nullptr) {
+      THROW_EXCEPTION_DBEX("create file fail: %s", notifyFileTParser_.c_str());
+    }
+    fclose(f);
+  }
+  watchNotifyThread_ = thread(&Log2Producer::threadWatchNotifyFile, this);
 }
 
 Log2Producer::~Log2Producer() {
@@ -501,16 +511,6 @@ void Log2Producer::init() {
   checkEnvironment();
   initLog2();
   syncLog1();
-
-  // 创建通知文件, 通知 tparser 的
-  {
-    FILE *f = fopen(notifyFileTParser_.c_str(), "w");
-    if (f == nullptr) {
-      THROW_EXCEPTION_DBEX("create file fail: %s", notifyFileTParser_.c_str());
-    }
-    fclose(f);
-  }
-  watchNotifyThread_ = thread(&Log2Producer::threadWatchNotifyFile, this);
 }
 
 void Log2Producer::stop() {

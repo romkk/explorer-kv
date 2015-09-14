@@ -224,6 +224,16 @@ Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileHandler_(nullptr),
 
   notifyFileLog2Producer_ = log1Dir_ + "/NOTIFY_LOG1_TO_LOG2";
   notifyFileLog0_ = log0Dir_ + "/NOTIFY_LOG1PRODUCER";
+
+  // 创建通知文件，通知 log2producer
+  {
+    FILE *f = fopen(notifyFileLog2Producer_.c_str(), "w");
+    if (f == nullptr) {
+      THROW_EXCEPTION_DBEX("create file fail: %s", notifyFileLog2Producer_.c_str());
+    }
+    fclose(f);
+  }
+  watchNotifyThread_ = thread(&Log1Producer::threadWatchNotifyFile, this);
 }
 
 Log1Producer::~Log1Producer() {
@@ -289,17 +299,6 @@ void Log1Producer::init() {
   // 3. 与 log0 同步 (同步即初试化)
   //
   syncLog0();
-
-
-  // 创建通知文件，通知 log2producer
-  {
-    FILE *f = fopen(notifyFileLog2Producer_.c_str(), "w");
-    if (f == nullptr) {
-      THROW_EXCEPTION_DBEX("create file fail: %s", notifyFileLog2Producer_.c_str());
-    }
-    fclose(f);
-  }
-  watchNotifyThread_ = thread(&Log1Producer::threadWatchNotifyFile, this);
 }
 
 void Log1Producer::threadWatchNotifyFile() {

@@ -100,6 +100,7 @@ class Log1Producer {
   string log0Dir_;
 
   // notify
+  string notifyFileLog0_;
   string notifyFileLog2Producer_;
   Inotify inotify_;
   thread watchNotifyThread_;

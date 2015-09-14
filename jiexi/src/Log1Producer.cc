@@ -213,7 +213,17 @@ Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileHandler_(nullptr),
 {
   log1Dir_ = Config::GConfig.get("log1.dir");
   log0Dir_ = Config::GConfig.get("log0.dir");
+
+  // remove last '/'
+  if (*(std::prev(log1Dir_.end())) == '/') {
+    log1Dir_.resize(log1Dir_.length() - 1);
+  }
+  if (*(std::prev(log0Dir_.end())) == '/') {
+    log0Dir_.resize(log0Dir_.length() - 1);
+  }
+
   notifyFileLog2Producer_ = log1Dir_ + "/NOTIFY_LOG1_TO_LOG2";
+  notifyFileLog0_ = log0Dir_ + "/NOTIFY_LOG1PRODUCER";
 }
 
 Log1Producer::~Log1Producer() {
@@ -293,17 +303,16 @@ void Log1Producer::init() {
 }
 
 void Log1Producer::threadWatchNotifyFile() {
-  const string watchLog0DataDir = log0Dir_ + "/files";
   try {
     //
-    // IN_CLOSE_WRITE:  一个打开的，等待写入的文件或目录被关闭
-    // IN_MODIFY     :  被监控项目或者被监控目录中的条目被修改过。例如，一个打开的文件被修改
+    // IN_CLOSE_NOWRITE :
+    //     一个以只读方式打开的文件或目录被关闭
+    //     A file or directory that had been open read-only was closed.
+    // `cat FILE` 可触发该事件
     //
-    // `touch FILE` 可触发该事件
-    //
-    InotifyWatch watch(watchLog0DataDir, IN_MODIFY | IN_CLOSE_WRITE);
+    InotifyWatch watch(notifyFileLog0_, IN_CLOSE_NOWRITE);
     inotify_.Add(watch);
-    LOG_INFO("watching notify file: %s", watchLog0DataDir.c_str());
+    LOG_INFO("watching notify file: %s", notifyFileLog0_.c_str());
 
     while (running_) {
       inotify_.WaitForEvents();
@@ -316,8 +325,7 @@ void Log1Producer::threadWatchNotifyFile() {
         if (got_event) {
           string mask_str;
           event.DumpTypes(mask_str);
-          LOG_DEBUG("get inotify event, file: %s, mask: %s",
-                    event.GetName().c_str(), mask_str.c_str());
+          LOG_DEBUG("get inotify event, mask: %s", mask_str.c_str());
         }
         count--;
 

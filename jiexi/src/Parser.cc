@@ -1925,15 +1925,17 @@ void Parser::_getAddressTxNode(const int64_t txId,
       while (1) {
       	ymd = prevYmd(ymd);
         if (ymd < addr->beginTxYmd_) {
-          break;
+          break;  // 抵达最早的日期了
         }
-        if (tableIdx_AddrTxs(ymd) == currTableIdx) {
-          continue;
+        if (tableIdx_AddrTxs(ymd) != currTableIdx) {
+          break;  // 找到前一个表了（目前是月表）
         }
       }
+
       continue;
     }
 
+    assert(res.numRows() == 1);
     row = res.nextRow();
 
     node->ymd_ = ymd;
@@ -2111,7 +2113,7 @@ void Parser::_unconfirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *ad
   sql = Strings::Format("UPDATE `address_txs_%d` SET `tx_height`=0 "
                         " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                         tableIdx_AddrTxs(node->ymd_),
-                        node->addressId_, node->idx_);
+                        node->addressId_, node->txId_);
   dbExplorer_.updateOrThrowEx(sql, 1);
 
   //

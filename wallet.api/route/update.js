@@ -18,7 +18,7 @@ module.exports = server => {
             }));
         }
 
-        let sql = `select version, lang, release_note, download_url, released_at
+        let sql = `select id, version, lang, release_note, download_url, released_at
                    from autoupdate_release
                    where lang = ?
                    order by released_at desc
@@ -28,6 +28,7 @@ module.exports = server => {
 
         if (_.isNull(v)) {
             res.send({
+                release_id: 0,
                 release_version: '0.0',
                 release_note: '',
                 release_download: '',
@@ -37,6 +38,7 @@ module.exports = server => {
         }
 
         res.send({
+            release_id: v.id,
             release_version: v.version,
             release_note: v.release_note,
             release_download: v.download_url,

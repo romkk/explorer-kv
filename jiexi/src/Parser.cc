@@ -1696,7 +1696,7 @@ void Parser::moveForwardAddressTxNode(LastestAddressInfo *addr,
   AddressTxNode prevNode;
   _getAddressTxNode(curr->prevTxId_, addr, &prevNode);
 
-  LOG_INFO("moveForwardAddressTxNode, address_id: %lld, prev: %lld, curr: %lld",
+  LOG_INFO("moveForwardAddressTxNode, address_id: %lld, prev txid: %lld, curr txid: %lld",
            addr->addrId_, prevNode.txId_, curr->txId_);
   _switchAddressTxNode(addr, &prevNode, curr);
 }
@@ -1711,7 +1711,7 @@ void Parser::moveBackwardAddressTxNode(LastestAddressInfo *addr,
   AddressTxNode nextNode;
   _getAddressTxNode(curr->nextTxId_, addr, &nextNode);
 
-  LOG_INFO("moveBackwardAddressTxNode, address_id: %lld, curr: %lld, next: %lld",
+  LOG_INFO("moveBackwardAddressTxNode, address_id: %lld, curr txid: %lld, next txid: %lld",
            addr->addrId_, curr->txId_, nextNode.txId_);
   _switchAddressTxNode(addr, curr, &nextNode);
 }

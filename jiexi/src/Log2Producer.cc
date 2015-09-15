@@ -707,15 +707,15 @@ void Log2Producer::handleBlockRollback(const int32_t height, const CBlock &blk) 
   LogScope ls(lsStr.c_str());
 
   //
-  // 交易重新添加到内存池里
+  // 交易重新添加到内存池里，反序遍历
   //
   vector<uint256> conflictTxs;
-  for (auto &tx : blk.vtx) {
-    if (tx.IsCoinBase()) { continue; }
+  for (auto tx = blk.vtx.rbegin(); tx != blk.vtx.rend(); ++tx) {
+    if (tx->IsCoinBase()) { continue; }
 
     // 应该是不存在，且没有冲突交易的
-    if (!memRepo_.addTx(tx, conflictTxs)) {
-      LOG_INFO("unconfirm tx: %s", tx.GetHash().ToString().c_str());
+    if (!memRepo_.addTx(*tx, conflictTxs)) {
+      LOG_INFO("unconfirm tx: %s", tx->GetHash().ToString().c_str());
       for (auto &it : conflictTxs) {
         LOG_WARN("\tconflict tx: %s", it.ToString().c_str());
       }
@@ -734,13 +734,13 @@ void Log2Producer::handleBlockRollback(const int32_t height, const CBlock &blk) 
   // get block ID
   const int64_t blockId = insertRawBlock(db_, blk, height);
 
-  // 新块的交易，做反确认操作
-  for (auto &tx : blk.vtx) {
+  // 新块的交易，做反确认操作，反序遍历
+  for (auto tx = blk.vtx.rbegin(); tx != blk.vtx.rend(); ++tx) {
     string item = Strings::Format("-1,%d,%d,%lld,%lld,'%s','%s','%s'",
                                   LOG2TYPE_TX_UNCONFIRM,
                                   height, blockId,
                                   blkTs_.getMaxTimestamp(),
-                                  tx.GetHash().ToString().c_str(),
+                                  tx->GetHash().ToString().c_str(),
                                   nowStr.c_str(), nowStr.c_str());
     values.push_back(item);
   }

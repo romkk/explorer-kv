@@ -143,8 +143,10 @@ class Log2Producer {
   BlockTimestamp blkTs_;
 
   /* log2 */
-  int32_t log2BlockHeight_;
-  uint256 log2BlockHash_;
+  int32_t log2BlockBeginHeight_;
+  uint256 log2BlockBeginHash_;
+  int32_t currBlockHeight_;
+  uint256 currBlockHash_;
 
   // notify
   string notifyFileLog1Producer_;
@@ -168,7 +170,9 @@ class Log2Producer {
 
   void handleBlock(Log1 &log1Item);
   void handleBlockAccept  (Log1 &log1Item);
-  void handleBlockRollback(Log1 &log1Item);
+
+  void handleBlockRollback(const int32_t height, const CBlock &blk);
+  void _getBlockByHash(const uint256 &hash, CBlock &blk);
 
   void doNotifyTParser();
   void threadWatchNotifyFile();

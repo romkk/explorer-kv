@@ -43,6 +43,7 @@ Log1::~Log1() {
 void Log1::reset() {
   type_        = -1;
   blockHeight_ = -1;
+  content_.clear();
   tx_.SetNull();
   block_.SetNull();
 }

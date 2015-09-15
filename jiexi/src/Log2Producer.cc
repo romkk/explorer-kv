@@ -214,7 +214,8 @@ void BlockTimestamp::popBlock() {
 
 ///////////////////////////////  Log2Producer  /////////////////////////////////
 Log2Producer::Log2Producer(): running_(false),
-db_(Config::GConfig.get("mysql.uri")), blkTs_(2016)
+db_(Config::GConfig.get("mysql.uri")), blkTs_(2016),
+log2BlockBeginHeight_(-1), currBlockHeight_(-1)
 {
   log1Dir_ = Config::GConfig.get("log1.dir");
   notifyFileTParser_      = log1Dir_ + "/NOTIFY_LOG2_TO_TPARSER";
@@ -260,10 +261,10 @@ static void _initLog2_loadMemrepoTxs(MySQLConnection &db,
     if (memRepo.addTx(tx, conflictTxs) == false) {
       THROW_EXCEPTION_DBEX("add tx to mem repo fail, tx: %s", hash.ToString().c_str());
     }
-    LOG_DEBUG("load unconfirmed tx: %s", hash.ToString().c_str());
+    LOG_DEBUG("load 0_memrepo_txs tx: %s", hash.ToString().c_str());
   }
 
-  LOG_INFO("load unconfirmed txs: %llu", memRepo.size());
+  LOG_INFO("load 0_memrepo_txs txs: %llu", memRepo.size());
 
   memRepo.ignoreUnsyncData();  // 忽略一下载入的数据，已经同步过了
 }
@@ -283,38 +284,52 @@ void Log2Producer::initLog2() {
   }
 
   //
-  // 找最后一个块记录，即最后一条 block_id 非零的记录
+  // 必须 tpaser 消费跟进到最近的 txlogs2
+  // table.0_blocks 的最新块高度就是当前链的高度，前提就是 tparser 必须消费到最新的 txlogs2
   //
-  int64_t blockId = 0;
+  int64_t jiexiLastTxlog2Offset = 0;
+  int64_t lastTxlogs2Id = 0;
   {
-    sql = "SELECT `block_id` FROM `0_txlogs2` WHERE `block_id`>0 ORDER BY `id` DESC LIMIT 1";
+    sql = "SELECT `value` FROM `0_explorer_meta` WHERE `key`='jiexi.last_txlog2_offset'";
     db_.query(sql, res);
-    if (res.numRows()) {
+    if (res.numRows() != 0) {
       row = res.nextRow();
-      blockId = atoi64(row[0]);
+      jiexiLastTxlog2Offset = atoi64(row[0]);
     }
-  }
-  if (blockId > 0) {
-    sql = Strings::Format("SELECT `block_hash`,`block_height` "
-                          " FROM `0_raw_blocks` WHERE `id` = %lld ", blockId);
+
+    sql = "SELECT `id` FROM `0_txlogs2` ORDER BY `id` DESC LIMIT 1";
     db_.query(sql, res);
-    if (res.numRows() == 0) {
-      THROW_EXCEPTION_DBEX("can't find block by id: %lld", blockId);
+    if (res.numRows() != 0) {
+      lastTxlogs2Id = atoi64(row[0]);
     }
-    row = res.nextRow();
-    log2BlockHash_   = uint256(row[0]);
-    log2BlockHeight_ = atoi(row[1]);
-  } else {
-    // 数据库没有记录，则以配置文件的块信息作为起始块
-    log2BlockHash_   = uint256(Config::GConfig.get("log2.begin.block.hash"));
-    log2BlockHeight_ = (int32_t)Config::GConfig.getInt("log2.begin.block.height");
+    if (jiexiLastTxlog2Offset != lastTxlogs2Id) {
+      THROW_EXCEPTION_DBEX("jiexi.last_txlog2_offset(%lld) is NOT match table.0_txlogs2's max id(%lld), "
+                           "please wait util 'tparser' catch up latest txlogs2",
+                           jiexiLastTxlog2Offset, lastTxlogs2Id);
+    }
   }
-  if (log2BlockHash_ == uint256() || log2BlockHeight_ < 0) {
+
+  if (lastTxlogs2Id > 0) {
+    // 找最后一个块记录：当前链的最大高度块
+    sql = "SELECT `hash`,`height` FROM `0_blocks` WHERE `chain_id`=0 ORDER BY `height` DESC LIMIT 1";
+    db_.query(sql, res);
+    assert(res.numRows() != 0);
+    row = res.nextRow();
+    log2BlockBeginHash_   = uint256(row[0]);
+    log2BlockBeginHeight_ = atoi(row[1]);
+  }
+  else {
+    // 数据库没有记录，则以配置文件的块信息作为起始块
+    log2BlockBeginHash_   = uint256(Config::GConfig.get("log2.begin.block.hash"));
+    log2BlockBeginHeight_ = (int32_t)Config::GConfig.getInt("log2.begin.block.height");
+  }
+
+  if (log2BlockBeginHash_ == uint256() || log2BlockBeginHeight_ < 0) {
     THROW_EXCEPTION_DBEX("invalid log2 latest block: %d, %s",
-                         log2BlockHeight_, log2BlockHash_.ToString().c_str());
+                         log2BlockBeginHeight_, log2BlockBeginHash_.ToString().c_str());
   }
   LOG_INFO("log2 latest block, height: %d, hash: %s",
-           log2BlockHeight_, log2BlockHash_.ToString().c_str());
+           log2BlockBeginHeight_, log2BlockBeginHash_.ToString().c_str());
 
   //
   // 载入内存库中(未确认)交易
@@ -328,29 +343,29 @@ void Log2Producer::initLog2() {
     // 必须 tpaser 消费跟进到最近的 txlogs2，才能保证能从 table.0_blocks 查询到最新
     sql = Strings::Format("SELECT `hash` FROM `0_blocks` WHERE "
                           " `height`=%d AND `chain_id`=0 AND `hash`='%s' ",
-                          log2BlockHeight_, log2BlockHash_.ToString().c_str());
+                          log2BlockBeginHeight_, log2BlockBeginHash_.ToString().c_str());
     db_.query(sql, res);
     if (res.numRows() == 0) {
       THROW_EXCEPTION_DBEX("can't find block from table.0_blocks, %d : %s, "
                            "please wait util 'tparser' catch up latest txlogs2",
-                           log2BlockHeight_, log2BlockHash_.ToString().c_str());
+                           log2BlockBeginHeight_, log2BlockBeginHash_.ToString().c_str());
     }
 
     // 获取最近 2016 个块的时间戳
     sql = Strings::Format("SELECT * FROM (SELECT `timestamp`,`height` FROM `0_blocks`"
                           " WHERE `height` <= %d AND `chain_id` = 0 "
                           " ORDER BY `height` DESC LIMIT 2016) AS `t1` ORDER BY `height` ASC ",
-                          log2BlockHeight_);
+                          log2BlockBeginHeight_);
     db_.query(sql, res);
     if (res.numRows() == 0) {
       THROW_EXCEPTION_DBEX("can't find max block timestamp, log2BlockHeight: %d",
-                           log2BlockHeight_);
+                           log2BlockBeginHeight_);
     }
     for (int32_t i = (int32_t)res.numRows(); i > 0 ; i--) {
       row = res.nextRow();
       const int32_t height = atoi(row[1]);
       blkTs_.pushBlock(height, atoi64(row[0]));
-      assert(height == log2BlockHeight_ - i + 1);
+      assert(height == log2BlockBeginHeight_ - i + 1);
     }
     LOG_INFO("found max block timestamp: %lld", blkTs_.getMaxTimestamp());
   }
@@ -380,8 +395,8 @@ void Log2Producer::syncLog1() {
       log1Item.parse(line);
       if (log1Item.isTx()) { continue; }
       assert(log1Item.isBlock());
-      if (log1Item.blockHeight_         != log2BlockHeight_ ||
-          log1Item.getBlock().GetHash() != log2BlockHash_) {
+      if (log1Item.blockHeight_         != log2BlockBeginHeight_ ||
+          log1Item.getBlock().GetHash() != log2BlockBeginHash_) {
         continue;
       }
       // 找到高度和哈希一致的块
@@ -511,6 +526,9 @@ void Log2Producer::init() {
   checkEnvironment();
   initLog2();
   syncLog1();
+
+  currBlockHeight_ = log2BlockBeginHeight_;
+  currBlockHash_   = log2BlockBeginHash_;
 }
 
 void Log2Producer::stop() {
@@ -679,15 +697,13 @@ void Log2Producer::commitBatch(const size_t expectAffectedRows) {
   db_.execute("COMMIT");
 }
 
-void Log2Producer::handleBlockRollback(Log1 &log1Item) {
+void Log2Producer::handleBlockRollback(const int32_t height, const CBlock &blk) {
   //
   // 块高度后退
   //
-  const CBlock &blk  = log1Item.getBlock();
   const uint256 hash = blk.GetHash();
   const string lsStr = Strings::Format("process block(-): %d, %s",
-                                       log1Item.blockHeight_,
-                                       hash.ToString().c_str());
+                                       height, hash.ToString().c_str());
   LogScope ls(lsStr.c_str());
 
   //
@@ -716,13 +732,13 @@ void Log2Producer::handleBlockRollback(Log1 &log1Item) {
   "`max_block_timestamp`,`tx_hash`, `created_at`, `updated_at`";
 
   // get block ID
-  const int64_t blockId = insertRawBlock(db_, blk, log1Item.blockHeight_);
+  const int64_t blockId = insertRawBlock(db_, blk, height);
 
   // 新块的交易，做反确认操作
   for (auto &tx : blk.vtx) {
     string item = Strings::Format("-1,%d,%d,%lld,%lld,'%s','%s','%s'",
                                   LOG2TYPE_TX_UNCONFIRM,
-                                  log1Item.blockHeight_, blockId,
+                                  height, blockId,
                                   blkTs_.getMaxTimestamp(),
                                   tx.GetHash().ToString().c_str(),
                                   nowStr.c_str(), nowStr.c_str());
@@ -733,7 +749,7 @@ void Log2Producer::handleBlockRollback(Log1 &log1Item) {
   {
     string item = Strings::Format("-1,%d,%d,%lld,%lld,'%s','%s','%s'",
                                   LOG2TYPE_TX_REJECT,
-                                  log1Item.blockHeight_, blockId,
+                                  height, blockId,
                                   blkTs_.getMaxTimestamp(),
                                   blk.vtx[0].GetHash().ToString().c_str(),
                                   nowStr.c_str(), nowStr.c_str());
@@ -752,23 +768,56 @@ void Log2Producer::handleBlockRollback(Log1 &log1Item) {
   LOG_INFO("block txs: %llu, conflict txs: %llu", blk.vtx.size(), conflictTxs.size());
 }
 
+void Log2Producer::_getBlockByHash(const uint256 &hash, CBlock &blk) {
+  MySQLResult res;
+  string sql;
+  char **row;
+
+  const string hashStr = hash.ToString();
+  sql = Strings::Format("SELECT `hex` FROM `0_raw_blocks` WHERE `block_hash`='%s'",
+                        hashStr.c_str());
+  db_.query(sql, res);
+  assert(res.numRows() == 1);
+  row = res.nextRow();
+  const string hex = string(row[0]);
+
+  blk.SetNull();
+  if (!DecodeHexBlk(blk, hex)) {
+    THROW_EXCEPTION_DBEX("decode block fail, hash: %s, hex: %s",
+                         hashStr.c_str(), hex.c_str());
+  }
+}
+
 void Log2Producer::handleBlock(Log1 &log1Item) {
   //
   // 块高度前进
   //
-  if (log1Item.blockHeight_ > log2BlockHeight_) {
+  if (log1Item.blockHeight_ > currBlockHeight_) {
+    assert(log1Item.blockHeight_ == currBlockHeight_ + 1);
     handleBlockAccept(log1Item);
   }
   //
   // 块高度后退
   //
-  else if (log1Item.blockHeight_ < log2BlockHeight_) {
-    handleBlockRollback(log1Item);
+  else if (log1Item.blockHeight_ < currBlockHeight_) {
+    assert(log1Item.blockHeight_ + 1 == currBlockHeight_);
+    //
+    // 块后退时，后退的是上一个块，即当前块
+    //
+    CBlock currBlock;
+    _getBlockByHash(currBlockHash_, currBlock);
+    assert(currBlock.hashPrevBlock == log1Item.getBlock().GetHash());
+
+    handleBlockRollback(currBlockHeight_, currBlock);
   }
   else {
     THROW_EXCEPTION_DBEX("block are same height, log1: %s",
                          log1Item.toString().c_str());
   }
+
+  // 设置当前高度和哈希
+  currBlockHeight_ = log1Item.blockHeight_;
+  currBlockHash_   = log1Item.getBlock().GetHash();
 }
 
 void Log2Producer::doNotifyTParser() {

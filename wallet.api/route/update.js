@@ -11,6 +11,9 @@ module.exports = server => {
         req.checkParams('channel', 'can not be empty').isLength(1);
         req.sanitize('channel').toString();
 
+        req.checkParams('platform', 'can not be empty').isLength(1);
+        req.sanitize('platform').toString();
+
         let errors = req.validationErrors();
         if (errors) {
             return next(new restify.InvalidArgumentError({
@@ -20,11 +23,11 @@ module.exports = server => {
 
         let sql = `select version, version_code, lang, release_note, download_url, released_at
                    from autoupdate_release
-                   where lang = ? and channel = ?
+                   where lang = ? and channel = ? and platform= ?
                    order by released_at desc
                    limit 1`;
 
-        let v = await mysql.selectOne(sql, [req.params.lang, req.params.channel]);
+        let v = await mysql.selectOne(sql, [req.params.lang, req.params.channel, req.params.platform]);
 
         if (_.isNull(v)) {
             res.send({

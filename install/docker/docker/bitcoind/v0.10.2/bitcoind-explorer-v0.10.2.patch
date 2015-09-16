@@ -34,7 +34,7 @@ diff -uNr original/bitcoin-0.10.2/src/init.cpp bitcoin-0.10.2/src/init.cpp
  }
 diff -uNr original/bitcoin-0.10.2/src/main.cpp bitcoin-0.10.2/src/main.cpp
 --- original/bitcoin-0.10.2/src/main.cpp	2015-05-16 16:37:27.000000000 +0800
-+++ bitcoin-0.10.2/src/main.cpp	2015-08-13 15:18:47.000000000 +0800
++++ bitcoin-0.10.2/src/main.cpp	2015-09-15 18:00:08.000000000 +0800
 @@ -10,6 +10,7 @@
  #include "chainparams.h"
  #include "checkpoints.h"
@@ -51,17 +51,28 @@ diff -uNr original/bitcoin-0.10.2/src/main.cpp bitcoin-0.10.2/src/main.cpp
  
  struct COrphanTx {
      CTransaction tx;
-@@ -1103,6 +1105,9 @@
+@@ -932,7 +934,7 @@
+ 
+ 
+ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree,
+-                        bool* pfMissingInputs, bool fRejectInsaneFee)
++                        bool* pfMissingInputs, bool fRejectInsaneFee, bool fOutputLog)
+ {
+     AssertLockHeld(cs_main);
+     if (pfMissingInputs)
+@@ -1103,6 +1105,11 @@
  
      SyncWithWallets(tx, NULL);
  
 +    // custom log tx
-+    customLog.appendf(2, "%s|%s", hash.ToString().c_str(), EncodeHexTx(tx).c_str());
++    if (fOutputLog) {
++        customLog.appendf(2, "%s|%s", hash.ToString().c_str(), EncodeHexTx(tx).c_str());
++    }
 +
      return true;
  }
  
-@@ -1895,6 +1900,21 @@
+@@ -1895,6 +1902,21 @@
        DateTimeStrFormat("%Y-%m-%d %H:%M:%S", chainActive.Tip()->GetBlockTime()),
        Checkpoints::GuessVerificationProgress(chainActive.Tip()), (unsigned int)pcoinsTip->GetCacheSize());
  
@@ -83,9 +94,27 @@ diff -uNr original/bitcoin-0.10.2/src/main.cpp bitcoin-0.10.2/src/main.cpp
      cvBlockChange.notify_all();
  
      // Check the version of the last 100 blocks to see if we need to upgrade:
+@@ -3977,7 +3999,7 @@
+ 
+         mapAlreadyAskedFor.erase(inv);
+ 
+-        if (AcceptToMemoryPool(mempool, state, tx, true, &fMissingInputs))
++        if (AcceptToMemoryPool(mempool, state, tx, true, &fMissingInputs, true))
+         {
+             mempool.check(pcoinsTip);
+             RelayTransaction(tx);
+@@ -4013,7 +4035,7 @@
+ 
+                     if (setMisbehaving.count(fromPeer))
+                         continue;
+-                    if (AcceptToMemoryPool(mempool, stateDummy, orphanTx, true, &fMissingInputs2))
++                    if (AcceptToMemoryPool(mempool, stateDummy, orphanTx, true, &fMissingInputs2, true))
+                     {
+                         LogPrint("mempool", "   accepted orphan tx %s\n", orphanHash.ToString());
+                         RelayTransaction(orphanTx);
 diff -uNr original/bitcoin-0.10.2/src/main.h bitcoin-0.10.2/src/main.h
 --- original/bitcoin-0.10.2/src/main.h	2015-05-16 16:37:27.000000000 +0800
-+++ bitcoin-0.10.2/src/main.h	2015-08-12 20:50:18.000000000 +0800
++++ bitcoin-0.10.2/src/main.h	2015-09-15 17:52:04.000000000 +0800
 @@ -26,6 +26,7 @@
  #include "txmempool.h"
  #include "uint256.h"
@@ -102,6 +131,27 @@ diff -uNr original/bitcoin-0.10.2/src/main.h bitcoin-0.10.2/src/main.h
  typedef boost::unordered_map<uint256, CBlockIndex*, BlockHasher> BlockMap;
  extern BlockMap mapBlockIndex;
  extern uint64_t nLastBlockTx;
+@@ -213,7 +215,7 @@
+ 
+ /** (try to) add transaction to memory pool **/
+ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree,
+-                        bool* pfMissingInputs, bool fRejectInsaneFee=false);
++                        bool* pfMissingInputs, bool fRejectInsaneFee=false, bool fOutputLog=false);
+ 
+ 
+ struct CNodeStateStats {
+diff -uNr original/bitcoin-0.10.2/src/rpcrawtransaction.cpp bitcoin-0.10.2/src/rpcrawtransaction.cpp
+--- original/bitcoin-0.10.2/src/rpcrawtransaction.cpp	2015-05-16 16:37:27.000000000 +0800
++++ bitcoin-0.10.2/src/rpcrawtransaction.cpp	2015-09-15 17:55:01.000000000 +0800
+@@ -743,7 +743,7 @@
+     if (!fHaveMempool && !fHaveChain) {
+         // push to local node and sync with wallets
+         CValidationState state;
+-        if (!AcceptToMemoryPool(mempool, state, tx, false, NULL, !fOverrideFees)) {
++        if (!AcceptToMemoryPool(mempool, state, tx, false, NULL, !fOverrideFees, true)) {
+             if(state.IsInvalid())
+                 throw JSONRPCError(RPC_TRANSACTION_REJECTED, strprintf("%i: %s", state.GetRejectCode(), state.GetRejectReason()));
+             else
 diff -uNr original/bitcoin-0.10.2/src/util.cpp bitcoin-0.10.2/src/util.cpp
 --- original/bitcoin-0.10.2/src/util.cpp	2015-05-16 16:37:27.000000000 +0800
 +++ bitcoin-0.10.2/src/util.cpp	2015-09-14 15:22:06.000000000 +0800

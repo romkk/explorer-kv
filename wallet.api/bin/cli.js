@@ -53,7 +53,8 @@ server.use(auth.tokenMiddleware([
     '!/bm-account/bind',
     '/sts-token',
     '/qr-code',
-    '/sendmail'
+    '/sendmail',
+    '/latestversion'
 ]));
 
 server.on('after', restify.auditLogger({

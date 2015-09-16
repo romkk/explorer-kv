@@ -18,18 +18,18 @@ module.exports = server => {
             }));
         }
 
-        let sql = `select id, version, lang, release_note, download_url, released_at
+        let sql = `select version, version_code, lang, release_note, download_url, released_at
                    from autoupdate_release
-                   where lang = ?
+                   where lang = ? and channel = ?
                    order by released_at desc
-                   limit 1`;     // 暂时忽略渠道
+                   limit 1`;
 
-        let v = await mysql.selectOne(sql, [req.params.lang]);
+        let v = await mysql.selectOne(sql, [req.params.lang, req.params.channel]);
 
         if (_.isNull(v)) {
             res.send({
-                release_id: 0,
                 release_version: '0.0',
+                release_version_code: 0,
                 release_note: '',
                 release_download: '',
                 release_date: ''
@@ -38,8 +38,8 @@ module.exports = server => {
         }
 
         res.send({
-            release_id: v.id,
             release_version: v.version,
+            release_version_code: v.version_code,
             release_note: v.release_note,
             release_download: v.download_url,
             release_date: moment.utc(v.release_date, 'YYYY-MM-DD HH:mm:ss').unix()

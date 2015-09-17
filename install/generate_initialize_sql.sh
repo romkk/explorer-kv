@@ -267,7 +267,8 @@ CREATE TABLE `0_blocks` (
   PRIMARY KEY (`block_id`),
   UNIQUE KEY `block_hash` (`hash`),
   UNIQUE KEY `height_chain_id` (`height`,`chain_id`),
-  KEY `curr_max_timestamp` (`curr_max_timestamp`)
+  KEY `curr_max_timestamp` (`curr_max_timestamp`),
+  KEY `relayed_by` (`relayed_by`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 echo "$blocks"

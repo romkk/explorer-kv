@@ -1,30 +1,33 @@
-# BITMAIN Block Explorer API Reference
-
 该 API 的设计目标是提供一个高性能的区块链数据查询接口，并尽量兼容 [blockchain.info](https://blockchain.info/api/blockchain_api) 的 API 约定，降低用户的使用成本。
 
 ## URI
 
-* 协议： `HTTPS`
-* Host：
-       * Main     Network: `chain.btc.com`
-       * Testnet3 Network: `tchain.btc.com`
-* Path： `/api/{version}`，当前可选版本为 `v1`
-* 请求类型：`GET`
+  * 协议： `HTTPS`
+  * Host：
+      * Main     Network: `chain.btc.com`
+      * Testnet3 Network: `tchain.btc.com`
+  * Path： `/api/{version}`，当前可选版本为 `v1`
+  * 请求类型：`GET`
 
 以下如无特别说明，所有的 API 调用时均使用以上 URI 前缀，如获取最新区块信息：
 
-    # 格式：
-    GET https://{host}/api/{version}/{path}
-    # 示例：
-    GET https://chain.btc.com/api/v1/latestblock
+```
+# 格式：
+GET https://{host}/api/{version}/{path}
+# 示例：
+GET https://chain.btc.com/api/v1/latestblock
+```
 
 建议将`https://chain.btc.com/api/v1`整字符串做为配置项，与后面的具体路径分离。
 
+<!--PRIVATE-->
 ## 访问频率限制
 
 API 服务根据访问者 IP 限制访问频率。
 
 TODO
+
+<!--/PRIVATE-->
 
 ## 响应格式
 
@@ -41,24 +44,22 @@ Connection: keep-alive;
 Transfer-Encoding: chunked
 ```
 
-## 异常
-
-TODO
-
-## API List
+## API LIST
 
 常见参数说明：
 
-1. 支持分页的接口使用`offset`和`limit`进行分页。如查询第 3 页，每页 20 条记录，则参数应为`?offset=40&limit=20`；
-1. 时间单位均为 UTC 。
+  1. 支持分页的接口使用`offset`和`limit`进行分页。如查询第 3 页，每页 20 条记录，则参数应为`?offset=40&limit=20`；
+  1. 时间单位均为 UTC 。
 
 ### Single Block
 
 #### Request
 
-* Get Block By Block Id
+  * Get Block By Block Id
 
-        GET /rawblock/${block_id}
+    ```
+    GET /rawblock/${block_id}
+    ```
 
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
@@ -67,9 +68,11 @@ TODO
     |offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
     |limit|返回结果集个数，要求大于`1`小于`50`，默认为`50`|Query|✗|Int|
 
-* Get Block By Hash
+  * Get Block By Hash
 
-        GET /rawblock/${block_hash}
+    ```
+    GET /rawblock/${block_hash}
+    ```
 
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
@@ -78,9 +81,11 @@ TODO
     |offset|返回结果集跳过的个数，默认为`0`|Query|✗|Int|
     |limit|返回结果集个数，要求大于`1`小于`50`，默认为`50`|Query|✗|Int|
 
-* Get Block By Height
+  * Get Block By Height
 
-        GET /block-height/${block_height}
+    ```
+    GET /block-height/${block_height}
+    ```
 
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
@@ -163,27 +168,35 @@ GET /block
 
 #### Request
 
-* Get Transaction By Hash
+  * Get Transaction By Hash
 
-        GET /rawtx/${tx_hash}
+    ```
+    GET /rawtx/${tx_hash}
+    ```
 
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |tx_hash|交易哈希|Path|√|String|
 
-* Get Transaction By Tx_id
+  * Get Transaction By Tx_id
 
-        GET /rawtx/${tx_id}
+    ```
+    GET /rawtx/${tx_id}
+    ```
 
     |参数|描述|位置|必须|数据类型|
     |---|---|---|---|---|
     |tx_id|交易 id|Path|√|String|
 
-* [PRIVATE] Get Multiple Transactions
+<!--PRIVATE-->
+  * Get Multiple Transactions
 
-        GET /rawtx/${tx_id},${tx_id}...
+    ```
+    GET /rawtx/${tx_id},${tx_id}... 
+    ```
 
     可以传入多个`tx_id`，使用`,`分隔。
+<!--/PRIVATE-->
 
 #### Response
 
@@ -230,7 +243,9 @@ GET /block
 
 #### Request
 
-    GET /address/${bitcoin_address}
+```
+GET /address/${bitcoin_address}
+```
 
 |参数|描述|位置|必须|数据类型|
 |---|---|---|---|---|
@@ -244,23 +259,31 @@ GET /block
 
 如：
 
-1. 查询当前最新 10 条交易记录：
+  1. 查询当前最新 10 条交易记录：
 
-        GET /address/2N66DDrmjDCMM3yMSYtAQyAqRtasSkFhbmX?limit=10
+    ```
+    GET /address/2N66DDrmjDCMM3yMSYtAQyAqRtasSkFhbmX?limit=10
+    ```
 
-1. 查询截至 6 月 1 日的 20 条交易记录：
+  1. 查询截至 6 月 1 日的 20 条交易记录：
 
-        GET /address/2N66DDrmjDCMM3yMSYtAQyAqRtasSkFhbmX?timestamp=1433116800&limit=20
+    ```
+    GET /address/2N66DDrmjDCMM3yMSYtAQyAqRtasSkFhbmX?timestamp=1433116800&limit=20
+    ```
 
-1. 查询 5 月 1 日至 6 月 4 日的交易记录：
+  1. 查询 5 月 1 日至 6 月 4 日的交易记录：
 
-        GET /address/2N66DDrmjDCMM3yMSYtAQyAqRtasSkFhbmX?timestamp=1430438400&sort=asc
+    ```
+    GET /address/2N66DDrmjDCMM3yMSYtAQyAqRtasSkFhbmX?timestamp=1430438400&sort=asc
+    ```
 
-   该请求将从 5 月 1 日 0 点起返回交易记录，默认返回 50 条；这里由客户端程序负责持续拼接数据，即，如果上述请求返回的最后一条记录是 5 月 3 日 3 点 0 分，则下一条请求应当是：
+    该请求将从 5 月 1 日 0 点起返回交易记录，默认返回 50 条；这里由客户端程序负责持续拼接数据，即，如果上述请求返回的最后一条记录是 5 月 3 日 3 点 0 分，则下一条请求应当是：
 
-        GET /address/2N66DDrmjDCMM3yMSYtAQyAqRtasSkFhbmX?timestamp=1430622000&sort=asc
+    ```
+    GET /address/2N66DDrmjDCMM3yMSYtAQyAqRtasSkFhbmX?timestamp=1430622000&sort=asc
+    ```
 
-   直到接收到的数据达到 6 月 4 日 0 时停止。
+    直到接收到的数据达到 6 月 4 日 0 时停止。
 
 #### Response
 
@@ -281,7 +304,9 @@ GET /block
 
 #### Request
 
-    GET /multiaddr
+```
+GET /multiaddr
+```
 
 |参数|描述|位置|必须|数据类型|
 |---|---|---|---|---|
@@ -430,7 +455,9 @@ GET /unspent
 
 #### Request
 
-    GET /latestblock
+```
+GET /multiaddr
+```
 
 #### Response
 
@@ -447,7 +474,9 @@ GET /unspent
 
 #### Request
 
-    GET /unconfirmed-transactions
+```
+GET /unconfirmed-transactions
+```
 
 #### Response
 
@@ -457,7 +486,7 @@ GET /unspent
 }
 ```
 
-### 交易工具
+### 工具
 
 #### 交易解码
 
@@ -563,3 +592,25 @@ POST /tx/publish
 * TxPublishFailed
 
   发布失败，详细信息请关注`bitcoind`字段，含有调用 bitcoind 返回的错误信息。
+
+#### 验证签名信息
+
+**Request**
+
+```
+POST /verifymessage
+
+{
+    "address": "19R9FY6Gq1qqnndxxkSkakxMpGHEnmAVa",
+    "message": "eyJkaWQiOiIxIiwid2lkIjoid18yYjFlZGQyNTM3NDAzMzljNTFjYmEwZDRkODZjNzIzYmI0ZDFjYjFjZjMwOGUxOTc1MTg5NTg0NzM2MzUyNjNkIiwiZXhwaXJlZF9hdCI6MTQzNTA1MTEyMiwibm9uY2UiOiJlNzA2MjQif",
+    "signature": "G336k+wgrEpjK2uM+RJge447ZhAZnq5ff7AgotEjbivIYGk9FOJRIAKhnpBFSlJwWAkW/9RLZ97GvB/Q7EHR4ro="
+}
+```
+
+**Response**
+
+```
+{
+    "valid": true
+}
+```

@@ -888,6 +888,7 @@ POST /mail
 参数：
 
   * receiver 收件人
+  * lang 目前支持：`zh-cn`和`en`
   * file 压缩包文件，`Content-Type`需为`application/zip`
 
 **Response**

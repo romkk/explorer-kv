@@ -9,6 +9,9 @@ var Address = require('../lib/address');
 var Block = require('../lib/block');
 var validators = require('../lib/custom_validators');
 var sb = require('../lib/ssdb')();
+var validate = require('../lib/valid_json');
+var bitcoind = require('../lib/bitcoind');
+var isValidAddress = require('../lib/custom_validators').isValidAddress;
 
 module.exports = (server) => {
     server.get('/unconfirmed-transactions', async (req, res, next) => {
@@ -95,6 +98,26 @@ module.exports = (server) => {
         res.send({
             unspent_outputs: unspent,
             n_tx: count
+        });
+        next();
+    });
+
+    server.post('/verifymessage', validate('verifymessage'), async (req, res, next) => {
+        if (!isValidAddress(req.body.address)) {
+            res.send(new restify.InvalidArgumentError('Invalid address'));
+            return next();
+        }
+
+        let result;
+        try {
+            result = await bitcoind('verifymessage', req.body.address, req.body.signature, req.body.message);
+        } catch (err) {
+            res.send(new restify.InvalidArgumentError(err.response.body.error.message));
+            return next();
+        }
+
+        res.send({
+            valid: result
         });
         next();
     });

@@ -160,24 +160,26 @@ CREATE TABLE `address_unspent_outputs_%04d` (
 
 loop 0 9 "$tpl_unspent_outputs"
 
-# table template
-tpl_txlogs='
-DROP TABLE IF EXISTS `0_tpl_txlogs`;
-CREATE TABLE `0_tpl_txlogs` (
+# 0_txlogs2
+txlogs2='
+DROP TABLE IF EXISTS `0_txlogs2`;
+CREATE TABLE `0_txlogs2` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `handle_status` int(11) NOT NULL,
-  `handle_type` int(11) NOT NULL,
-  `block_height` bigint(20) NOT NULL,
+  `batch_id` bigint(20) NOT NULL,
+  `type` int(11) NOT NULL,
+  `block_height` int(11) NOT NULL,
   `block_id` bigint(20) NOT NULL,
-  `block_timestamp` bigint(20) NOT NULL,
+  `max_block_timestamp` bigint(20) NOT NULL,
   `tx_hash` char(64) NOT NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `batch_id` (`batch_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
-echo "$tpl_txlogs"
+echo "$txlogs2"
 
+# table template
 tpl_address_txs='
 DROP TABLE IF EXISTS `0_tpl_address_txs`;
 CREATE TABLE `0_tpl_address_txs` (

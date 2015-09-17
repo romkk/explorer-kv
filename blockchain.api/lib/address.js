@@ -26,6 +26,7 @@ class Address {
         return {
             hash160: helper.addressToHash160(this.attrs.address),
             address: this.attrs.address,
+            address_id: this.attrs.id,
             n_tx: this.attrs.tx_count,
             n_unredeemed: null,
             total_received: this.attrs.total_received,

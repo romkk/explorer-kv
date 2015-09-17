@@ -112,7 +112,7 @@ class Tx {
                 this.outputs = rows.map(r => {
                     let ret = {};
                     ret.spent = r.spent_tx_id != 0;
-                    ret.tx_index = r.tx_id;
+                    ret.tx_index = r.spent_tx_id || null;
                     //ret.type = null;
                     ret.addr = r.address.split('|');
                     ret.value = r.value;

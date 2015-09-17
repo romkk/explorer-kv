@@ -9,6 +9,9 @@ module.exports = server => {
         req.checkParams('receiver', 'should be a valid email').isEmail();
         req.sanitize('txhash').toString();
 
+        req.checkParams('lang', 'should be a valid lang').isIn(['zh-cn', 'en']);
+        req.sanitize('lang').toString();
+
         var errors = req.validationErrors();
 
         if (errors) {
@@ -30,7 +33,7 @@ module.exports = server => {
 
         let ret;
         try {
-            ret = await mail(receiver, f.path, f.name);
+            ret = await mail(req.params.lang, receiver, f.path, f.name);
         } catch (err) {
             res.send(new restify.InternalServerError('Internal Error'));
             return next();

@@ -11,6 +11,7 @@ module.exports = server => {
     require('./bm_account')(server);
     require('./mail')(server);
     require('./xg_message')(server);
+    require('./update')(server);
 
     // with views
     require('./qr_code')(server);

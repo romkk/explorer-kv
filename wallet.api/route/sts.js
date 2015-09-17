@@ -27,7 +27,7 @@ module.exports = server => {
             log(`用户使用 ticket(${ticket}) 获取 sts-token`);
             let userInfo = await uc.get(ticket);
             if (userInfo) {
-                name = userInfo.data.username;
+                name = userInfo.data.email;
                 let sql = `select wid from bm_account where account_id = ?`;
                 wid = await mysql.pluck(sql, 'wid', [ +userInfo.data.id ]); //如果没有记录则为 null
             }

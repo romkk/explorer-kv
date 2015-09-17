@@ -1,7 +1,0 @@
----
-
--   name: Restart supervised process
-    supervisorctl:
-        name: "{{ daoru_name }}"
-        state: restarted
-    when: daoruStart

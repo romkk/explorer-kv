@@ -1,8 +1,9 @@
-# Dockerfile for mining pool base on Hayek
+#
+# Dockerfile
 #
 # @author zhibiao.pan@bitmain.com
 # @copyright Bitmain.com
-# @since 2015-07-13
+# @since 2015-09-17
 #
 #
 FROM phusion/baseimage:0.9.16
@@ -13,7 +14,8 @@ ENV TERM xterm
 CMD ["/sbin/my_init"]
 
 # update apt
-#ADD sources-163.com.list /etc/apt/sources.list
+#ADD sources-163.com.list    /etc/apt/sources.list
+#ADD sources-aliyun.com.list /etc/apt/sources.list
 RUN apt-get update
 RUN apt-get install -y wget zsh git build-essential autotools-dev libtool autoconf automake pkg-config daemontools sysv-rc-conf ntp nload unzip
 RUN apt-get install -y libssl-dev libdb++-dev libdb-dev libboost-all-dev
@@ -28,13 +30,15 @@ RUN cp -r /root/oh-my-zsh.tar.gz/.oh-my-zsh ~/.oh-my-zsh \
 
 # bitcoind
 ADD v0.10.2.tar.gz /root/source/v0.10.2.tar.gz
-ADD bitcoind-hubnode-v0.10.2.patch    /root/source/bitcoind-hubnode-v0.10.2.patch
+ADD bitcoind-hubnode-v0.10.2.patch  /root/source/bitcoind-hubnode-v0.10.2.patch
 ADD bitcoind-explorer-v0.10.2.patch /root/source/bitcoind-explorer-v0.10.2.patch
+ADD bitcoind-bm-rpc-v0.10.2.patch   /root/source/bitcoind-bm-rpc-v0.10.2.patch
 
 RUN cp -r /root/source/v0.10.2.tar.gz/bitcoin-0.10.2 /root/source/bitcoin-0.10.2
 RUN cd /root/source/bitcoin-0.10.2 \
    && patch -p1 < ../bitcoind-hubnode-v0.10.2.patch \
    && patch -p1 < ../bitcoind-explorer-v0.10.2.patch \
+   && patch -p1 < ../bitcoind-bm-rpc-v0.10.2.patch \
    && ./autogen.sh \
    && ./configure --without-miniupnpc --disable-wallet \
    && make -j4

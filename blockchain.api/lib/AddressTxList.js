@@ -98,7 +98,7 @@ class AddressTxList {
 
     async findHeight() {
         if (this._height == null) {
-            var sql = `select height from 0_blocks where \`timestamp\` ${this._order === 'desc' ? '<=' : '>='} ?
+            var sql = `select height from 0_blocks where \`curr_max_timestamp\` ${this._order === 'desc' ? '<=' : '>='} ?
                    order by block_id ${this._order} limit 1`;
 
             this._height = await mysql.pluck(sql, 'height', [this._ts]);

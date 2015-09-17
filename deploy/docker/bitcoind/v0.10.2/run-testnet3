@@ -9,4 +9,4 @@ export LC_ALL=C
 SROOT=$(cd $(dirname "$0"); pwd)
 cd $SROOT
 
-bitcoind -datadir="/root/.bitcoin" -conf="/root/.bitcoin/bitcoin.conf" -customlogdir=/root/.bitcoin/customlog
+bitcoind -datadir="/root/.bitcoin" -conf="/root/.bitcoin/bitcoin.conf" -testnet -customlogdir=/root/.bitcoin/testnet3/customlog

@@ -649,19 +649,10 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
 
     // 首次处理的，需要补 accept 操作
     if (alreadyInMemTxHashs.find(txhash) == alreadyInMemTxHashs.end()) {
-      if (tx.IsCoinBase()) {
-        // coinbase tx 需要提供 块高度、块ID: 高度用于计算fee，依赖高度计算块奖励
-        item = Strings::Format("-1,%d,%d,%lld,%lld,'%s','%s','%s'",
-                               LOG2TYPE_TX_ACCEPT,
-                               log1Item.blockHeight_, blockId, blkTs_.getMaxTimestamp(),
-                               txhash.ToString().c_str(),
-                               nowStr.c_str(), nowStr.c_str());
-      } else {
-        item = Strings::Format("-1,%d,-1,-1,%lld,'%s','%s','%s'",
-                               LOG2TYPE_TX_ACCEPT, blkTs_.getMaxTimestamp(),
-                               txhash.ToString().c_str(),
-                               nowStr.c_str(), nowStr.c_str());
-      }
+      item = Strings::Format("-1,%d,-1,-1,%lld,'%s','%s','%s'",
+                             LOG2TYPE_TX_ACCEPT, blkTs_.getMaxTimestamp(),
+                             txhash.ToString().c_str(),
+                             nowStr.c_str(), nowStr.c_str());
       values.push_back(item);
     }
 

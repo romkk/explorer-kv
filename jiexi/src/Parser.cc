@@ -1496,7 +1496,7 @@ void _accpetTx_insertTx(MySQLConnection &db, class TxLog2 *txLog2, int64_t value
   const int64_t valueOut = txLog2->tx_.GetValueOut();
   if (txLog2->tx_.IsCoinBase()) {
     // coinbase的fee为 block rewards
-    fee = valueOut - GetBlockValue(txLog2->blkHeight_, 0);
+    fee = valueOut;
   } else {
     fee = valueIn - valueOut;
   }
@@ -2093,10 +2093,18 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
     _confirmAddressTxNode(&currNode, addr, txLog2->blkHeight_);
   } /* /for */
 
+  //
   // table.txs_xxxx
-  sql = Strings::Format("UPDATE `txs_%04d` SET `height`=%d,`ymd`=%d WHERE `tx_id`=%lld ",
+  //
+  string feeSql;
+  if (txLog2->tx_.IsCoinBase()) {
+    // confirm时知道高度值，重新计算 coinbase tx fee
+    const int64_t fee = txLog2->tx_.GetValueOut() - GetBlockValue(txLog2->blkHeight_, 0);
+    feeSql = Strings::Format(",fee=%lld ", fee);
+  }
+  sql = Strings::Format("UPDATE `txs_%04d` SET `height`=%d,`ymd`=%d %s WHERE `tx_id`=%lld ",
                         tableIdx_Tx(txLog2->txId_), txLog2->blkHeight_, txLog2->ymd_,
-                        txLog2->txId_);
+                        feeSql.c_str(), txLog2->txId_);
   dbExplorer_.updateOrThrowEx(sql, 1);
 
   // 处理未确认计数器和记录

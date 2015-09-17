@@ -54,14 +54,19 @@ RUN cd /root/source/bitcoin-0.10.2 \
 
 # mkdir
 RUN mkdir -p /root/supervise_bitcoind
+RUN mkdir -p /root/supervise_bitcoind_testnet3
 RUN mkdir -p /root/.bitcoin
+RUN mkdir -p /root/.bitcoin/testnet3
 
 # scripts
-ADD run /root/supervise_bitcoind/run
+ADD run          /root/supervise_bitcoind/run
+ADD run-testnet3 /root/supervise_bitcoind_testnet3/run
 RUN chmod +x /root/supervise_bitcoind/run
+RUN chmod +x /root/supervise_bitcoind_testnet3/run
 
 # logrotate
 ADD logrotate-bitcoind /etc/logrotate.d/bitcoind
+ADD logrotate-bitcoind-testnet3 /etc/logrotate.d/bitcoind-testnet3
 
 # startup.sh
 RUN mkdir -p /etc/my_init.d
@@ -70,4 +75,5 @@ RUN chmod +x /etc/my_init.d/bitcoind.sh
 
 # crontab
 ADD bitmain-monitor-bitcoind.sh /root/supervise_bitcoind/bitmain-monitor-bitcoind.sh
+ADD bitmain-monitor-bitcoind-testnet3.sh /root/supervise_bitcoind_testnet3/bitmain-monitor-bitcoind-testnet3.sh
 ADD crontab.txt /etc/cron.d/bitcoind

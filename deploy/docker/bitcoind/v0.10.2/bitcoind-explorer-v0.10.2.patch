@@ -34,7 +34,7 @@ diff -uNr original/bitcoin-0.10.2/src/init.cpp bitcoin-0.10.2/src/init.cpp
  }
 diff -uNr original/bitcoin-0.10.2/src/main.cpp bitcoin-0.10.2/src/main.cpp
 --- original/bitcoin-0.10.2/src/main.cpp	2015-05-16 16:37:27.000000000 +0800
-+++ bitcoin-0.10.2/src/main.cpp	2015-09-15 18:00:08.000000000 +0800
++++ bitcoin-0.10.2/src/main.cpp	2015-09-15 23:28:30.000000000 +0800
 @@ -10,6 +10,7 @@
  #include "chainparams.h"
  #include "checkpoints.h"
@@ -99,7 +99,7 @@ diff -uNr original/bitcoin-0.10.2/src/main.cpp bitcoin-0.10.2/src/main.cpp
          mapAlreadyAskedFor.erase(inv);
  
 -        if (AcceptToMemoryPool(mempool, state, tx, true, &fMissingInputs))
-+        if (AcceptToMemoryPool(mempool, state, tx, true, &fMissingInputs, true))
++        if (AcceptToMemoryPool(mempool, state, tx, true, &fMissingInputs, false, true))
          {
              mempool.check(pcoinsTip);
              RelayTransaction(tx);
@@ -108,7 +108,7 @@ diff -uNr original/bitcoin-0.10.2/src/main.cpp bitcoin-0.10.2/src/main.cpp
                      if (setMisbehaving.count(fromPeer))
                          continue;
 -                    if (AcceptToMemoryPool(mempool, stateDummy, orphanTx, true, &fMissingInputs2))
-+                    if (AcceptToMemoryPool(mempool, stateDummy, orphanTx, true, &fMissingInputs2, true))
++                    if (AcceptToMemoryPool(mempool, stateDummy, orphanTx, true, &fMissingInputs2, false, true))
                      {
                          LogPrint("mempool", "   accepted orphan tx %s\n", orphanHash.ToString());
                          RelayTransaction(orphanTx);

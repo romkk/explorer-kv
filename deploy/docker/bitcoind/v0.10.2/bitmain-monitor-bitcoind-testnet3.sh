@@ -8,7 +8,7 @@
 SROOT=$(cd $(dirname "$0"); pwd)
 cd $SROOT
 
-BITCOIND_RPC="bitcoin-cli "
+BITCOIND_RPC="bitcoin-cli -testnet "
 #WANIP=`ip addr | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/'`
 #WANIP=`curl https://api.ipify.org`
 WANIP=`curl http://ipinfo.io/ip`
@@ -18,7 +18,7 @@ HEIGHT=`$BITCOIND_RPC getinfo | grep "blocks" | awk '{print $3}' | awk -F"," '{p
 CONNS=`$BITCOIND_RPC getinfo | grep "connections" | awk '{print $3}' | awk -F"," '{print $1}'`
 SCORE=`$BITCOIND_RPC getnetworkinfo | grep "score" | awk '{print $3}' | awk -F"," '{print $1}' | head -1`
 
-SERVICE="explorer.bitcoind.$WANIP"
+SERVICE="explorer.bitcoind.testnet3.$WANIP"
 VALUE="height:$HEIGHT;conn:$CONNS;score:$SCORE"
 MURL="http://monitor.bitmain.com/monitor/api/v1/message?service=$SERVICE&value=$VALUE"
 

@@ -51,7 +51,7 @@ mkdir -p /work/bitcoind
 docker容器启动命令：
 
 ```
-docker run -it -v /work/bitcoind:/root/.bitcoin --name explorer-bitcoind -p 8333:8333 -p 8332:8332 -d explorer-bitcoind:0.10.2
+docker run -it -v /work/bitcoind:/root/.bitcoin --name explorer-bitcoind -p 8333:8333 -p 8332:8332 -p 18333:18333 -p 18332:18332  -d explorer-bitcoind:0.10.2
 ```
 
 进入容器：
@@ -75,6 +75,11 @@ limitdownloadblocks=2016
 maxconnections=768
 outboundconnections=512
 
-# 自定义日志的输出目录
-customlogdir=/root/.bitcoin/customlog
+```
+
+参数项： `customlogdir`，请勿放在 `bitcoin.conf` 中，会导致 main 和 testnet3 写同一个目录，尽量放到 bitcoind 的启动命令里:
+
+```
+bitcoind ... -customlogdir=/root/.bitcoin/customlog
+bitcoind ... -customlogdir=/root/.bitcoin/testnet3/customlog
 ```

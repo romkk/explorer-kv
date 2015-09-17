@@ -53,7 +53,6 @@ server.use(auth.tokenMiddleware([
     '!/bm-account/bind',
     '/sts-token',
     '/qr-code',
-    '/sendmail',
     '/latestversion'
 ]));
 

@@ -78,7 +78,7 @@ module.exports = (server) => {
         let offset = _.get(req, 'params.offset', 0);
         let limit = _.get(req, 'params.limit', 50);
         let sort = _.get(req, 'params.sort', 'desc');
-        let timestamp = _.get(req, 'params.timestamp', sort == 'desc' ? moment.utc().unix() + 3600 : 0);
+        let timestamp = _.get(req, 'params.timestamp', sort == 'desc' ? moment().unix() + 3600 : 0);
 
         res.send(await Block.getBlockList(timestamp, offset, limit, sort, !req.params.skipcache));
         next();

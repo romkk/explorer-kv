@@ -31,8 +31,7 @@ namespace fs = boost::filesystem;
 MemTxRepository::MemTxRepository() {}
 MemTxRepository::~MemTxRepository() {}
 
-bool MemTxRepository::addTx(const CTransaction &tx,
-                            vector<uint256> &conflictTxs) {
+bool MemTxRepository::addTx(const CTransaction &tx) {
   assert(tx.IsCoinBase() == false);
   const uint256 txhash = tx.GetHash();
 
@@ -41,68 +40,107 @@ bool MemTxRepository::addTx(const CTransaction &tx,
     return false;  // already exist
   }
 
-  // 返回第一层的冲突交易
+  //
+  // 判断是否有冲突交易
+  //
   for (auto &it : tx.vin) {
     TxOutputKey out(it.prevout.hash, it.prevout.n);
+    // 新交易的输出已经在已花费列表中
     if (spentOutputs_.find(out) != spentOutputs_.end()) {
-      conflictTxs.push_back(spentOutputs_[out]);
-      LOG_WARN("conflict tx input: %s:%d, already spent in tx: %s",
+      LOG_WARN("conflict tx: %s, input: %s:%d, already spent in tx: %s",
+               txhash.ToString().c_str(),
                it.prevout.hash.ToString().c_str(), it.prevout.n,
                spentOutputs_[out].ToString().c_str());
+      return false;
     }
   }
 
+  //
   // 没有冲突，加入到内存
-  if (conflictTxs.size() == 0) {
+  //
+  for (auto &it : tx.vin) {
     // 标记内存中已经花费的output
-    for (auto &it : tx.vin) {
-      TxOutputKey out(it.prevout.hash, it.prevout.n);
-      spentOutputs_.insert(make_pair(out, txhash));
-    }
-    txs_[txhash] = tx;
-    unSyncTxsInsert_.insert(txhash);
-
-    return true;
+    TxOutputKey out(it.prevout.hash, it.prevout.n);
+    spentOutputs_.insert(make_pair(out, txhash));
   }
+  txs_[txhash] = tx;
+  unSyncTxsInsert_.insert(txhash);
 
-  // 有冲突，遍历冲突交易，迭代找出冲突交易的后续交易。深度优先的遍历方式。
-  for (size_t i = 0; i < conflictTxs.size(); i++) {
-    const uint256 chash = conflictTxs[i];
-
-    // 该hash被谁花费了
-    assert(txs_.find(chash) != txs_.end());
-    for (int j = 0; j < txs_[chash].vout.size(); j++) {
-      TxOutputKey out(chash, j);
-      if (spentOutputs_.find(out) != spentOutputs_.end()) {
-        conflictTxs.push_back(spentOutputs_[out]);
-      }
-    }
-  }
-
-  return false;
+  return true;
 }
 
-void MemTxRepository::removeTxs(const vector<uint256> &txhashs,
-                                const bool ingoreEmpty) {
-  for (auto &hash : txhashs) {
-    const bool exist = (txs_.find(hash) != txs_.end());
-    if (!exist) {
-      if (!ingoreEmpty) {
-      	THROW_EXCEPTION_DBEX("tx not in memrepo: %s", hash.ToString().c_str());
-      }
+//
+// 获取冲突交易Hash
+//
+uint256 MemTxRepository::getConflictTx(const CTransaction &tx) {
+  //
+  // 遍历该交易输入，找出花费这些交易链上的叶子交易
+  //
+  for (auto &it : tx.vin) {
+    TxOutputKey out(it.prevout.hash, it.prevout.n);
+    if (spentOutputs_.find(out) == spentOutputs_.end()) {
       continue;
     }
 
-    CTransaction &tx = txs_[hash];
-    for (auto &it : tx.vin) {
-      TxOutputKey out(it.prevout.hash, it.prevout.n);
-      auto it2 = spentOutputs_.find(out);
-      assert(it2 != spentOutputs_.end());
-      spentOutputs_.erase(it2);
+    // 当为交易自身时，说明异常
+    const uint256 spentTxHash = spentOutputs_[out];
+    if (spentTxHash == tx.GetHash()) {
+      THROW_EXCEPTION_DBEX("spentTxHash is equal to tx.GetHash(): %s",
+                           spentTxHash.ToString().c_str());
     }
 
-    txs_.erase(hash);
-    unSyncTxsDelete_.insert(hash);
+    // 获取已经花费的交易链的末端交易
+    return getSpentEndTx(txs_[spentTxHash]);
+  }
+
+  return tx.GetHash();  // return self, should not arrive here
+}
+
+//
+// 获取已经花费的交易链的末端交易（未被花费的交易）
+// 递归：由于可能是交易链，本函数返回交易链最深的一个交易(未被任何花费的交易)。
+//
+uint256 MemTxRepository::getSpentEndTx(const CTransaction &tx) {
+  const uint256 txhash = tx.GetHash();
+  LOG_DEBUG("[MemTxRepository::getSpentEndTx] txhash: %s", txhash.ToString().c_str());
+
+  // 遍历交易的输出，检查交易输出流向
+  for (int32_t i = 0; i < tx.vout.size(); i++) {
+    TxOutputKey out(txhash, i);
+    if (spentOutputs_.find(out) == spentOutputs_.end()) {
+      continue;
+    }
+
+    // 递归执行，向下一层交易获取
+    return getSpentEndTx(txs_[spentOutputs_[out]]);
+  }
+
+  return tx.GetHash();
+}
+
+void MemTxRepository::removeTx(const uint256 &hash) {
+  LOG_DEBUG("memrepo remove tx: %s", hash.ToString().c_str());
+  
+  const bool exist = (txs_.find(hash) != txs_.end());
+  if (!exist) {
+    THROW_EXCEPTION_DBEX("tx not in memrepo: %s", hash.ToString().c_str());
+  }
+
+  CTransaction &tx = txs_[hash];
+  for (auto &it : tx.vin) {
+    TxOutputKey out(it.prevout.hash, it.prevout.n);
+    auto it2 = spentOutputs_.find(out);
+    assert(it2 != spentOutputs_.end());
+    spentOutputs_.erase(it2);
+  }
+
+  txs_.erase(hash);
+  unSyncTxsDelete_.insert(hash);
+}
+
+void MemTxRepository::removeTxs(const vector<uint256> &txhashs) {
+  for (auto &hash : txhashs) {
+    removeTx(hash);
   }
 }
 
@@ -253,12 +291,11 @@ static void _initLog2_loadMemrepoTxs(MySQLConnection &db,
     const uint256 hash(row[0]);
     const string txHex = getTxHexByHash(db, hash);
 
-    vector<uint256> conflictTxs;
     CTransaction tx;
     if (!DecodeHexTx(tx, txHex)) {
       THROW_EXCEPTION_DBEX("decode tx failure, hex: %s", txHex.c_str());
     }
-    if (memRepo.addTx(tx, conflictTxs) == false) {
+    if (memRepo.addTx(tx) == false) {
       THROW_EXCEPTION_DBEX("add tx to mem repo fail, tx: %s", hash.ToString().c_str());
     }
     LOG_DEBUG("load 0_memrepo_txs tx: %s", hash.ToString().c_str());
@@ -300,6 +337,7 @@ void Log2Producer::initLog2() {
     sql = "SELECT `id` FROM `0_txlogs2` ORDER BY `id` DESC LIMIT 1";
     db_.query(sql, res);
     if (res.numRows() != 0) {
+      row = res.nextRow();
       lastTxlogs2Id = atoi64(row[0]);
     }
     if (jiexiLastTxlog2Offset != lastTxlogs2Id) {
@@ -550,14 +588,11 @@ void Log2Producer::handleTx(Log1 &log1Item) {
 
   vector<uint256> conflictTxs;
   const string nowStr = date("%F %T");
-  const bool res = memRepo_.addTx(tx, conflictTxs);
+  const bool res = memRepo_.addTx(tx);
 
   // 冲突的交易
   if (res == false) {
     LOG_WARN("reject tx: %s", hash.ToString().c_str());
-    for (auto &it : conflictTxs) {
-      LOG_WARN("\tconflict tx: %s", it.ToString().c_str());
-    }
     return;
   }
 
@@ -608,15 +643,27 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
     if (memRepo_.isExist(txhash)) {
       alreadyInMemTxHashs.insert(txhash);
     } else {
-      memRepo_.addTx(tx, conflictTxs);
+      //
+      // 添加至内存池，目的：判断没有没有潜在冲突的交易。
+      // 有冲突，每次移除掉叶子节点一个，直至不再冲突
+      //
+      while (memRepo_.addTx(tx) == false) {
+        uint256 conflictTx = memRepo_.getConflictTx(tx);
+        assert(conflictTx != tx.GetHash());
+        memRepo_.removeTx(conflictTx);
+        conflictTxs.push_back(conflictTx);
+      }
     }
   }
 
-  // 1.1 移除冲突交易
-  memRepo_.removeTxs(conflictTxs);
+  // 采用每次移除一个冲突交易树中的叶子节点的方法，应该不会重复移除某个交易
+  if (conflictTxs.size()) {
+    set<uint256> conflictTxsSet(conflictTxs.begin(), conflictTxs.end());
+    assert(conflictTxsSet.size() == conflictTxs.size());
+  }
 
-  // 1.2 移除块的交易，忽略不存在的交易（有可能因为冲突没有添加至 memRepo 或 coinbase tx）
-  memRepo_.removeTxs(txHashs, true/* ingore not exist tx */);
+  // 1.2 移除内存中块的交易，块中的交易应该都在内存中
+  memRepo_.removeTxs(txHashs);
 
   // 2.0 插入 raw_blocks
   const int64_t blockId = insertRawBlock(db_, blk, log1Item.blockHeight_);
@@ -633,7 +680,8 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
   const string fields = "`batch_id`, `type`, `block_height`, `block_id`, "
   "`max_block_timestamp`, `tx_hash`, `created_at`, `updated_at`";
 
-  // 冲突的交易，需要做拒绝处理
+  // 冲突的交易，需要做拒绝处理，注意顺序
+  // conflictTxs 中其实是逆序，因为前面是先剔除冲突交易树的叶子节点
   for (auto &it : conflictTxs) {
     string item = Strings::Format("-1,%d,-1,-1,0,'%s','%s','%s'",
                                   LOG2TYPE_TX_REJECT,
@@ -709,16 +757,12 @@ void Log2Producer::handleBlockRollback(const int32_t height, const CBlock &blk) 
   //
   // 交易重新添加到内存池里，反序遍历
   //
-  vector<uint256> conflictTxs;
   for (auto tx = blk.vtx.rbegin(); tx != blk.vtx.rend(); ++tx) {
     if (tx->IsCoinBase()) { continue; }
 
     // 应该是不存在，且没有冲突交易的
-    if (!memRepo_.addTx(*tx, conflictTxs)) {
-      LOG_INFO("unconfirm tx: %s", tx->GetHash().ToString().c_str());
-      for (auto &it : conflictTxs) {
-        LOG_WARN("\tconflict tx: %s", it.ToString().c_str());
-      }
+    if (memRepo_.addTx(*tx) == false) {
+      LOG_INFO("unconfirm tx add to memRepo fail: %s", tx->GetHash().ToString().c_str());
       THROW_EXCEPTION_DBEX("thare are conflict txs, should not happened");
     }
   }
@@ -765,7 +809,7 @@ void Log2Producer::handleBlockRollback(const int32_t height, const CBlock &blk) 
   // 提交本批数据
   commitBatch(values.size());
 
-  LOG_INFO("block txs: %llu, conflict txs: %llu", blk.vtx.size(), conflictTxs.size());
+  LOG_INFO("block txs: %llu", blk.vtx.size());
 }
 
 void Log2Producer::_getBlockByHash(const uint256 &hash, CBlock &blk) {

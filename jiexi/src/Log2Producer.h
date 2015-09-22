@@ -74,6 +74,11 @@ public:
     }
     return false;
   }
+
+  string toString() const {
+    return Strings::Format("TxOutputKey(hash: %s, %d)",
+                           hash_.ToString().c_str(), position_);
+  }
 };
 
 
@@ -89,15 +94,22 @@ class MemTxRepository {
   set<uint256> unSyncTxsDelete_;
   set<uint256> unSyncTxsInsert_;
 
+  // 获取已经花费的交易链的末端交易（未被花费的交易）
+  uint256 getSpentEndTx(const CTransaction &tx);
+
 public:
   MemTxRepository();
   ~MemTxRepository();
 
   // 添加一个交易，如果失败了，会将所有冲突的交易链返回
-  bool addTx(const CTransaction &tx, vector<uint256> &conflictTxs);
+  bool addTx(const CTransaction &tx);
+
+  // 获取冲突交易Hash。由于可能是冲突交易链，本函数返回最深的一个交易。
+  uint256 getConflictTx(const CTransaction &tx);
 
   // 从内存交易库中删除一个或多个交易
-  void removeTxs(const vector<uint256> &txhashs, const bool ingoreEmpty=false);
+  void removeTx (const uint256 &hash);
+  void removeTxs(const vector<uint256> &txhashs);
 
   // 同步至DB
   void syncToDB(MySQLConnection &db);

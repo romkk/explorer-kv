@@ -14,12 +14,16 @@ let api = require('../lib/api');
 
 module.exports = server => {
     server.get('/identify-block-batch/:start/:end', async (req, res, next) => {
-        var start = Number(req.params.start),
+        let start = Number(req.params.start),
             end = Number(req.params.end);
 
         for (; start <= end; start++) {
             res.write(`block_id = ${start}\n`);
-            await api.identifyBlock(start, !req.params.skipcache);
+            let info = await api.identifyBlock(start, !req.params.skipcache);
+            if (info.name != info.blk.relayed_by) {
+                mysql.query(`update 0_blocks set relayed_by = ? where hash = ?`, [info.id, info.blk.hash]);
+                sb.del(`blk_${info.blk.hash}`);
+            }
         }
 
         res.end('done\n');

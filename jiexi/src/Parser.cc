@@ -1862,9 +1862,8 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
   // 删掉过期的数据
   //
   // 超过 50万 记录数则触发, 每天大约TX数量, 1000 * 144 = 14万
-  // debug 模式提前触发
-  const int kMaxItemsCount     = IsDebug() ? 10000 : 100 * 10000;
-  const time_t kExpiredSeconds = IsDebug() ? 3600*3 : 86400 * 3;
+  const int kMaxItemsCount     = 100 * 10000;
+  const time_t kExpiredSeconds = 86400 * 3;
   if (addressBalanceCache_.size() > kMaxItemsCount) {
     LOG_INFO("clear addressBalanceCache start, count: %llu", addressBalanceCache_.size());
 
@@ -2109,6 +2108,12 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
 
   // 处理未确认计数器和记录
   removeUnconfirmedTxPool(txLog2);
+
+  if (cache_ != nullptr) {
+    // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
+    // 删除自身: tx_{hash}
+    cache_->insertKV(Strings::Format("tx_%s", txLog2->txHash_.ToString().c_str()));
+  }
 }
 
 // unconfirm tx (address node)
@@ -2184,6 +2189,12 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
 
   // 处理未确认计数器和记录
   addUnconfirmedTxPool(txLog2);
+
+  if (cache_ != nullptr) {
+    // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
+    // 删除自身: tx_{hash}
+    cache_->insertKV(Strings::Format("tx_%s", txLog2->txHash_.ToString().c_str()));
+  }
 }
 
 // 回滚一个块操作

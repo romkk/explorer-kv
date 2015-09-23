@@ -30,7 +30,7 @@ module.exports = (server) => {
             blk = await Block.grab(req.params.blockIdentifier, req.params.offset, req.params.limit, req.params.fulltx, !req.params.skipcache);
         } catch (err) {
             res.send(new restify.ResourceNotFoundError('Block not found'));
-            console.log(err);
+            return next();
         }
         
         let nextBlock = await Block.getNextBlock(blk.height, blk.chain_id, !req.params.skipcache);

@@ -36,7 +36,7 @@ module.exports = server => {
         }
 
         if (info.name != info.blk.relayed_by) {
-            mysql.query(`update 0_blocks set relayed_by = ? where hash = ?`, [id, info.blk.hash]);
+            mysql.query(`update 0_blocks set relayed_by = ? where hash = ?`, [info.id, info.blk.hash]);
             sb.del(`blk_${info.blk.hash}`);
         }
 

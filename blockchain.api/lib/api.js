@@ -4,7 +4,7 @@ let restify = require('restify');
 let Block = require('./block');
 let _ = require('lodash');
 
-let poolDefCache = {};
+let poolDefCache = null;
 
 async function getPoolDefinition(useCache) {
     if (useCache && poolDefCache) {

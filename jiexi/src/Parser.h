@@ -34,6 +34,15 @@
 // tparser的异常，整数
 #define EXCEPTION_TPARSER_TX_INVALID_INPUT 100
 
+//
+// 为降低交易链日期间移动节点的复杂度，我们把未确认的交易都设置为未来时间: 2030-01-01
+// 交易进来的时候(accept)都会放到那个表里，然后确认时(confirm)再迁移回来。
+//
+// 1893456000 -> 2030-01-01 00:00:00
+//
+#define UNCONFIRM_TX_YMD        20300101
+#define UNCONFIRM_TX_TIMESTAMP  1893456000
+
 inline int32_t tableIdx_Addr(const int64_t addrId) {
   return (int32_t)(addrId / BILLION % 64);
 }
@@ -311,13 +320,8 @@ private:
   void addUnconfirmedTxPool   (class TxLog2 *txLog2);
   void removeUnconfirmedTxPool(class TxLog2 *txLog2);
 
-//  // 更新交易 / 节点的 YMD
-//  void _updateTxYmd(const uint256 &hash, const int32_t targetYmd);
-//  void _updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node, const int32_t targetYmd);
-
-  // 更新记录至目标YMD
-  void _changeYmdAddressTxNode_R(const LastestAddressInfo *addr,
-                                 const int32_t targetYmd, AddressTxNode *node);
+  // 更新交易 / 节点的 YMD
+  void _updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node, const int32_t targetYmd);
 
   // 移动地址交易节点
   void _switchAddressTxNode(LastestAddressInfo *addr,

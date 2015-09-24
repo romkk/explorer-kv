@@ -706,14 +706,22 @@ void Parser::run() {
         //
         const int32_t blockHeight = txLog2.blkHeight_;
         const int64_t blockId     = txLog2.blkId_;
+        const int32_t ymd         = txLog2.ymd_;
+        const int32_t maxBlkTs    = txLog2.maxBlkTimestamp_;
         if (!hasAccepted(&txLog2)) {
           txLog2.type_ = LOG2TYPE_TX_ACCEPT;
           txLog2.blkHeight_ = -1;
           txLog2.blkId_     = -1;
+          txLog2.ymd_       = UNCONFIRM_TX_YMD;
+          txLog2.maxBlkTimestamp_ = UNCONFIRM_TX_TIMESTAMP;
+
           acceptTx(&txLog2);
+
           txLog2.type_ = LOG2TYPE_TX_CONFIRM;
           txLog2.blkHeight_ = blockHeight;
           txLog2.blkId_     = blockId;
+          txLog2.ymd_       = ymd;
+          txLog2.maxBlkTimestamp_ = maxBlkTs;
         }
         confirmTx(&txLog2);
       }
@@ -1586,134 +1594,82 @@ void Parser::removeUnconfirmedTxPool(class TxLog2 *txLog2) {
   dbExplorer_.updateOrThrowEx(sql, 1);
 }
 
-//// 更新交易的 YMD
-//void Parser::_updateTxYmd(const uint256 &hash, const int32_t targetYmd) {
-//  string sql;
-//  int64_t txId = 0;
-//  string txHex;
-//  CTransaction tx;
-//  LOG_INFO("update tx %s ymd to %d", hash.ToString().c_str(), targetYmd);
 //
-//  // find raw tx hex & id
-//  txInfoCache_.getTxInfo(dbExplorer_, hash, &txId, &txHex);
-//  if (!DecodeHexTx(tx, txHex)) {
-//    THROW_EXCEPTION_DBEX("TX decode failed, hex: %s", txHex.c_str());
-//  }
+// 更新节点的YMD
 //
-//  //
-//  // 更新交易所对应的地址交易节点
-//  //
-//  auto addressBalance = _getTxAddressBalance(txId, hash, tx);
-//  for (auto &it : *addressBalance) {
-//    const int64_t addrID = it.first;
-//    LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
-//    AddressTxNode node;
-//
-//    // 更新节点日期
-//    _getAddressTxNode(txId, addr, &node);
-//    _updateTxNodeYmd(addr, &node, targetYmd);
-//
-//    // 确保后方节点日期大于等于当前节点
-//    while (1) {
-//      _getAddressTxNode(txId, addr, &node);
-//
-//      // 无后方节点 或 后方节点日期大于等于当前，则无需移动节点
-//      if (node.nextYmd_ == 0 || node.nextYmd_ >= node.ymd_) {
-//        break;
-//      }
-//      assert(node.nextYmd_ != 0 && node.nextYmd_ < node.ymd_);
-//      // 向后移动节点
-//      moveBackwardAddressTxNode(addr, &node);
-//    }
-//  }
-//
-//  //
-//  // 更新交易自身
-//  //
-//  sql = Strings::Format("UPDATE `txs_%04d` SET `ymd`=%d WHERE `tx_id`=%lld",
-//                        tableIdx_Tx(txId), targetYmd, txId);
-//  dbExplorer_.updateOrThrowEx(sql, 1);
-//}
-//
-////
-//// 更新节点的YMD
-//// 仅更新前后指向的节点的 ymd，和地址的 ymd。由于此操作仅在确认交易时碰到，所以不会影响
-//// 地址的 last_confirmed_tx_id / last_confirmed_tx_ymd
-////
-//void Parser::_updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node,
-//                              const int32_t targetYmd) {
-//  string sql;
-//  assert(node->ymd_ != targetYmd);
-//
-//  //
-//  // 修改自己本身信息
-//  //
-//  sql = Strings::Format("UPDATE `address_txs_%d` SET `ymd`=%d "
-//                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-//                        tableIdx_AddrTxs(node->ymd_),
-//                        targetYmd, node->addressId_, node->txId_);
-//  dbExplorer_.updateOrThrowEx(sql , 1);
-//
-//  //
-//  // 变更前向节点的后续指向
-//  //
-//  if (node->prevTxId_ > 0) {
-//    sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d "
-//                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-//                          tableIdx_AddrTxs(node->prevYmd_),
-//                          targetYmd, node->addressId_, node->prevTxId_);
-//    dbExplorer_.updateOrThrowEx(sql , 1);
-//  } else {
-//    // 变更地址的头交易信息，没有前向节点则说明当前节点就是头节点
-//    sql = Strings::Format("UPDATE `addresses_%04d` SET "
-//                          " `begin_tx_ymd`=%d WHERE `id`=%lld ",
-//                          tableIdx_Addr(addr->addrId_), targetYmd, addr->addrId_);
-//    dbExplorer_.updateOrThrowEx(sql , 1);
-//    addr->beginTxYmd_ = targetYmd;
-//  }
-//
-//  //
-//  // 变更后向节点的前向指向
-//  //
-//  if (node->nextTxId_ > 0) {
-//    // 涉及指向，不涉及金额变化
-//    sql = Strings::Format("UPDATE `address_txs_%d` SET `prev_ymd`=%d "
-//                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-//                          tableIdx_AddrTxs(node->nextYmd_),
-//                          targetYmd, node->addressId_, node->nextTxId_);
-//    dbExplorer_.updateOrThrowEx(sql , 1);
-//  } else {
-//    // 变更地址的尾交易信息，没有后向节点则说明当前节点就是尾节点
-//    sql = Strings::Format("UPDATE `addresses_%04d` SET "
-//                          " `end_tx_ymd`=%d WHERE `id`=%lld ",
-//                          tableIdx_Addr(addr->addrId_), targetYmd, addr->addrId_);
-//    dbExplorer_.updateOrThrowEx(sql , 1);
-//    addr->endTxYmd_ = targetYmd;
-//  }
-//
-//  //
-//  // 变更日期导致记录跨表，需要移动数据至新表中
-//  //
-//  if (tableIdx_AddrTxs(targetYmd) != tableIdx_AddrTxs(node->ymd_)) {
-//    // 插入记录至新表
-//    const string fields = "`address_id`, `tx_id`, `tx_height`, `total_received`, "
-//    "`balance_diff`, `balance_final`, `idx`, `ymd`, `prev_ymd`, "
-//    "`prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`";
-//    sql = Strings::Format("INSERT INTO `address_txs_%d` (%s) "
-//                          " SELECT %s FROM `address_txs_%d` "
-//                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-//                          tableIdx_AddrTxs(targetYmd), fields.c_str(),
-//                          tableIdx_AddrTxs(node->ymd_), fields.c_str(),
-//                          node->addressId_, node->txId_);
-//    dbExplorer_.updateOrThrowEx(sql, 1);
-//
-//    // 删除旧记录
-//    sql = Strings::Format("DELETE FROM `address_txs_%d` "
-//                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-//                          tableIdx_AddrTxs(node->ymd_), node->addressId_, node->txId_);
-//    dbExplorer_.updateOrThrowEx(sql, 1);
-//  }
-//}
+void Parser::_updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node,
+                              const int32_t targetYmd) {
+  string sql;
+
+  //
+  // 变更日期导致记录跨表，需要移动数据至新表中
+  // 跨表了，需要移动数据. 因未确认交易都在特定日期中，这里必然跨表
+  //
+  assert(tableIdx_AddrTxs(targetYmd) != tableIdx_AddrTxs(node->ymd_));
+
+  //
+  // 变更前向节点的后续指向
+  //
+  if (node->prevTxId_ > 0) {
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d "
+                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                          tableIdx_AddrTxs(node->prevYmd_),
+                          targetYmd, node->addressId_, node->prevTxId_);
+    dbExplorer_.updateOrThrowEx(sql , 1);
+  } else {
+    // 变更地址的头交易信息，没有前向节点则说明当前节点就是头节点
+    sql = Strings::Format("UPDATE `addresses_%04d` SET "
+                          " `begin_tx_ymd`=%d WHERE `id`=%lld ",
+                          tableIdx_Addr(addr->addrId_), targetYmd, addr->addrId_);
+    dbExplorer_.updateOrThrowEx(sql , 1);
+    addr->beginTxYmd_ = targetYmd;
+  }
+
+  //
+  // 变更后向节点的前向指向
+  //
+  if (node->nextTxId_ > 0) {
+    // 涉及指向，不涉及金额变化
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `prev_ymd`=%d "
+                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                          tableIdx_AddrTxs(node->nextYmd_),
+                          targetYmd, node->addressId_, node->nextTxId_);
+    dbExplorer_.updateOrThrowEx(sql , 1);
+  } else {
+    // 变更地址的尾交易信息，没有后向节点则说明当前节点就是尾节点
+    sql = Strings::Format("UPDATE `addresses_%04d` SET "
+                          " `end_tx_ymd`=%d WHERE `id`=%lld ",
+                          tableIdx_Addr(addr->addrId_), targetYmd, addr->addrId_);
+    dbExplorer_.updateOrThrowEx(sql , 1);
+    addr->endTxYmd_ = targetYmd;
+  }
+
+  //
+  // 插入记录至新表
+  //
+  // 表列名
+  const string fields1 = "`address_id`, `tx_id`, `tx_height`, `total_received`, "
+  "`balance_diff`, `balance_final`, `idx`, `ymd`, `prev_ymd`, "
+  "`prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`";
+  // 表列名 (更新了 ymd)
+  const string fields2 = Strings::Format("`address_id`, `tx_id`, `tx_height`, `total_received`, "
+                                         "`balance_diff`, `balance_final`, `idx`, %d, `prev_ymd`, "
+                                         "`prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`",
+                                         targetYmd);
+  sql = Strings::Format("INSERT INTO `address_txs_%d` (%s) "
+                        " SELECT %s FROM `address_txs_%d` "
+                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                        tableIdx_AddrTxs(targetYmd),  fields1.c_str(),
+                        tableIdx_AddrTxs(node->ymd_), fields2.c_str(),
+                        node->addressId_, node->txId_);
+  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  // 删除旧记录
+  sql = Strings::Format("DELETE FROM `address_txs_%d` "
+                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+                        tableIdx_AddrTxs(node->ymd_), node->addressId_, node->txId_);
+  dbExplorer_.updateOrThrowEx(sql, 1);
+}
 
 // 交换相邻节点，当前节点前移，移动的节点目前仅限于未确认的节点
 // 交换节点并不能保障日期是顺序的，可能造成日期乱序
@@ -2127,44 +2083,6 @@ void Parser::_confirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr
   addr->lastConfirmedTxYmd_ = node->ymd_;
 }
 
-// 更新后续节点的 ymd
-// 该节点之后的（包含本节点）全部移动至 ymd 表中去
-void Parser::_changeYmdAddressTxNode_R(const LastestAddressInfo *addr,
-                                       const int32_t targetYmd, AddressTxNode *node) {
-  string sql;
-
-  if (tableIdx_AddrTxs(targetYmd) == tableIdx_AddrTxs(node->ymd_)) {
-    return;
-  }
-
-  // 插入记录至新表
-  const string fields = "`address_id`, `tx_id`, `tx_height`, `total_received`, "
-  "`balance_diff`, `balance_final`, `idx`, `ymd`, `prev_ymd`, "
-  "`prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`";
-  sql = Strings::Format("INSERT INTO `address_txs_%d` (%s) "
-                        " SELECT %s FROM `address_txs_%d` "
-                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                        tableIdx_AddrTxs(targetYmd), fields.c_str(),
-                        tableIdx_AddrTxs(node->ymd_), fields.c_str(),
-                        node->addressId_, node->txId_);
-  dbExplorer_.updateOrThrowEx(sql, 1);
-
-  // 删除旧记录
-  sql = Strings::Format("DELETE FROM `address_txs_%d` "
-                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                        tableIdx_AddrTxs(node->ymd_), node->addressId_, node->txId_);
-  dbExplorer_.updateOrThrowEx(sql, 1);
-
-  // 调整后续记录
-  if (node->nextTxId_ && tableIdx_AddrTxs(node->nextYmd_) < tableIdx_AddrTxs(targetYmd)) {
-    AddressTxNode nextNode;
-    _getAddressTxNode(node->nextTxId_, addr, &nextNode);
-
-    // -R
-    _changeYmdAddressTxNode_R(addr, targetYmd, &nextNode);
-  }
-}
-
 // 确认一个交易
 void Parser::confirmTx(class TxLog2 *txLog2) {
   //
@@ -2199,23 +2117,13 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
       // 向前移动本节点
       moveForwardAddressTxNode(addr, &currNode);
     }
-    // 最后一个确认的ymd必然小于等于当前即将确认的ymd
-    assert(addr->lastConfirmedTxYmd_ <= currNode.ymd_);
+    assert(currNode.ymd_ == UNCONFIRM_TX_YMD);
 
     //
-    // ymd 不一致，需要更新数据至目标表中
+    // 移动数据节点，从 UNCONFIRM_TX_YMD 至 txLog2->ymd_
     //
-    if (currNode.ymd_ > txLog2->ymd_) {
-      // 不能应存在此情形： accept 的时间大于 confirm 的时间
-      THROW_EXCEPTION_DBEX("currNode.ymd_: %d > txLog2->ymd_: %d",
-                           currNode.ymd_, txLog2->ymd_);
-    }
-    // 需要移动的情形：上一个确认在7月份，未确认的也在7月份，此时确认7月份的未确认交易至8月份
-    // 需要移动该节点之后的（包含本节点）至 txLog2->ymd_ 所在的表里
-    if (currNode.ymd_ < txLog2->ymd_) {
-      _changeYmdAddressTxNode_R(addr, txLog2->ymd_, &currNode);
-      _getAddressTxNode(txLog2->txId_, addr, &currNode);
-    }
+    _updateTxNodeYmd(addr, &currNode, txLog2->ymd_);
+    _getAddressTxNode(txLog2->txId_, addr, &currNode);
     assert(currNode.ymd_ == txLog2->ymd_);
 
     //
@@ -2302,13 +2210,14 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
 
   for (auto &it : *addressBalance) {
     const int64_t addrID       = it.first;
-
-    // 获取地址信息
     LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
-
-    // 当前节点
     AddressTxNode currNode;
     _getAddressTxNode(txLog2->txId_, addr, &currNode);
+
+    // 移动数据节点，从当前的至 UNCONFIRM_TX_YMD
+    _updateTxNodeYmd(addr, &currNode, UNCONFIRM_TX_YMD);
+    _getAddressTxNode(txLog2->txId_, addr, &currNode);
+    assert(currNode.ymd_ == UNCONFIRM_TX_YMD);
 
     // 反确认
     _unconfirmAddressTxNode(&currNode, addr);
@@ -2719,6 +2628,14 @@ bool Parser::tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId) {
         txLog2->type_ == LOG2TYPE_TX_REJECT)) {
     LOG_FATAL("invalid type: %d", txLog2->type_);
     return false;
+  }
+
+  //
+  // accept: 我们把未确认的交易都设置为未来时间: 2030-01-01
+  //
+  if (txLog2->type_ == LOG2TYPE_TX_ACCEPT) {
+    txLog2->ymd_ = UNCONFIRM_TX_YMD;
+    txLog2->maxBlkTimestamp_ = UNCONFIRM_TX_TIMESTAMP;
   }
 
   LOG_INFO("process txlog2(%c), logId: %d, type: %d, "

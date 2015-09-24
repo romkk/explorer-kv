@@ -1586,7 +1586,137 @@ void Parser::removeUnconfirmedTxPool(class TxLog2 *txLog2) {
   dbExplorer_.updateOrThrowEx(sql, 1);
 }
 
+//// 更新交易的 YMD
+//void Parser::_updateTxYmd(const uint256 &hash, const int32_t targetYmd) {
+//  string sql;
+//  int64_t txId = 0;
+//  string txHex;
+//  CTransaction tx;
+//  LOG_INFO("update tx %s ymd to %d", hash.ToString().c_str(), targetYmd);
+//
+//  // find raw tx hex & id
+//  txInfoCache_.getTxInfo(dbExplorer_, hash, &txId, &txHex);
+//  if (!DecodeHexTx(tx, txHex)) {
+//    THROW_EXCEPTION_DBEX("TX decode failed, hex: %s", txHex.c_str());
+//  }
+//
+//  //
+//  // 更新交易所对应的地址交易节点
+//  //
+//  auto addressBalance = _getTxAddressBalance(txId, hash, tx);
+//  for (auto &it : *addressBalance) {
+//    const int64_t addrID = it.first;
+//    LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
+//    AddressTxNode node;
+//
+//    // 更新节点日期
+//    _getAddressTxNode(txId, addr, &node);
+//    _updateTxNodeYmd(addr, &node, targetYmd);
+//
+//    // 确保后方节点日期大于等于当前节点
+//    while (1) {
+//      _getAddressTxNode(txId, addr, &node);
+//
+//      // 无后方节点 或 后方节点日期大于等于当前，则无需移动节点
+//      if (node.nextYmd_ == 0 || node.nextYmd_ >= node.ymd_) {
+//        break;
+//      }
+//      assert(node.nextYmd_ != 0 && node.nextYmd_ < node.ymd_);
+//      // 向后移动节点
+//      moveBackwardAddressTxNode(addr, &node);
+//    }
+//  }
+//
+//  //
+//  // 更新交易自身
+//  //
+//  sql = Strings::Format("UPDATE `txs_%04d` SET `ymd`=%d WHERE `tx_id`=%lld",
+//                        tableIdx_Tx(txId), targetYmd, txId);
+//  dbExplorer_.updateOrThrowEx(sql, 1);
+//}
+//
+////
+//// 更新节点的YMD
+//// 仅更新前后指向的节点的 ymd，和地址的 ymd。由于此操作仅在确认交易时碰到，所以不会影响
+//// 地址的 last_confirmed_tx_id / last_confirmed_tx_ymd
+////
+//void Parser::_updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node,
+//                              const int32_t targetYmd) {
+//  string sql;
+//  assert(node->ymd_ != targetYmd);
+//
+//  //
+//  // 修改自己本身信息
+//  //
+//  sql = Strings::Format("UPDATE `address_txs_%d` SET `ymd`=%d "
+//                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+//                        tableIdx_AddrTxs(node->ymd_),
+//                        targetYmd, node->addressId_, node->txId_);
+//  dbExplorer_.updateOrThrowEx(sql , 1);
+//
+//  //
+//  // 变更前向节点的后续指向
+//  //
+//  if (node->prevTxId_ > 0) {
+//    sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d "
+//                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+//                          tableIdx_AddrTxs(node->prevYmd_),
+//                          targetYmd, node->addressId_, node->prevTxId_);
+//    dbExplorer_.updateOrThrowEx(sql , 1);
+//  } else {
+//    // 变更地址的头交易信息，没有前向节点则说明当前节点就是头节点
+//    sql = Strings::Format("UPDATE `addresses_%04d` SET "
+//                          " `begin_tx_ymd`=%d WHERE `id`=%lld ",
+//                          tableIdx_Addr(addr->addrId_), targetYmd, addr->addrId_);
+//    dbExplorer_.updateOrThrowEx(sql , 1);
+//    addr->beginTxYmd_ = targetYmd;
+//  }
+//
+//  //
+//  // 变更后向节点的前向指向
+//  //
+//  if (node->nextTxId_ > 0) {
+//    // 涉及指向，不涉及金额变化
+//    sql = Strings::Format("UPDATE `address_txs_%d` SET `prev_ymd`=%d "
+//                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+//                          tableIdx_AddrTxs(node->nextYmd_),
+//                          targetYmd, node->addressId_, node->nextTxId_);
+//    dbExplorer_.updateOrThrowEx(sql , 1);
+//  } else {
+//    // 变更地址的尾交易信息，没有后向节点则说明当前节点就是尾节点
+//    sql = Strings::Format("UPDATE `addresses_%04d` SET "
+//                          " `end_tx_ymd`=%d WHERE `id`=%lld ",
+//                          tableIdx_Addr(addr->addrId_), targetYmd, addr->addrId_);
+//    dbExplorer_.updateOrThrowEx(sql , 1);
+//    addr->endTxYmd_ = targetYmd;
+//  }
+//
+//  //
+//  // 变更日期导致记录跨表，需要移动数据至新表中
+//  //
+//  if (tableIdx_AddrTxs(targetYmd) != tableIdx_AddrTxs(node->ymd_)) {
+//    // 插入记录至新表
+//    const string fields = "`address_id`, `tx_id`, `tx_height`, `total_received`, "
+//    "`balance_diff`, `balance_final`, `idx`, `ymd`, `prev_ymd`, "
+//    "`prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`";
+//    sql = Strings::Format("INSERT INTO `address_txs_%d` (%s) "
+//                          " SELECT %s FROM `address_txs_%d` "
+//                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+//                          tableIdx_AddrTxs(targetYmd), fields.c_str(),
+//                          tableIdx_AddrTxs(node->ymd_), fields.c_str(),
+//                          node->addressId_, node->txId_);
+//    dbExplorer_.updateOrThrowEx(sql, 1);
+//
+//    // 删除旧记录
+//    sql = Strings::Format("DELETE FROM `address_txs_%d` "
+//                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
+//                          tableIdx_AddrTxs(node->ymd_), node->addressId_, node->txId_);
+//    dbExplorer_.updateOrThrowEx(sql, 1);
+//  }
+//}
+
 // 交换相邻节点，当前节点前移，移动的节点目前仅限于未确认的节点
+// 交换节点并不能保障日期是顺序的，可能造成日期乱序
 void Parser::_switchAddressTxNode(LastestAddressInfo *addr,
                                   AddressTxNode *prev, AddressTxNode *curr) {
   //
@@ -1769,18 +1899,20 @@ void Parser::_setTxAddressBalance(class TxLog2 *txLog2,
   addressBalanceCache_[txLog2->txHash_] = addressBalance;
 
   // 读取一次：更新tx的最后读取时间
-  _getTxAddressBalance(txLog2);
+  _getTxAddressBalance(txLog2->txId_, txLog2->txHash_, txLog2->tx_);
 }
 
 // 获取tx对应各个地址的余额变更情况
-map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
+map<int64_t, int64_t> *Parser::_getTxAddressBalance(const int64_t txID,
+                                                    const uint256 &txHash,
+                                                    const CTransaction &tx) {
   // 存放每个tx的读取时间
   static map<uint256, time_t> txsTime_;
 
-  txsTime_[txLog2->txHash_] = time(nullptr);
+  txsTime_[txHash] = time(nullptr);
 
-  if (addressBalanceCache_.find(txLog2->txHash_) != addressBalanceCache_.end()) {
-    return &(addressBalanceCache_[txLog2->txHash_]);
+  if (addressBalanceCache_.find(txHash) != addressBalanceCache_.end()) {
+    return &(addressBalanceCache_[txHash]);
   }
 
   map<int64_t/* addrID */, int64_t/*  balance diff */> addressBalance;
@@ -1794,8 +1926,8 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
   //
   // vin
   //
-  if (!txLog2->tx_.IsCoinBase()) {
-    for (auto &in : txLog2->tx_.vin) {
+  if (!tx.IsCoinBase()) {
+    for (auto &in : tx.vin) {
       uint256 prevHash = in.prevout.hash;
       int64_t prevTxId = txHash2Id(dbExplorer_, prevHash);
       int32_t prevPos  = (int32_t)in.prevout.n;
@@ -1821,14 +1953,14 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
   //
   // 提取涉及到的所有地址
   n = -1;
-  for (auto &out : txLog2->tx_.vout) {
+  for (auto &out : tx.vout) {
     n++;
     txnouttype type;
     vector<CTxDestination> addresses;
     int nRequired;
     if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
       LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
-               txLog2->txId_, txLog2->tx_.GetHash().ToString().c_str(), n);
+               txID, txHash.ToString().c_str(), n);
       continue;
     }
     for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
@@ -1840,7 +1972,7 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
   map<string, int64_t> addrMap;
   GetAddressIds(dbExplorer_, allAddresss, addrMap);
 
-  for (auto &out : txLog2->tx_.vout) {
+  for (auto &out : tx.vout) {
     txnouttype type;
     vector<CTxDestination> addresses;
     int nRequired;
@@ -1856,7 +1988,7 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
   }
 
   // 设置缓存
-  addressBalanceCache_[txLog2->txHash_] = addressBalance;
+  addressBalanceCache_[txHash] = addressBalance;
 
   //
   // 删掉过期的数据
@@ -1887,8 +2019,8 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(class TxLog2 *txLog2) {
     assert(addressBalanceCache_.size() == txsTime_.size());
   }
 
-  assert(addressBalanceCache_.count(txLog2->txHash_) != 0);
-  return &(addressBalanceCache_[txLog2->txHash_]);
+  assert(addressBalanceCache_.count(txHash) != 0);
+  return &(addressBalanceCache_[txHash]);
 }
 
 int32_t prevYmd(const int32_t ymd) {
@@ -2042,7 +2174,7 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
   string sql;
 
   // 拿到关联地址的余额变更记录，可能需要调整交易链
-  auto addressBalance = _getTxAddressBalance(txLog2);
+  auto addressBalance = _getTxAddressBalance(txLog2->txId_, txLog2->txHash_, txLog2->tx_);
 
   for (auto &it : *addressBalance) {
     const int64_t addrID       = it.first;
@@ -2066,7 +2198,7 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
       }
       // 向前移动本节点
       moveForwardAddressTxNode(addr, &currNode);
-    };
+    }
     // 最后一个确认的ymd必然小于等于当前即将确认的ymd
     assert(addr->lastConfirmedTxYmd_ <= currNode.ymd_);
 
@@ -2166,7 +2298,7 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
   string sql;
 
   // 拿到关联地址的余额变更记录，可能需要调整交易链
-  auto addressBalance = _getTxAddressBalance(txLog2);
+  auto addressBalance = _getTxAddressBalance(txLog2->txId_, txLog2->txHash_, txLog2->tx_);
 
   for (auto &it : *addressBalance) {
     const int64_t addrID       = it.first;

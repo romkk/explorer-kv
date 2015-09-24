@@ -290,7 +290,9 @@ private:
   bool hasAccepted(class TxLog2 *txLog2);
 
   // 获取tx对应各个地址的余额变更情况
-  map<int64_t, int64_t> *_getTxAddressBalance(class TxLog2 *txLog2);
+  map<int64_t, int64_t> *_getTxAddressBalance(const int64_t txID,
+                                              const uint256 &txHash,
+                                              const CTransaction &tx);
   void _setTxAddressBalance(class TxLog2 *txLog2, const map<int64_t, int64_t> &addressBalanceCache);
 
 
@@ -308,6 +310,10 @@ private:
   // 未确认交易池
   void addUnconfirmedTxPool   (class TxLog2 *txLog2);
   void removeUnconfirmedTxPool(class TxLog2 *txLog2);
+
+//  // 更新交易 / 节点的 YMD
+//  void _updateTxYmd(const uint256 &hash, const int32_t targetYmd);
+//  void _updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node, const int32_t targetYmd);
 
   // 更新记录至目标YMD
   void _changeYmdAddressTxNode_R(const LastestAddressInfo *addr,

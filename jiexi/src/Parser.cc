@@ -668,6 +668,9 @@ void Parser::run() {
   string blockHash;  // 目前仅用在URL回调上
   int64_t lastTxLog2Id = 0;
 
+  // 检测 address_txs_<YYYYMM> 是否存在:  UNCONFIRM_TX_TIMESTAMP(2030-01-01)
+  checkTableAddressTxs(UNCONFIRM_TX_TIMESTAMP);
+
   while (running_) {
     try {
       lastTxLog2Id = getLastTxLog2Id();
@@ -1660,7 +1663,7 @@ void Parser::_updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node,
                         " SELECT %s FROM `address_txs_%d` "
                         " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                         tableIdx_AddrTxs(targetYmd),  fields1.c_str(),
-                        tableIdx_AddrTxs(node->ymd_), fields2.c_str(),
+                        fields2.c_str(), tableIdx_AddrTxs(node->ymd_),
                         node->addressId_, node->txId_);
   dbExplorer_.updateOrThrowEx(sql, 1);
 
@@ -1980,6 +1983,10 @@ map<int64_t, int64_t> *Parser::_getTxAddressBalance(const int64_t txID,
 }
 
 int32_t prevYmd(const int32_t ymd) {
+  if (ymd == UNCONFIRM_TX_YMD) {
+    return atoi(date("%Y%m%d").c_str());  // 若为 UNCONFIRM_TX_YMD, 则为当前天
+  }
+
   // 转为时间戳
   const string s = Strings::Format("%d", ymd) + " 00:00:00";
   const time_t t = str2time(s.c_str(), "%Y%m%d %H:%M:%S");

@@ -92,7 +92,7 @@ class Tx {
                         ret.prev_out = {        //omit `spent` and `script`
                             tx_index: r.prev_tx_id,
                             //type: null,     //tbd
-                            addr: r.prev_address.split(','),
+                            addr: r.prev_address.split(/[,|]/),     //地址可能以逗号或者竖线分割
                             value: r.prev_value,
                             n: r.prev_position
                         };
@@ -114,7 +114,7 @@ class Tx {
                     ret.spent = r.spent_tx_id != 0;
                     ret.tx_index = r.spent_tx_id || null;
                     //ret.type = null;
-                    ret.addr = r.address.split(',');
+                    ret.addr = r.prev_address.split(/[,|]/);     //地址可能以逗号或者竖线分割
                     ret.value = r.value;
                     ret.n = r.position;
                     ret.script = r.output_script_hex;

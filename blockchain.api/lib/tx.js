@@ -114,7 +114,7 @@ class Tx {
                     ret.spent = r.spent_tx_id != 0;
                     ret.tx_index = r.spent_tx_id || null;
                     //ret.type = null;
-                    ret.addr = r.prev_address.split(/[,|]/);     //地址可能以逗号或者竖线分割
+                    ret.addr = r.address.split(/[,|]/);     //地址可能以逗号或者竖线分割
                     ret.value = r.value;
                     ret.n = r.position;
                     ret.script = r.output_script_hex;
@@ -202,7 +202,7 @@ class Tx {
                 });
         });
     }
-
+kk
     static multiGrab(ids, useCache = true) {
         if (!ids.length) {
             return Promise.resolve([]);

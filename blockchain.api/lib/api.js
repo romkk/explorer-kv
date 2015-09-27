@@ -48,7 +48,7 @@ module.exports = {
         try {
             text = new Buffer(tx.inputs[0].script, 'hex').toString('utf8');
         } catch (err) {
-            return next(err);
+            return err;
         }
         var addr = tx.out[0].addr[0];
 

@@ -11,6 +11,9 @@ module.exports = (server) => {
         req.checkQuery('fulltx', 'should be boolean').optional().isBoolean();
         req.sanitize('fulltx').toBoolean(true);
 
+        req.checkQuery('simplify', 'should be boolean').optional().isBoolean();
+        req.sanitize('simplify').toBoolean(true);
+
         req.checkQuery('offset', 'should be a valid number').optional().isNumeric();
         req.sanitize('offset').toInt();
 
@@ -31,6 +34,15 @@ module.exports = (server) => {
         } catch (err) {
             res.send(new restify.ResourceNotFoundError('Block not found'));
             return next();
+        }
+
+        //monkey patch: simplify tx
+        if (req.params.fulltx && req.params.simplify) {
+            blk.tx = blk.tx.map(t => {
+                t.inputs = t.inputs.map(i => i.prev_out);
+                t.out = t.out.map(i => _.omit(i, 'script', 'script_asm'));
+                return t;
+            });
         }
         
         let nextBlock = await Block.getNextBlock(blk.height, blk.chain_id, !req.params.skipcache);

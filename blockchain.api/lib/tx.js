@@ -202,7 +202,7 @@ class Tx {
                 });
         });
     }
-kk
+
     static multiGrab(ids, useCache = true) {
         if (!ids.length) {
             return Promise.resolve([]);

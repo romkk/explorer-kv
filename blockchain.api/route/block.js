@@ -39,7 +39,7 @@ module.exports = (server) => {
         //monkey patch: simplify tx
         if (req.params.fulltx && req.params.simplify) {
             blk.tx = blk.tx.map(t => {
-                t.inputs = t.inputs.map(i => i.prev_out);
+                t.inputs = t.inputs.map(i => _.pick(i, 'prev_out'));
                 t.out = t.out.map(i => _.omit(i, 'script', 'script_asm'));
                 return t;
             });

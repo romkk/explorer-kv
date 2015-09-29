@@ -142,7 +142,7 @@ class AddressTxList {
         var specifiedDate = +moment.utc(this._ts * 1000).format('YYYYMMDD');
         var start = this._addr.begin_tx_ymd;
 
-        if (start == 203001) {      // 若开始为2030，则无已确认的交易
+        if (start == 20300101) {      // 若开始为2030，则无已确认的交易
             return null;
         }
 
@@ -151,7 +151,7 @@ class AddressTxList {
         //通过 max 和 min，排除临时表
         var table = Address.getAddressToTxTable(this._order === 'desc' ? Math.max(start, Math.min(end, specifiedDate)) : Math.min(end, Math.max(start, specifiedDate)));
 
-        assert(table != UNCONFIRMED_TABLE, '表不应为临时表');
+        assert(table != UNCONFIRMED_TABLE, `表 ${table} 不应为临时表`);
 
         if (table == null) {        // 不存在
             return null;

@@ -33,12 +33,14 @@ ADD v0.10.2.tar.gz /root/source/v0.10.2.tar.gz
 ADD bitcoind-hubnode-v0.10.2.patch  /root/source/bitcoind-hubnode-v0.10.2.patch
 ADD bitcoind-explorer-v0.10.2.patch /root/source/bitcoind-explorer-v0.10.2.patch
 ADD bitcoind-bm-rpc-v0.10.2.patch   /root/source/bitcoind-bm-rpc-v0.10.2.patch
+ADD bitcoind-IsDust1000.patch       /root/source/bitcoind-IsDust1000.patch
 
 RUN cp -r /root/source/v0.10.2.tar.gz/bitcoin-0.10.2 /root/source/bitcoin-0.10.2
 RUN cd /root/source/bitcoin-0.10.2 \
    && patch -p1 < ../bitcoind-hubnode-v0.10.2.patch \
    && patch -p1 < ../bitcoind-explorer-v0.10.2.patch \
    && patch -p1 < ../bitcoind-bm-rpc-v0.10.2.patch \
+   && patch -p1 < ../bitcoind-IsDust1000.patch \
    && ./autogen.sh \
    && ./configure --without-miniupnpc --disable-wallet \
    && make -j4

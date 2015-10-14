@@ -9,11 +9,30 @@ var Address = require('../lib/address');
 var Block = require('../lib/block');
 var validators = require('../lib/custom_validators');
 var sb = require('../lib/ssdb')();
+var validate = require('../lib/valid_json');
+var bitcoind = require('../lib/bitcoind');
+var isValidAddress = require('../lib/custom_validators').isValidAddress;
 
 module.exports = (server) => {
     server.get('/unconfirmed-transactions', async (req, res, next) => {
-        var txHashList = await mysql.list(`select tx_hash from 0_unconfirmed_txs order by position asc`, ['tx_hash']);
-        var txs = await Tx.multiGrab(txHashList, !req.params.skipcache);
+        req.checkQuery('offset', 'should be a valid number').optional().isNumeric();
+        req.sanitize('offset').toInt();
+
+        req.checkQuery('limit', 'should be between 1 and 50').optional().isNumeric().isInt({ max: 200, min: 1});
+        req.sanitize('limit').toInt();
+
+        let errors = req.validationErrors();
+        if (errors) {
+            return next(new restify.InvalidArgumentError({
+                message: errors
+            }));
+        }
+
+        let offset = _.get(req, 'params.offset', 0);
+        let limit = _.get(req, 'params.limit', 50);
+
+        let txHashList = await mysql.list(`select tx_hash from 0_unconfirmed_txs order by position asc limit ?, ?`, 'tx_hash', [offset, limit]);
+        let txs = await Tx.multiGrab(txHashList, !req.params.skipcache);
         res.send(_.compact(txs));
         next();
     });
@@ -95,6 +114,26 @@ module.exports = (server) => {
         res.send({
             unspent_outputs: unspent,
             n_tx: count
+        });
+        next();
+    });
+
+    server.post('/verifymessage', validate('verifymessage'), async (req, res, next) => {
+        if (!isValidAddress(req.body.address)) {
+            res.send(new restify.InvalidArgumentError('Invalid address'));
+            return next();
+        }
+
+        let result;
+        try {
+            result = await bitcoind('verifymessage', req.body.address, req.body.signature, req.body.message);
+        } catch (err) {
+            res.send(new restify.InvalidArgumentError(err.response.body.error.message));
+            return next();
+        }
+
+        res.send({
+            valid: result
         });
         next();
     });

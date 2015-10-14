@@ -26,20 +26,43 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/thread.hpp>
 
-static std::vector<std::string> &split(const std::string &s, char delim,
-                                       std::vector<std::string> &elems) {
+static std::vector<std::string> &split(const std::string &s, const char delim,
+                                       std::vector<std::string> &elems,
+                                       const int32_t limit) {
   std::stringstream ss(s);
   std::string item;
   while (std::getline(ss, item, delim)) {
     elems.push_back(item);
+    if (limit != -1 && elems.size() == limit) {
+      break;
+    }
   }
   return elems;
 }
 
-std::vector<std::string> split(const std::string &s, char delim) {
+std::vector<std::string> split(const std::string &s, const char delim) {
   std::vector<std::string> elems;
-  split(s, delim, elems);
+  split(s, delim, elems, -1/* unlimit */);
   return elems;
+}
+
+std::vector<std::string> split(const std::string &s, const char delim,
+                               const int32_t limit) {
+  std::vector<std::string> elems;
+  split(s, delim, elems, limit);
+  return elems;
+}
+
+std::string implode(const std::vector<std::string> &arr, const std::string &glue) {
+  string s;
+  if (arr.size() == 0) {
+    return s;
+  }
+  for (const auto &it : arr) {
+    s += it + glue;
+  }
+  s.resize(s.length() - glue.length());  // remove last glue
+  return s;
 }
 
 int32_t HexToDecLast2Bytes(const string &hex) {
@@ -146,6 +169,96 @@ int64_t txHash2Id(MySQLConnection &db, const uint256 &txHash) {
   return atoi64(row[0]);
 }
 
+string getTxHexByHash(MySQLConnection &db, const uint256 &txHash) {
+  MySQLResult res;
+  char **row;
+  string sql;
+
+  const string hashStr = txHash.ToString();
+  sql = Strings::Format("SELECT `hex` FROM `raw_txs_%04d` WHERE `tx_hash`='%s'",
+                        HexToDecLast2Bytes(hashStr) % 64, hashStr.c_str());
+  db.query(sql, res);
+  if (res.numRows() != 1) {
+    THROW_EXCEPTION_DBEX("can't find rawtx: %s", hashStr.c_str());
+  }
+  row = res.nextRow();
+  return string(row[0]);
+}
+
+int64_t insertRawBlock(MySQLConnection &db, const CBlock &blk, const int32_t height) {
+  string sql;
+  MySQLResult res;
+  char **row = nullptr;
+  const uint256 blockHash = blk.GetHash();
+
+  // check is exist
+  sql = Strings::Format("SELECT `id`,`block_hash` FROM `0_raw_blocks` "
+                        " WHERE `block_hash` = '%s' ",
+                        blockHash.ToString().c_str());
+  db.query(sql, res);
+  if (res.numRows() == 1) {
+    row = res.nextRow();
+    assert(atoi(row[1]) == height);
+    return atoi64(row[0]);
+  }
+
+  //
+  // update chain_id, 从最大的 chain_id 记录向上递增
+  // 0_raw_blocks.chain_id 与 0_blocks.chain_id 同一个块的 chain_id 不一定一致
+  //
+  sql = Strings::Format("SELECT `id` FROM `0_raw_blocks` "
+                        " WHERE `block_height` = %lld ORDER BY `chain_id` DESC ",
+                        height);
+  db.query(sql, res);
+  while ((row = res.nextRow()) != nullptr) {
+    const string sql2 = Strings::Format("UPDATE `0_raw_blocks` SET `chain_id` = `chain_id` + 1"
+                                        " WHERE `id` = %lld ", atoi64(row[0]));
+    db.updateOrThrowEx(sql2, 1);
+  }
+
+  // insert raw
+  const string blockHex = EncodeHexBlock(blk);
+  sql = Strings::Format("INSERT INTO `0_raw_blocks` (`block_hash`, `block_height`,"
+                        " `chain_id`, `hex`, `created_at`)"
+                        " VALUES ('%s', %d, '0', '%s', '%s')",
+                        blockHash.ToString().c_str(),
+                        height, blockHex.c_str(), date("%F %T").c_str());
+  db.updateOrThrowEx(sql, 1);
+
+  return (int64_t)db.getInsertId();
+}
+
+int64_t insertRawTx(MySQLConnection &db, const CTransaction &tx) {
+  string sql;
+  MySQLResult res;
+  const uint256 txHash = tx.GetHash();
+  const string  txHashStr = txHash.ToString();
+
+  // TODO: 将最近使用的 txhash 进行缓存，有利于当新块到来时，避免执行大量 select SQL语句
+  // check is exist
+  sql = Strings::Format("SELECT `id` FROM `raw_txs_%04d` WHERE `tx_hash`='%s'",
+                        HexToDecLast2Bytes(txHashStr) % 64, txHashStr.c_str());
+  db.query(sql, res);
+  if (res.numRows() == 1) {
+    char **row = res.nextRow();
+    return atoi64(row[0]);
+  }
+
+  // insert raw
+  const string txHex = EncodeHexTx(tx);
+  const string tableName = Strings::Format("raw_txs_%04d", HexToDecLast2Bytes(txHashStr) % 64);
+  sql = Strings::Format("INSERT INTO `%s` (`id`, `tx_hash`, `hex`, `created_at`) "
+                        " VALUES ( "
+                        " (SELECT IFNULL(MAX(`id`), 0) + 1 FROM `%s` as t1), "
+                        " '%s', '%s', '%s');",
+                        tableName.c_str(), tableName.c_str(),
+                        txHashStr.c_str(), txHex.c_str(), date("%F %T").c_str());
+  db.updateOrThrowEx(sql, 1);
+
+  return (int64_t)db.getInsertId();
+}
+
+
 // 回调块解析URL
 void callBlockRelayParseUrl(const string &blockHash) {
   string url = Config::GConfig.get("block.relay.parse.url", "");
@@ -155,4 +268,50 @@ void callBlockRelayParseUrl(const string &blockHash) {
 
   LOG_INFO("call block relay parse url: %s", url.c_str());
   boost::thread t(curlCallUrl, url); // thread runs free
+}
+
+string EncodeHexTx(const CTransaction& tx) {
+  CDataStream ssTx(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+  ssTx << tx;
+  return HexStr(ssTx.begin(), ssTx.end());
+}
+
+string EncodeHexBlock(const CBlock &block) {
+  CDataStream ssBlock(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+  ssBlock << block;
+  return HexStr(ssBlock.begin(), ssBlock.end());
+}
+
+bool DecodeHexTx(CTransaction& tx, const std::string& strHexTx)
+{
+  if (!IsHex(strHexTx))
+    return false;
+
+  vector<unsigned char> txData(ParseHex(strHexTx));
+  CDataStream ssData(txData, SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+  try {
+    ssData >> tx;
+  }
+  catch (const std::exception &) {
+    return false;
+  }
+
+  return true;
+}
+
+bool DecodeHexBlk(CBlock& block, const std::string& strHexBlk)
+{
+  if (!IsHex(strHexBlk))
+    return false;
+
+  std::vector<unsigned char> blockData(ParseHex(strHexBlk));
+  CDataStream ssBlock(blockData, SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+  try {
+    ssBlock >> block;
+  }
+  catch (const std::exception &) {
+    return false;
+  }
+
+  return true;
 }

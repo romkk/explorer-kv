@@ -140,13 +140,13 @@ query:
   // get mysql error
   error_no = mysql_errno(conn);
   if (error_no == 2006 || error_no == 2013) {
-    LOG_ERROR("exec sql failure, error_no: %u, error_info: %s",
-              error_no, mysql_error(conn));
+    LOG_ERROR("exec sql failure, error_no: %u, error_info: %s, sql: %s",
+              error_no, mysql_error(conn), sql);
   } else {
     // 非网络连接错误，均抛出异常
     THROW_EXCEPTION_EX(ENETDOWN,
-                       "exec sql failure, error_no: %u, error_info: %s",
-                       error_no, mysql_error(conn));
+                       "exec sql failure, error_no: %u, error_info: %s, sql: %s",
+                       error_no, mysql_error(conn), sql);
   }
 
   //
@@ -214,4 +214,38 @@ string MySQLConnection::getVariable(const char *name) {
   char **row = result.nextRow();
   LOG_DEBUG("getVariable %s=%s", row[0], row[1]);
   return string(row[1]);
+}
+
+// 批量插入函数
+bool multiInsert(MySQLConnection &db, const string &table,
+                 const string &fields, const vector<string> &values) {
+  string sqlPrefix = Strings::Format("INSERT INTO `%s`(%s) VALUES ",
+                                     table.c_str(), fields.c_str());
+
+  if (values.size() == 0 || fields.length() == 0 || table.length() == 0) {
+    return false;
+  }
+
+  string sql = sqlPrefix;
+  for (auto &it : values) {
+    sql += Strings::Format("(%s),", it.c_str());
+    // 超过 8MB
+    if (sql.length() > 8*1024*1024) {
+      sql.resize(sql.length() - 1);  // 去掉最后一个逗号
+      if (!db.execute(sql.c_str())) {
+        return false;
+      }
+      sql = sqlPrefix;
+    }
+  }
+
+  // 最后剩余的一批
+  if (sql.length() > sqlPrefix.length()) {
+    sql.resize(sql.length() - 1);  // 去掉最后一个逗号
+    if (!db.execute(sql.c_str())) {
+      return false;
+    }
+  }
+
+  return true;
 }

@@ -152,6 +152,7 @@ struct BlockInfo {
   uint256 blockHash_;
   CBlockHeader header_;
   int32_t height_;
+  int64_t currMaxTimestamp_;
   int64_t prevBlockId_;
   int64_t nextBlockId_;
   uint256 nextBlockHash_;
@@ -220,6 +221,22 @@ public:
   void append(const string &s, FILE *f);
 };
 
+///////////////////////////////  BlockTimestamp  /////////////////////////////////
+class BlockTimestamp {
+  int32_t limit_;
+  int64_t currMax_;
+  map<int32_t, int64_t> blkTimestamps_;  // height <-> timestamp
+
+public:
+  BlockTimestamp(const int32_t limit);
+  int64_t getMaxTimestamp() const;
+  void pushBlock(const int32_t height, const int64_t ts);
+  void popBlock();
+};
+
+
+/////////////////////////////////  PreParser  //////////////////////////////////
+
 class PreParser {
   atomic<bool> running_;
   int32_t curHeight_;
@@ -247,6 +264,9 @@ class PreParser {
 
   int32_t stopHeight_;
 
+  // 块最大时间戳
+  BlockTimestamp blkTs_;
+
   // parse block
   void parseBlock(const CBlock &blk, const int64_t blockId,
                   const int32_t height, const int32_t blockBytes,
@@ -258,7 +278,7 @@ class PreParser {
                      int64_t &valueIn, map<string, int64_t> &addressBalance);
   void parseTxSelf(const int32_t height, const int64_t txId, const uint256 &txHash,
                    const CTransaction &tx, const int64_t valueIn,
-                   const uint32_t ntime);
+                   const int32_t ymd);
   void handleAddressTxs(const map<string, int64_t> &addressBalance,
                         const int64_t txId, const int32_t ymd, const int32_t height);
 

@@ -11,6 +11,9 @@ module.exports = (server) => {
         req.checkQuery('fulltx', 'should be boolean').optional().isBoolean();
         req.sanitize('fulltx').toBoolean(true);
 
+        req.checkQuery('simplify', 'should be boolean').optional().isBoolean();
+        req.sanitize('simplify').toBoolean(true);
+
         req.checkQuery('offset', 'should be a valid number').optional().isNumeric();
         req.sanitize('offset').toInt();
 
@@ -30,7 +33,16 @@ module.exports = (server) => {
             blk = await Block.grab(req.params.blockIdentifier, req.params.offset, req.params.limit, req.params.fulltx, !req.params.skipcache);
         } catch (err) {
             res.send(new restify.ResourceNotFoundError('Block not found'));
-            console.log(err);
+            return next();
+        }
+
+        //monkey patch: simplify tx
+        if (req.params.fulltx && req.params.simplify) {
+            blk.tx = blk.tx.map(t => {
+                t.inputs = t.inputs.map(i => i.prev_out);
+                t.out = t.out.map(i => _.omit(i, 'script', 'script_asm'));
+                return t;
+            });
         }
         
         let nextBlock = await Block.getNextBlock(blk.height, blk.chain_id, !req.params.skipcache);
@@ -78,7 +90,7 @@ module.exports = (server) => {
         let offset = _.get(req, 'params.offset', 0);
         let limit = _.get(req, 'params.limit', 50);
         let sort = _.get(req, 'params.sort', 'desc');
-        let timestamp = _.get(req, 'params.timestamp', sort == 'desc' ? moment.utc().unix() + 3600 : 0);
+        let timestamp = _.get(req, 'params.timestamp', sort == 'desc' ? moment().unix() + 3600 : 0);
 
         res.send(await Block.getBlockList(timestamp, offset, limit, sort, !req.params.skipcache));
         next();

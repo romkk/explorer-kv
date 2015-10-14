@@ -92,7 +92,7 @@ class Tx {
                         ret.prev_out = {        //omit `spent` and `script`
                             tx_index: r.prev_tx_id,
                             //type: null,     //tbd
-                            addr: r.prev_address.split('|'),
+                            addr: r.prev_address.split(/[,|]/),     //地址可能以逗号或者竖线分割
                             value: r.prev_value,
                             n: r.prev_position
                         };
@@ -112,9 +112,9 @@ class Tx {
                 this.outputs = rows.map(r => {
                     let ret = {};
                     ret.spent = r.spent_tx_id != 0;
-                    ret.tx_index = r.tx_id;
+                    ret.tx_index = r.spent_tx_id || null;
                     //ret.type = null;
-                    ret.addr = r.address.split('|');
+                    ret.addr = r.address.split(/[,|]/);     //地址可能以逗号或者竖线分割
                     ret.value = r.value;
                     ret.n = r.position;
                     ret.script = r.output_script_hex;
@@ -143,11 +143,14 @@ class Tx {
     static make(id) {
         var idType = helper.paramType(id);
         var table = idType == helper.constant.HASH_IDENTIFIER ? Tx.getTableByHash(id) : Tx.getTableById(id);
-        var sql = `select tx_id, hash, height, block_timestamp, is_coinbase,
-                   version, lock_time, size, fee, total_in_value,
-                   total_out_value, inputs_count, outputs_count, created_at
-                   from ${table}
-                   where ${idType == helper.constant.HASH_IDENTIFIER ? `hash = ?` : `tx_id = ?`}`;
+        var sql = `select v1.tx_id, v1.hash, v1.height, v1.is_coinbase,
+                   v1.version, v1.lock_time, v1.size, v1.fee, v1.total_in_value,
+                   v1.total_out_value, v1.inputs_count, v1.outputs_count, v1.created_at,
+                   ifnull(v2.timestamp, -1) as block_timestamp
+                   from ${table} v1
+                     left join 0_blocks v2      -- 可能为临时块交易
+                       on v1.height = v2.height and v2.chain_id = 0
+                   where ${idType == helper.constant.HASH_IDENTIFIER ? `v1.hash = ?` : `v1.tx_id = ?`}`;
         return mysql.selectOne(sql, [id])
             .then((txRow) => {
                 if (txRow == null) {

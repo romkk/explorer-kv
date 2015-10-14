@@ -27,6 +27,9 @@ module.exports = (server) => {
 
         req.checkQuery('sort', 'should be desc or asc').optional().isIn(['desc', 'asc']);
 
+        req.checkQuery('simplify', 'should be boolean').optional().isBoolean();
+        req.sanitize('simplify').toBoolean(true);
+
         let errors = req.validationErrors();
 
         if (errors) {
@@ -44,6 +47,15 @@ module.exports = (server) => {
         let atList = new AddressTxList(addr.attrs, req.params.timestamp, req.params.sort);
         atList = await atList.slice(req.params.offset, req.params.limit);
         addr.txs = await Tx.multiGrab(atList.map(el => el.tx_id), !req.params.skipcache);
+
+        //monkey patch: simplify tx
+        if (req.params.simplify) {
+            addr.txs = addr.txs.map(t => {
+                t.inputs = t.inputs.map(i => _.pick(i, 'prev_out'));
+                t.out = t.out.map(i => _.omit(i, 'script', 'script_asm'));
+                return t;
+            });
+        }
 
         res.send(addr);
         next();

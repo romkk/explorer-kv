@@ -9,6 +9,10 @@ var _ = require('lodash');
 
 class Block {
     constructor(row) {
+        if (row.prev_block_hash == '0000000000000000000000000000000000000000000000000000000000000000') {
+            row.prev_block_hash = null;
+        }
+
         this.attrs = row;
     }
 
@@ -147,6 +151,10 @@ class Block {
     }
 
     static async multiGrab(idList, useCache) {
+        if (!idList.length) {
+            return [];
+        }
+
         if (!useCache) {
             return (await* idList.map(async (id) => {
                 try {
@@ -209,7 +217,7 @@ class Block {
 
     static async getBlockList(timestamp, offset, limit, order, useCache = true) {
         let sql = `select hash from 0_blocks
-                   where chain_id = 0 and timestamp ${order == 'desc' ? '<=' : '>='} ?
+                   where chain_id = 0 and curr_max_timestamp ${order == 'desc' ? '<=' : '>='} ?
                    order by height ${order}
                    limit ${offset}, ${limit}`;
         let hashList = await mysql.list(sql, 'hash', [timestamp]);

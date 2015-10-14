@@ -236,11 +236,16 @@ void AddrHandler::dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs,
     // address tx
     _saveAddrTx(it, fAddrTxs[tableIdx_AddrTxs(it->addrTx_.ymd_)], fwriter_);
 
-    // address
-    s = Strings::Format("%lld,%s,%lld,%lld,%lld,%lld,%d,%lld,%d,%s,%s",
+    // table.addresses_0000
+    //  `id`, `address`, `tx_count`, `total_received`, `total_sent`,
+    //  `unconfirmed_received`, `unconfirmed_sent`, `begin_tx_id`, `begin_tx_ymd`,
+    //  `end_tx_id`, `end_tx_ymd`, `last_confirmed_tx_id`,
+    //  `last_confirmed_tx_ymd`, `created_at`, `updated_at`
+    s = Strings::Format("%lld,%s,%lld,%lld,%lld,"
+                        "0,0,%lld,%d,%lld,%d,%lld,%d,%s,%s",
                         it->addrId_, it->addrStr_, it->idx_, it->totalReceived_,
                         it->totalSent_, it->beginTxId_, it->beginTxYmd_,
-                        it->endTxId_, it->endTxYmd_,
+                        it->endTxId_, it->endTxYmd_, it->endTxId_, it->endTxYmd_,
                         now.c_str(), now.c_str());
     fwriter_->append(s, fAddrs_[tableIdx_Addr(it->addrId_)]);
   }
@@ -555,10 +560,49 @@ void FileWriter::threadConsume() {
 
 
 
+///////////////////////////////  BlockTimestamp  /////////////////////////////////
+BlockTimestamp::BlockTimestamp(const int32_t limit): limit_(limit),currMax_(0) {
+}
+
+int64_t BlockTimestamp::getMaxTimestamp() const {
+  return currMax_;
+}
+
+void BlockTimestamp::pushBlock(const int32_t height, const int64_t ts) {
+  assert(blkTimestamps_.find(height) == blkTimestamps_.end());
+  blkTimestamps_[height] = ts;
+  if (ts > currMax_) {
+    currMax_ = ts;
+  } else {
+    LOG_WARN("block %lld timestamp(%lld) is less than curr max: %lld",
+             height, ts, currMax_);
+  }
+
+  // 检查数量限制，超出后移除首个元素
+  while (blkTimestamps_.size() > limit_) {
+    blkTimestamps_.erase(blkTimestamps_.begin());
+  }
+}
+
+void BlockTimestamp::popBlock() {
+  assert(blkTimestamps_.size() > 0);
+  // map 尾部的 key 最大，也意味着块最高
+  blkTimestamps_.erase(std::prev(blkTimestamps_.end()));
+
+  currMax_ = 0;
+  for (auto it : blkTimestamps_) {
+    if (currMax_ < it.second) {
+      currMax_ = it.second;
+    }
+  }
+}
+
+
+
 ////////////////////////////////////////////////////////////////////////////////
 //--------------------------------- PreParser ----------------------------------
 ////////////////////////////////////////////////////////////////////////////////
-PreParser::PreParser() {
+PreParser::PreParser(): blkTs_(2016) {
   stopHeight_  = (int32_t)Config::GConfig.getInt("raw.max.block.height", -1);
   filePreTx_   = Config::GConfig.get("pre.tx.output.file", "");
   filePreAddr_ = Config::GConfig.get("pre.address.output.file", "");
@@ -680,20 +724,26 @@ void PreParser::init() {
 void _saveBlock(BlockInfo &b, FILE *f, FileWriter *fwriter) {
   string line;
   // 保存当前Block, table.0_blocks, 字段顺序严格按照表顺序
-  // `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`,
+  // `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`, `curr_max_timestamp`,
   // `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
-  // `next_block_id`, `next_block_hash`, `chain_id`, `size`,
-  // `difficulty`, `tx_count`, `reward_block`, `reward_fees`, `relayed_by`, `created_at`
-  line = Strings::Format("%lld,%d,%s,%d,%s,%u,%u,%u,"
+  // `next_block_id`, `next_block_hash`, `chain_id`, `size`, `pool_difficulty`,
+  // `difficulty`, `difficulty_double`,`tx_count`,
+  // `reward_block`, `reward_fees`, `relayed_by`, `created_at`
+  double diffDobule = 0.0;
+  BitsToDifficulty(b.header_.nBits, diffDobule);
+  const uint64_t pdiff = TargetToPdiff(b.blockHash_);
+  
+  line = Strings::Format("%lld,%d,%s,%d,%s,%u,%lld,%u,%u,"
                          "%lld,%s,%lld,%s,"
-                         "%d,%d,%llu,%d,%lld,%lld,0,%s",
+                         "%d,%d,%llu,%llu,%f,%d,%lld,%lld,0,%s",
                          b.blockId_, b.height_, b.blockHash_.ToString().c_str(),
                          b.header_.nVersion, b.header_.hashMerkleRoot.ToString().c_str(),
-                         (uint32_t)b.header_.nTime, b.header_.nBits, b.header_.nNonce,
+                         (uint32_t)b.header_.nTime, b.currMaxTimestamp_, b.header_.nBits, b.header_.nNonce,
                          b.prevBlockId_, b.header_.hashPrevBlock.ToString().c_str(),
                          b.nextBlockId_, b.nextBlockHash_.ToString().c_str(),
-                         b.chainId_, b.size_, b.diff_, b.txCount_,
-                         b.rewardBlock_, b.rewardFee_, date("%F %T").c_str());
+                         b.chainId_, b.size_, pdiff, b.diff_, diffDobule,
+                         b.txCount_, b.rewardBlock_,
+                         b.rewardFee_, date("%F %T").c_str());
   fwriter->append(line, f);
 }
 
@@ -702,6 +752,8 @@ void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
                            const int32_t chainId) {
   CBlockHeader header = blk.GetBlockHeader();  // alias
 
+  blkTs_.pushBlock(height, header.GetBlockTime());
+
   BlockInfo cur;
   cur.blockId_   = blockId;
   cur.blockHash_ = blk.GetHash();
@@ -709,6 +761,7 @@ void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
   BitsToDifficulty(header.nBits, cur.diff_);
   cur.header_    = header;
   cur.height_    = height;
+  cur.currMaxTimestamp_ = blkTs_.getMaxTimestamp();
   cur.nextBlockHash_ = uint256();
   cur.nextBlockId_   = 0;
   cur.prevBlockId_   = 0;
@@ -822,7 +875,7 @@ void PreParser::parseTxInputs(const CTransaction &tx, const int64_t txId,
 
 void PreParser::parseTxSelf(const int32_t height, const int64_t txId, const uint256 &txHash,
                             const CTransaction &tx, const int64_t valueIn,
-                            const uint32_t nTime) {
+                            const int32_t ymd) {
   int64_t fee = 0;
   string s;
   const int64_t valueOut = tx.GetValueOut();
@@ -838,11 +891,11 @@ void PreParser::parseTxSelf(const int32_t height, const int64_t txId, const uint
   const string txHex = HexStr(ssTx.begin(), ssTx.end());
 
   // table.txs_xxxx
-  // `tx_id`, `hash`, `height`, `block_timestamp`,`is_coinbase`,
+  // `tx_id`, `hash`, `height`, `ymd`,`is_coinbase`,
   // `version`, `lock_time`, `size`, `fee`, `total_in_value`,
   // `total_out_value`, `inputs_count`, `outputs_count`, `created_at`
-  s = Strings::Format("%lld,%s,%d,%u,%d,%d,%u,%d,%lld,%lld,%lld,%d,%d,%s",
-                      txId, txHash.ToString().c_str(), height, nTime,
+  s = Strings::Format("%lld,%s,%d,%d,%d,%d,%u,%d,%lld,%lld,%lld,%d,%d,%s",
+                      txId, txHash.ToString().c_str(), height, ymd,
                       tx.IsCoinBase() ? 1 : 0, tx.nVersion, tx.nLockTime,
                       txHex.length()/2, fee, valueIn, valueOut,
                       tx.vin.size(), tx.vout.size(),
@@ -859,12 +912,13 @@ void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo,
 
   // table.address_txs_<yyyymm>
   // `address_id`, `tx_id`, `tx_height`, `total_received`, `balance_diff`,
-  // `balance_final`, `idx`, `prev_ymd`, `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`
+  // `balance_final`, `idx`, `ymd`, `prev_ymd`, `prev_tx_id`, `next_ymd`,
+  // `next_tx_id`, `created_at`
   line = Strings::Format("%lld,%lld,%d,%lld,%lld,%lld,%lld,"
-                         "%d,%lld,%d,%lld,%s",
+                         "%d,%d,%lld,%d,%lld,%s",
                          addrInfo->addrId_, t.txId_, t.txHeight_,
                          addrInfo->totalReceived_, t.balanceDiff_, t.balanceFinal_,
-                         addrInfo->idx_, t.prevYmd_, t.prevTxId_,
+                         addrInfo->idx_, t.ymd_, t.prevYmd_, t.prevTxId_,
                          t.nextYmd_, t.nextTxId_,
                          date("%F %T").c_str());
   fwriter->append(line, f);
@@ -951,11 +1005,13 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
   // ouputs
   txHandler_->addOutputs(tx, addrHandler_, height, addressBalance);
 
+  // 根据修正时间存储
+  const int32_t ymd = atoi(date("%Y%m%d", blkTs_.getMaxTimestamp()).c_str());
+
   // tx self
-  parseTxSelf(height, txId, txHash, tx, valueIn, nTime);
+  parseTxSelf(height, txId, txHash, tx, valueIn, ymd);
 
   // 处理地址变更
-  const int32_t ymd = atoi(date("%Y%m%d", nTime).c_str());
   handleAddressTxs(addressBalance, txId, ymd, height);
 }
 

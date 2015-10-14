@@ -10,61 +10,41 @@ var Block = require('../lib/block');
 var validators = require('../lib/custom_validators');
 var sb = require('../lib/ssdb')();
 var request = require('request-promise');
+let api = require('../lib/api');
 
 module.exports = server => {
-    server.get('/identify-block/:hash', async (req, res, next) => {
-        let rows = await mysql.query('select pool_id, name, key_words, coinbase_address from 0_pool');
-        var bag = {};
-        rows.forEach(r => {
-            if (!bag[r.name]) bag[r.name] = [];
-            try {
-                bag[r.name] = {
-                    id: r.pool_id,
-                    re: _.isEmpty(r.key_words) ? /^(\u0000)+$/ : new RegExp(r.key_words, 'i'),  //任何 coinbase 字符串都不可能全部是 0
-                    address: r.coinbase_address.split('|')
-                };
-            } catch (err) {
-                log(`[WARN] ${r.name} 正则表达式或地址初始化失败，请检查。`);
+    server.get('/identify-block-batch/:start/:end', async (req, res, next) => {
+        let start = Number(req.params.start),
+            end = Number(req.params.end);
+
+        for (; start <= end; start++) {
+            res.write(`block_id = ${start}\n`);
+            let info = await api.identifyBlock(start, !req.params.skipcache);
+            if (info.name != info.blk.relayed_by) {
+                mysql.query(`update 0_blocks set relayed_by = ? where hash = ?`, [info.id, info.blk.hash]);
+                sb.del(`blk_${info.blk.hash}`);
             }
+        }
 
-        });
+        res.end('done\n');
+        next();
+    });
 
+    server.get('/identify-block/:hash', async (req, res, next) => {
         var hash = req.params.hash;
+        var info = await api.identifyBlock(hash, !req.params.skipcache);
 
-        var blk;
-        try {
-            blk = await Block.grab(hash, 0, 1, true, !req.params.skipcache);
-        } catch (err) {
-            return next(new restify.ResourceNotFoundError('Block Not Found'));
+        if (info instanceof Error) {
+            res.send(info);
+            return next();
         }
 
-        if (!blk.tx.length) {
-            return next(new restify.ServiceUnavailableError('Block Not Available'));
+        if (info.name != info.blk.relayed_by) {
+            mysql.query(`update 0_blocks set relayed_by = ? where hash = ?`, [info.id, info.blk.hash]);
+            sb.del(`blk_${info.blk.hash}`);
         }
 
-        var [tx] = blk.tx;
-        var text;
-        try {
-            text = new Buffer(tx.inputs[0].script, 'hex').toString('utf8');
-        } catch (err) {
-            return next(err);
-        }
-        var addr = tx.out[0].addr[0];
-
-        // 查找矿池
-        var pool = _.findKey(bag, v => v.re.test(text) || v.address.includes(addr));
-
-        var id = pool ? bag[pool].id : 0;
-        var name = pool || 'Unknown';
-
-        if (name != blk.relayed_by) {
-            mysql.query(`update 0_blocks set relayed_by = ? where hash = ?`, [id, blk.hash]);
-            sb.del(`blk_${blk.hash}`);
-        }
-
-        res.send({
-            relayedBy: name
-        });
+        res.send({ relayedBy: info.name});
         next();
     });
 

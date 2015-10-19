@@ -105,6 +105,6 @@ inline bool RegTest() {
     return Params().NetworkID() == CChainParams::REGTEST;
 }
 
-int64_t GetBlockValue(int nHeight, int64_t nFees);
+int64_t GetBlockValue(int nHeight, const int64_t& nFees);
 
 #endif

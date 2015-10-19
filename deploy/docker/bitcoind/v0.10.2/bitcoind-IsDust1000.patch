@@ -1,0 +1,11 @@
+diff -uNr original/bitcoin-0.10.2/src/primitives/transaction.h bitcoin-0.10.2/src/primitives/transaction.h
+--- original/bitcoin-0.10.2/src/primitives/transaction.h	2015-05-16 16:37:27.000000000 +0800
++++ bitcoin-0.10.2/src/primitives/transaction.h	2015-10-11 16:40:12.000000000 +0800
+@@ -144,6 +144,7 @@
+         // need a CTxIn of at least 148 bytes to spend:
+         // so dust is a txout less than 546 satoshis 
+         // with default minRelayTxFee.
++        if (nValue <= 1000) { return true; }
+         size_t nSize = GetSerializeSize(SER_DISK,0)+148u;
+         return (nValue < 3*minRelayTxFee.GetFee(nSize));
+     }

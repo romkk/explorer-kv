@@ -54,6 +54,8 @@
 #include <condition_variable>
 #include <functional>
 
+#include <boost/filesystem.hpp>
+
 using std::string;
 using std::vector;
 using std::deque;
@@ -233,6 +235,8 @@ inline bool isLanIP(uint32 ip) {
   }
   return false;
 }
+
+bool tryCreateDirectory(const boost::filesystem::path& p);
 
 /**
  * String conversion utils

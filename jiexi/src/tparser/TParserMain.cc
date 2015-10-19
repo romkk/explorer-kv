@@ -41,17 +41,13 @@ void handler(int sig) {
 
 void usage() {
   string u = "Usage:\n\n";
-  u += "Normal:\n\ttparser -c \"tparser.conf\" -l \"tparser.log\"\n";
-  u += "Reverse:\n\ttparser -c \"tparser.conf\" -l \"tparser.log\" -r 12345678\n";
-  u += "\targs:\n";
-  u += "\t\t-r <stop txlog ID>   INT, stop txlog ID will be executed\n";
-  fprintf(stderr, u.c_str());
+  u += "\ttparser -c \"tparser.conf\" -l \"tparser.log\"\n";
+  fprintf(stderr, "%s", u.c_str());
 }
 
 int main(int argc, char **argv) {
   char *optLog  = NULL;
   char *optConf = NULL;
-  int64_t reverseEndID = 0;
   FILE *fdLog   = NULL;
   int c;
 
@@ -59,7 +55,7 @@ int main(int argc, char **argv) {
     usage();
     return 1;
   }
-  while ((c = getopt(argc, argv, "c:l:r:h")) != -1) {
+  while ((c = getopt(argc, argv, "c:l:h")) != -1) {
     switch (c) {
       case 'c':
         optConf = optarg;
@@ -67,8 +63,6 @@ int main(int argc, char **argv) {
       case 'l':
         optLog = optarg;
         break;
-      case 'r':
-        reverseEndID = atoi64(optarg);
         break;
       case 'h': default:
         usage();
@@ -128,15 +122,6 @@ int main(int argc, char **argv) {
     if (!gParser->init()) {
       LOG_FATAL("Parser init failed");
       exit(1);
-    }
-
-    if (reverseEndID > 0) {
-      string l = Strings::Format("using reverse mode, end txlog ID: %lld",
-                                 reverseEndID);
-      LOG_WARN("%s", l.c_str());
-      fprintf(stdout, l.c_str());
-      fprintf(stdout, "\n");
-      gParser->setReverseMode(reverseEndID);
     }
 
     gParser->run();

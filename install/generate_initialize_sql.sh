@@ -263,12 +263,14 @@ CREATE TABLE `0_blocks` (
   `reward_block` bigint(20) NOT NULL,
   `reward_fees` bigint(20) NOT NULL,
   `relayed_by` int(11) NOT NULL DEFAULT '0',
+  `bip_vote` varchar(10) NOT NULL DEFAULT '0',
   `created_at` datetime NOT NULL,
   PRIMARY KEY (`block_id`),
   UNIQUE KEY `block_hash` (`hash`),
   UNIQUE KEY `height_chain_id` (`height`,`chain_id`),
   KEY `curr_max_timestamp` (`curr_max_timestamp`),
-  KEY `relayed_by` (`relayed_by`)
+  KEY `relayed_by` (`relayed_by`),
+  KEY `bip_vote` (`bip_vote`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 echo "$blocks"

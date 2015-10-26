@@ -95,6 +95,7 @@ public:
 
   int64_t unconfirmedReceived_;
   int64_t unconfirmedSent_;
+  int64_t unconfirmedTxCount_;
 
   int32_t lastConfirmedTxYmd_;
   int64_t lastConfirmedTxId_;
@@ -110,7 +111,8 @@ public:
                      int64_t unconfirmedReceived, int64_t unconfirmedSent,
                      int32_t lastConfirmedTxYmd, int64_t lastConfirmedTxId,
                      int64_t totalReceived, int64_t totalSent,
-                     int64_t txCount, const char *address);
+                     int64_t txCount, int64_t unconfirmedTxCount,
+                     const char *address);
   LastestAddressInfo(const LastestAddressInfo &a);
 };
 

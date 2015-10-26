@@ -51,7 +51,8 @@ LastestAddressInfo::LastestAddressInfo(int64_t addrId,
                                        int64_t unconfirmedReceived, int64_t unconfirmedSent,
                                        int32_t lastConfirmedTxYmd, int64_t lastConfirmedTxId,
                                        int64_t totalReceived, int64_t totalSent,
-                                       int64_t txCount, const char *address) {
+                                       int64_t txCount, int64_t unconfirmedTxCount,
+                                       const char *address) {
   addrId_  = addrId;
 
   beginTxYmd_    = beginTxYmd;
@@ -61,6 +62,7 @@ LastestAddressInfo::LastestAddressInfo(int64_t addrId,
 
   unconfirmedReceived_ = unconfirmedReceived;
   unconfirmedSent_     = unconfirmedSent;
+  unconfirmedTxCount_  = unconfirmedTxCount;
 
   lastConfirmedTxYmd_ = lastConfirmedTxYmd;
   lastConfirmedTxId_  = lastConfirmedTxId;
@@ -84,6 +86,7 @@ LastestAddressInfo::LastestAddressInfo(const LastestAddressInfo &a) {
 
   unconfirmedReceived_ = a.unconfirmedReceived_;
   unconfirmedSent_     = a.unconfirmedSent_;
+  unconfirmedTxCount_  = a.unconfirmedTxCount_;
 
   lastConfirmedTxYmd_ = a.lastConfirmedTxYmd_;
   lastConfirmedTxId_  = a.lastConfirmedTxId_;
@@ -1334,7 +1337,7 @@ static LastestAddressInfo *_getAddressInfo(MySQLConnection &db, const int64_t ad
   if (it == gAddrTxCache.end()) {
     sql = Strings::Format("SELECT `begin_tx_ymd`,`begin_tx_id`,`end_tx_ymd`,`end_tx_id`,`total_received`,"
                           " `total_sent`,`tx_count`, `unconfirmed_received`, `unconfirmed_sent`, "
-                          " `last_confirmed_tx_id`, `last_confirmed_tx_ymd`, `address` "
+                          " `last_confirmed_tx_id`, `last_confirmed_tx_ymd`, `address`, `unconfirmed_tx_count` "
                           " FROM `%s` WHERE `id`=%lld ",
                           addrTableName.c_str(), addrID);
     db.query(sql, res);
@@ -1354,6 +1357,7 @@ static LastestAddressInfo *_getAddressInfo(MySQLConnection &db, const int64_t ad
                                       atoi64(row[4]),   // totalReceived
                                       atoi64(row[5]),   // totalSent
                                       atoi64(row[6]),   // totalCount
+                                      atoi64(row[12]),  // unconfirmedTxCount
                                       row[11]           // address
                                       );
 
@@ -1453,6 +1457,7 @@ void _accpetTx_insertAddressTxs(MySQLConnection &db, class TxLog2 *txLog2,
                           " `total_sent`     = `total_sent`     + %lld,"
                           " `unconfirmed_received` = `unconfirmed_received` + %lld,"
                           " `unconfirmed_sent`     = `unconfirmed_sent`     + %lld,"
+                          " `unconfirmed_tx_count` = `unconfirmed_tx_count` + 1, "
                           " `end_tx_ymd`=%d, `end_tx_id`=%lld, %s "
                           " `updated_at`='%s' WHERE `id`=%lld ",
                           addrTableName.c_str(),
@@ -1465,6 +1470,7 @@ void _accpetTx_insertAddressTxs(MySQLConnection &db, class TxLog2 *txLog2,
     addr->totalSent_     += balanceSent;
     addr->unconfirmedReceived_ += balanceReceived;
     addr->unconfirmedSent_     += balanceSent;
+    addr->unconfirmedTxCount_++;
     addr->endTxId_  = txLog2->txId_;
     addr->endTxYmd_ = txLog2->ymd_;
     addr->txCount_++;
@@ -2117,6 +2123,7 @@ void Parser::_confirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr
   sql = Strings::Format("UPDATE `addresses_%04d` SET "
                         " `unconfirmed_received` = `unconfirmed_received` - %lld,"
                         " `unconfirmed_sent`     = `unconfirmed_sent`     - %lld,"
+                        " `unconfirmed_tx_count` = `unconfirmed_tx_count` - 1, "
                         " `last_confirmed_tx_ymd`=%d, `last_confirmed_tx_id`=%lld, "
                         " `updated_at`='%s' WHERE `id`=%lld ",
                         tableIdx_Addr(addr->addrId_),
@@ -2126,6 +2133,7 @@ void Parser::_confirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr
 
   addr->unconfirmedReceived_ -= received;
   addr->unconfirmedSent_     -= sent;
+  addr->unconfirmedTxCount_--;
   addr->lastConfirmedTxId_  = node->txId_;
   addr->lastConfirmedTxYmd_ = node->ymd_;
 }
@@ -2230,6 +2238,7 @@ void Parser::_unconfirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *ad
   sql = Strings::Format("UPDATE `addresses_%04d` SET "
                         " `unconfirmed_received` = `unconfirmed_received` + %lld,"
                         " `unconfirmed_sent`     = `unconfirmed_sent`     + %lld,"
+                        " `unconfirmed_tx_count` = `unconfirmed_tx_count` + 1,  "
                         " `last_confirmed_tx_ymd`=%d, `last_confirmed_tx_id`=%lld, "
                         " `updated_at`='%s' WHERE `id`=%lld ",
                         tableIdx_Addr(addr->addrId_),
@@ -2239,8 +2248,9 @@ void Parser::_unconfirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *ad
                         date("%F %T").c_str(), addr->addrId_);
   dbExplorer_.updateOrThrowEx(sql, 1);
 
-  addr->unconfirmedReceived_ -= received;
-  addr->unconfirmedSent_     -= sent;
+  addr->unconfirmedReceived_ += received;
+  addr->unconfirmedSent_     += sent;
+  addr->unconfirmedTxCount_++;
   addr->lastConfirmedTxId_  = (node->prevTxId_ ? prevNode.txId_ : 0);
   addr->lastConfirmedTxYmd_ = (node->prevTxId_ ? prevNode.ymd_  : 0);
 }
@@ -2504,6 +2514,7 @@ void Parser::_removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node)
                         " `total_sent`     = `total_sent`     - %lld,"
                         " `unconfirmed_received` = `unconfirmed_received` - %lld,"
                         " `unconfirmed_sent`     = `unconfirmed_sent`     - %lld,"
+                        " `unconfirmed_tx_count` = `unconfirmed_tx_count` - 1, "
                         " `end_tx_ymd`=%d, `end_tx_id`=%lld, %s `updated_at`='%s' "
                         " WHERE `id`=%lld ",
                         tableIdx_Addr(addr->addrId_),
@@ -2519,6 +2530,7 @@ void Parser::_removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node)
   addr->totalSent_     -= sent;
   addr->unconfirmedReceived_ -= received;
   addr->unconfirmedSent_     -= sent;
+  addr->unconfirmedTxCount_--;
   addr->endTxYmd_ = node->prevYmd_;
   addr->endTxId_  = node->prevTxId_;
 }

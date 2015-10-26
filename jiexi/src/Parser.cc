@@ -2106,11 +2106,30 @@ void Parser::_confirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr
   string sql;
 
   //
+  // 获取前向节点，用于设置部分字段。已确认节点才会设置: `total_received`, `balance_final`
+  //
+  string sql2;
+  if (addr->lastConfirmedTxId_ != 0) {
+    assert(node->prevTxId_ == addr->lastConfirmedTxId_);
+
+    AddressTxNode lastConfirmedNode;
+    _getAddressTxNode(addr->lastConfirmedTxId_, addr, &lastConfirmedNode);
+    sql2 = Strings::Format("`total_received`=%lld,`balance_final`=%lld",
+                           lastConfirmedNode.totalReceived_ + (node->balanceDiff_ > 0 ? node->balanceDiff_ : 0),
+                           lastConfirmedNode.balanceFinal_ + node->balanceDiff_);
+  } else {
+    sql2 = Strings::Format("`total_received`=%lld,`balance_final`=%lld",
+                           (node->balanceDiff_ > 0 ? node->balanceDiff_ : 0),
+                           node->balanceDiff_);
+    assert(node->balanceDiff_ > 0);  // 首笔交易必须是进账
+  }
+
+  //
   // 更新 address_txs_<yyyymm>.tx_height
   //
-  sql = Strings::Format("UPDATE `address_txs_%d` SET `tx_height`=%d "
+  sql = Strings::Format("UPDATE `address_txs_%d` SET `tx_height`=%d,%s "
                         " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                        tableIdx_AddrTxs(node->ymd_), height,
+                        tableIdx_AddrTxs(node->ymd_), height, sql2.c_str(),
                         node->addressId_, node->txId_);
   dbExplorer_.updateOrThrowEx(sql, 1);
 
@@ -2218,7 +2237,8 @@ void Parser::_unconfirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *ad
   //
   // 更新 address_txs_<yyyymm>.tx_height
   //
-  sql = Strings::Format("UPDATE `address_txs_%d` SET `tx_height`=0 "
+  sql = Strings::Format("UPDATE `address_txs_%d` SET `tx_height`=0,"
+                        " `total_received`=0,`balance_final`=0 "
                         " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                         tableIdx_AddrTxs(node->ymd_),
                         node->addressId_, node->txId_);

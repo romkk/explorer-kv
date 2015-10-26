@@ -331,12 +331,11 @@ private:
   // 更新交易 / 节点的 YMD
   void _updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node, const int32_t targetYmd);
 
-  // 移动地址交易节点
-  void _switchAddressTxNode(LastestAddressInfo *addr,
-                            AddressTxNode *prevNode, AddressTxNode *currNode);
-  void moveForwardAddressTxNode (LastestAddressInfo *addr, AddressTxNode *node);
-  void moveBackwardAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node);
-
+  // 交换地址交易节点
+  void _switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
+                                       AddressTxNode *prev, AddressTxNode *curr);
+  void _confirmTx_MoveToFirstUnconfirmed(LastestAddressInfo *addr, AddressTxNode *node);
+  void _rejectTx_MoveToLastUnconfirmed(LastestAddressInfo *addr, AddressTxNode *node);
 
   void writeLastProcessTxlogTime();
 

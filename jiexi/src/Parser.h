@@ -21,6 +21,7 @@
 
 #include "Common.h"
 #include "MySQLConnection.h"
+#include "NotifyLog.h"
 #include "Log2Producer.h"
 #include "Util.h"
 
@@ -278,6 +279,9 @@ private:
   Inotify inotify_;
   thread watchNotifyThread_;
 
+  // 通知日志
+  NotifyProducer *notifyProducer_;
+
   void threadWatchNotifyFile();
 
   bool tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId);
@@ -340,6 +344,9 @@ private:
   void _rejectTx_MoveToLastUnconfirmed(LastestAddressInfo *addr, AddressTxNode *node);
 
   void writeLastProcessTxlogTime();
+
+  // 写入通知日志文件
+  void writeNotificationLogs(const map<int64_t, int64_t> &addressBalance, class TxLog2 *txLog2);
 
 public:
   Parser();

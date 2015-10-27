@@ -55,7 +55,24 @@ public:
 
 ///////////////////////////////  NotifyProducer  ///////////////////////////////
 class NotifyProducer {
+  // 通知文件的目录及游标
+  string dir_;
+  int lockFd_;
+  int32_t fileIndex_;
+  int64_t fileOffset_;
+  FILE *fileHandler_;
 
+  int64_t kFileMaxSize_;
+
+  // inotify 通知文件
+  string inotifyFile_;
+
+public:
+  NotifyProducer(const string &dir);
+  ~NotifyProducer();
+
+  void init();
+  void write(const string &lines);
 };
 
 #endif

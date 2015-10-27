@@ -529,7 +529,7 @@ void TxInfoCache::getTxInfo(MySQLConnection &db,
 /////////////////////////////////  Parser  ///////////////////////////////////
 Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
 running_(true), cache_(nullptr),
-unconfirmedTxsSize_(0), unconfirmedTxsCount_(0), blkTs_(2016)
+unconfirmedTxsSize_(0), unconfirmedTxsCount_(0), blkTs_(2016), notifyProducer_(nullptr)
 {
   // setup cache manager: SSDB
   cacheEnable_ = Config::GConfig.getBool("ssdb.enable", false);
@@ -541,6 +541,18 @@ unconfirmedTxsSize_(0), unconfirmedTxsCount_(0), blkTs_(2016)
   notifyFileLog2Producer_ = Config::GConfig.get("notify.log2producer.file");
   if (notifyFileLog2Producer_.empty()) {
     THROW_EXCEPTION_DBEX("empty config: notify.log2producer.file");
+  }
+
+  //
+  // notification.dir
+  //
+  {
+    string dir = Config::GConfig.get("notification.dir", "");
+    if (*(std::prev(dir.end())) == '/') {  // remove last '/'
+      dir.resize(dir.length() - 1);
+    }
+    notifyProducer_ = new NotifyProducer(dir);
+    notifyProducer_->init();
   }
 }
 
@@ -554,6 +566,11 @@ Parser::~Parser() {
 
   if (watchNotifyThread_.joinable()) {
     watchNotifyThread_.join();
+  }
+
+  if (notifyProducer_ != nullptr) {
+    delete notifyProducer_;
+    notifyProducer_ = nullptr;
   }
 }
 
@@ -1845,6 +1862,28 @@ void Parser::removeAddressCache(const map<int64_t, int64_t> &addressBalance,
   }
 }
 
+// 写入通知日志文件
+void Parser::writeNotificationLogs(const map<int64_t, int64_t> &addressBalance,
+                                   class TxLog2 *txLog2) {
+  static string buffer;
+  if (notifyProducer_ == nullptr) {
+    return;
+  }
+
+  buffer.clear();
+  for (auto it : addressBalance) {
+    const int64_t addrID      = it.first;
+    const int64_t balanceDiff = it.second;
+    LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
+
+    NotifyItem item(txLog2->type_, txLog2->tx_.IsCoinBase(),
+                    addr->addrId_, txLog2->txId_, addr->addressStr_,
+                    txLog2->txHash_, balanceDiff);
+    buffer.append(item.toStrLineWithTime());
+  }
+  notifyProducer_->write(buffer);
+}
+
 void Parser::removeTxCache(const uint256 &txHash) {
   if (!cacheEnable_) {
     return;
@@ -1909,6 +1948,9 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
       removeTxCache(in.prevout.hash);
     }
   }
+
+  // notification logs
+  writeNotificationLogs(addressBalance, txLog2);
 }
 
 // 设置地址的余额变更情况
@@ -2242,6 +2284,9 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
   // cache
   removeAddressCache(*addressBalance, txLog2->ymd_);
   removeTxCache(txLog2->txHash_);
+
+  // notification logs
+  writeNotificationLogs(*addressBalance, txLog2);
 }
 
 // unconfirm tx (address node)
@@ -2325,6 +2370,9 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
   // cache
   removeAddressCache(*addressBalance, txLog2->ymd_);
   removeTxCache(txLog2->txHash_);
+
+  // notification logs
+  writeNotificationLogs(*addressBalance, txLog2);
 }
 
 // 回滚一个块操作
@@ -2639,6 +2687,9 @@ void Parser::rejectTx(class TxLog2 *txLog2) {
     }
   }
   removeTxCache(txLog2->txHash_);
+
+  // notification logs
+  writeNotificationLogs(addressBalance, txLog2);
 }
 
 // 获取上次 txlog2 的进度ID

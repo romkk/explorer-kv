@@ -95,6 +95,7 @@ public:
 
   int64_t unconfirmedReceived_;
   int64_t unconfirmedSent_;
+  int64_t unconfirmedTxCount_;
 
   int32_t lastConfirmedTxYmd_;
   int64_t lastConfirmedTxId_;
@@ -110,7 +111,8 @@ public:
                      int64_t unconfirmedReceived, int64_t unconfirmedSent,
                      int32_t lastConfirmedTxYmd, int64_t lastConfirmedTxId,
                      int64_t totalReceived, int64_t totalSent,
-                     int64_t txCount, const char *address);
+                     int64_t txCount, int64_t unconfirmedTxCount,
+                     const char *address);
   LastestAddressInfo(const LastestAddressInfo &a);
 };
 
@@ -331,12 +333,11 @@ private:
   // 更新交易 / 节点的 YMD
   void _updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node, const int32_t targetYmd);
 
-  // 移动地址交易节点
-  void _switchAddressTxNode(LastestAddressInfo *addr,
-                            AddressTxNode *prevNode, AddressTxNode *currNode);
-  void moveForwardAddressTxNode (LastestAddressInfo *addr, AddressTxNode *node);
-  void moveBackwardAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node);
-
+  // 交换地址交易节点
+  void _switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
+                                       AddressTxNode *prev, AddressTxNode *curr);
+  void _confirmTx_MoveToFirstUnconfirmed(LastestAddressInfo *addr, AddressTxNode *node);
+  void _rejectTx_MoveToLastUnconfirmed(LastestAddressInfo *addr, AddressTxNode *node);
 
   void writeLastProcessTxlogTime();
 

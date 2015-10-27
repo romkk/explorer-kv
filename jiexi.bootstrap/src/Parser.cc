@@ -238,11 +238,11 @@ void AddrHandler::dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs,
 
     // table.addresses_0000
     //  `id`, `address`, `tx_count`, `total_received`, `total_sent`,
-    //  `unconfirmed_received`, `unconfirmed_sent`, `begin_tx_id`, `begin_tx_ymd`,
+    //  `unconfirmed_received`, `unconfirmed_sent`,`unconfirmed_tx_count`, `begin_tx_id`, `begin_tx_ymd`,
     //  `end_tx_id`, `end_tx_ymd`, `last_confirmed_tx_id`,
     //  `last_confirmed_tx_ymd`, `created_at`, `updated_at`
     s = Strings::Format("%lld,%s,%lld,%lld,%lld,"
-                        "0,0,%lld,%d,%lld,%d,%lld,%d,%s,%s",
+                        "0,0,0,%lld,%d,%lld,%d,%lld,%d,%s,%s",
                         it->addrId_, it->addrStr_, it->idx_, it->totalReceived_,
                         it->totalSent_, it->beginTxId_, it->beginTxYmd_,
                         it->endTxId_, it->endTxYmd_, it->endTxId_, it->endTxYmd_,

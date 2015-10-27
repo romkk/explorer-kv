@@ -42,6 +42,7 @@ CREATE TABLE `addresses_%04d` (
   `total_sent` bigint(20) NOT NULL DEFAULT '0',
   `unconfirmed_received` bigint(20) NOT NULL DEFAULT '0',
   `unconfirmed_sent` bigint(20) NOT NULL DEFAULT '0',
+  `unconfirmed_tx_count` bigint(20) NOT NULL DEFAULT '0',
   `begin_tx_id` bigint(20) NOT NULL DEFAULT '0',
   `begin_tx_ymd` int(11) NOT NULL DEFAULT '0',
   `end_tx_id` bigint(20) NOT NULL DEFAULT '0',

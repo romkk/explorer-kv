@@ -85,7 +85,7 @@ void NotifyItem::parse(const string &line) {
 
 NotifyProducer::NotifyProducer(const string &dir):
   lockFd_(-1), fileIndex_(-1), fileOffset_(-1L),
-  fileHandler_(nullptr), kFileMaxSize_(5 * 1024)
+  fileHandler_(nullptr), kFileMaxSize_(100 * 1024 * 1024)
 {
   // dir_
   dir_ = dir;
@@ -128,21 +128,16 @@ void NotifyProducer::init() {
   //
   // 遍历所有数据文件，找出最近的文件，和最近的记录
   //
-  std::set<int32_t> filesIdxs;  // 所有通知数据文件, 文件名：<int>.log
   const string filesDir = Strings::Format("%s/files", dir_.c_str());
   fs::path filesPath(filesDir);
   tryCreateDirectory(filesPath);
   {
-    int log1FileIndex = -1;
     for (fs::directory_iterator end, it(filesPath); it != end; ++it) {
       const int idx = atoi(it->path().stem().c_str());
-      filesIdxs.insert(idx);
-
       if (idx > fileIndex_) {
         fileIndex_ = idx;
       }
     }
-    fileIndex_ = log1FileIndex;
   }
   LOG_INFO("begin file index: %d", fileIndex_);
 }

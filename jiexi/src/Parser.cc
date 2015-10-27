@@ -1879,7 +1879,7 @@ void Parser::writeNotificationLogs(const map<int64_t, int64_t> &addressBalance,
     NotifyItem item(txLog2->type_, txLog2->tx_.IsCoinBase(),
                     addr->addrId_, txLog2->txId_, addr->addressStr_,
                     txLog2->txHash_, balanceDiff);
-    buffer.append(item.toStrLineWithTime());
+    buffer.append(item.toStrLineWithTime() + "\n");
   }
   notifyProducer_->write(buffer);
 }

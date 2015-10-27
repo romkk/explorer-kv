@@ -1431,11 +1431,10 @@ void _accpetTx_insertAddressTxs(MySQLConnection &db, class TxLog2 *txLog2,
     sql = Strings::Format("INSERT INTO `address_txs_%d` (`address_id`, `tx_id`, `tx_height`,"
                           " `total_received`, `balance_diff`, `balance_final`, `idx`, `ymd`,"
                           " `prev_ymd`, `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`)"
-                          " VALUES (%lld, %lld, %d, %lld, %lld, %lld, %lld, %d, "
+                          " VALUES (%lld, %lld, %d, -1, %lld, -1, %lld, %d, "
                           "         %d, %lld, 0, 0, '%s') ",
                           tableIdx_AddrTxs(txLog2->ymd_), addrID, txLog2->txId_, txLog2->blkHeight_,
-                          -1, balanceDiff, -1,
-                          addr->txCount_+ 1, txLog2->ymd_,
+                          balanceDiff, addr->txCount_+ 1, txLog2->ymd_,
                           addr->endTxYmd_, addr->endTxId_, date("%F %T").c_str());
     db.updateOrThrowEx(sql, 1);
 
@@ -1672,10 +1671,17 @@ void Parser::_switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
   assert(m->ymd_ == UNCONFIRM_TX_YMD);
   assert(n->ymd_ == UNCONFIRM_TX_YMD);
   assert(addr->endTxYmd_ == UNCONFIRM_TX_YMD);
+  assert(m->idx_ < n->idx_);
 
   const int64_t addrId = addr->addrId_;
   string sql;
   string sql_m_update, sql_n_update;
+
+  bool isNeighbour = false;  // m, n是否相邻
+  if (n->prevTxId_ == m->txId_) {
+    isNeighbour = true;
+    assert(m->nextTxId_ == n->txId_);
+  }
 
   //
   // 处理N的后向节点
@@ -1701,15 +1707,20 @@ void Parser::_switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
   //
   // 处理N的前向节点, 必然存在该节点
   //
-  {
+  if (!isNeighbour) {
     sql = Strings::Format("UPDATE `address_txs_%d` SET `next_tx_id`=%lld "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(UNCONFIRM_TX_YMD),
                           m->txId_, addrId, n->prevTxId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
+
+    sql_m_update += Strings::Format("`prev_ymd`=%d,`prev_tx_id`=%lld,",
+                                    n->prevYmd_, n->prevTxId_);
+  } else {
+    sql_m_update += Strings::Format("`prev_ymd`=%d,`prev_tx_id`=%lld,",
+                                    n->ymd_, n->txId_);
   }
-  sql_m_update += Strings::Format("`prev_ymd`=%d,`prev_tx_id`=%lld,",
-                                  n->prevYmd_, n->prevTxId_);
+
 
   //
   // 处理M的前向节点，该节点可能是确认的、也可能是未确认的，该节点的后向节点必然未确认
@@ -1736,15 +1747,20 @@ void Parser::_switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
   //
   // 处理M的后向节点, 必然存在该节点
   //
-  {
+  if (!isNeighbour) {
     sql = Strings::Format("UPDATE `address_txs_%d` SET `prev_tx_id`=%lld "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(UNCONFIRM_TX_YMD),
                           n->txId_, addrId, m->nextTxId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
+
+    sql_n_update += Strings::Format("`next_ymd`=%d,`next_tx_id`=%lld,",
+                                    m->nextYmd_, m->nextTxId_);
+  } else {
+    sql_n_update += Strings::Format("`next_ymd`=%d,`next_tx_id`=%lld,",
+                                    m->ymd_, m->txId_);
   }
-  sql_n_update += Strings::Format("`next_ymd`=%d,`next_tx_id`=%lld,",
-                                  m->nextYmd_, m->nextTxId_);
+
 
   //
   // 交换M和N的节点部分信息
@@ -1761,16 +1777,14 @@ void Parser::_switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
     sql = Strings::Format("UPDATE `address_txs_%d` SET `idx`=%lld, %s "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(UNCONFIRM_TX_YMD),
-                          sql_n_update.c_str(),
-                          m->idx_, addrId, n->txId_);
+                          m->idx_, sql_n_update.c_str(), addrId, n->txId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
 
     sql_m_update.resize(sql_m_update.size() - 1);
     sql = Strings::Format("UPDATE `address_txs_%d` SET `idx`=%lld, %s "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(UNCONFIRM_TX_YMD),
-                          sql_m_update.c_str(),
-                          n->idx_, addrId, m->txId_);
+                          n->idx_, sql_m_update.c_str(), addrId, m->txId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
   }
 }

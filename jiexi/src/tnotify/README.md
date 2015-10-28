@@ -23,6 +23,8 @@
 
 ## 变迁日志示例
 
+* confirm时，确定会有所确认块的信息
+
 ```
 #
 # accept -> confirm

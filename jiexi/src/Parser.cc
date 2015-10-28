@@ -1878,7 +1878,9 @@ void Parser::writeNotificationLogs(const map<int64_t, int64_t> &addressBalance,
 
     NotifyItem item(txLog2->type_, txLog2->tx_.IsCoinBase(),
                     addr->addrId_, txLog2->txId_, addr->addressStr_,
-                    txLog2->txHash_, balanceDiff);
+                    txLog2->txHash_, balanceDiff,
+                    txLog2->blkHeight_, txLog2->blkId_,
+                    (txLog2->blkId_ > 0 ? blockId2Hash(txLog2->blkId_) : uint256()));
     buffer.append(item.toStrLineWithTime() + "\n");
   }
   notifyProducer_->write(buffer);
@@ -2785,4 +2787,33 @@ bool Parser::tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId) {
 
   return true;
 }
+
+
+uint256 Parser::blockId2Hash(const int64_t blockId) {
+  static map<int64_t, uint256> id2hash_;
+
+  auto it = id2hash_.find(blockId);
+  if (it != id2hash_.end()) {
+    return it->second;
+  }
+
+  MySQLResult res;
+  char **row = nullptr;
+  string sql;
+
+  sql = Strings::Format("SELECT `block_hash` FROM `0_raw_blocks` "
+                        " WHERE `id`=%lld ", blockId);
+  dbExplorer_.query(sql, res);
+  if (res.numRows() == 0) {
+    THROW_EXCEPTION_DBEX("can't find block by blockID(%lld) in table.0_raw_blocks",
+                         blockId);
+  }
+  row = res.nextRow();
+
+  uint256 blockHash(row[0]);
+  id2hash_.insert(make_pair(blockId, blockHash));
+
+  return blockHash;
+}
+
 

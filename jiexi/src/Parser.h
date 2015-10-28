@@ -348,6 +348,9 @@ private:
   // 写入通知日志文件
   void writeNotificationLogs(const map<int64_t, int64_t> &addressBalance, class TxLog2 *txLog2);
 
+  // block id 2 hash
+  uint256 blockId2Hash(const int64_t blockId);
+
 public:
   Parser();
   ~Parser();

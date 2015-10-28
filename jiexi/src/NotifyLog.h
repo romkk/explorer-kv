@@ -42,10 +42,16 @@ class NotifyItem {
 
   int64_t balanceDiff_;
 
+  int32_t  blkHeight_;     // block height
+  int64_t  blkId_;         // block ID
+  uint256  blkHash_;
+
 public:
   NotifyItem();
-  NotifyItem(int32_t type, bool isCoinbase, int64_t addressId, int64_t txId,
-             const string &address, const uint256 txhash, int64_t balanceDiff);
+  NotifyItem(const int32_t type, bool isCoinbase, const int64_t addressId,
+             const int64_t txId, const string &address,
+             const uint256 txhash, int64_t balanceDiff,
+             const int32_t blkHeight, const int64_t  blkId, const uint256 &blkHash);
 
   void reset();
   string toStrLineWithTime() const;

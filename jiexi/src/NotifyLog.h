@@ -58,6 +58,20 @@ public:
   void parse(const string &line);
 };
 
+///////////////////////////////  NotifyConsumer  ///////////////////////////////
+class NotifyConsumer {
+  int32_t fileIndex_;
+  int64_t fileOffset_;
+  FILE *fileHandler_;
+
+public:
+  NotifyConsumer();
+  ~NotifyConsumer();
+
+  void init();
+  void run();
+  void stop();
+};
 
 ///////////////////////////////  NotifyProducer  ///////////////////////////////
 class NotifyProducer {

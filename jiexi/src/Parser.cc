@@ -2588,9 +2588,20 @@ void Parser::_removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node)
                         tableIdx_AddrTxs(node->ymd_), addr->addrId_, node->txId_);
   dbExplorer_.updateOrThrowEx(sql, 1);
 
+  //
   // 更新地址信息
+  //
   const int64_t received = (node->balanceDiff_ > 0 ? node->balanceDiff_ : 0);
   const int64_t sent     = (node->balanceDiff_ < 0 ? node->balanceDiff_ * -1 : 0);
+
+  string sqlBegin = "";  // 是否更新 `begin_tx_ymd`/`begin_tx_id`
+  // 没有节点了，移除的是唯一的节点
+  if (node->prevYmd_ == 0) {
+    assert(node->prevTxId_ == 0);
+    sqlBegin = "`begin_tx_id`=0,`begin_tx_ymd`=0,";
+    addr->beginTxId_  = 0;
+    addr->beginTxYmd_ = 0;
+  }
 
   // 移除的节点必然是未确认的，需要 unconfirmed_xxxx 余额变更
   sql = Strings::Format("UPDATE `addresses_%04d` SET `tx_count`=`tx_count`-1, "
@@ -2604,8 +2615,7 @@ void Parser::_removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node)
                         tableIdx_Addr(addr->addrId_),
                         received, sent, received, sent,
                         node->prevYmd_, node->prevTxId_,
-                        // 没有倒数第二条，重置起始位置为空
-                        node->prevYmd_ == 0 ? "`begin_tx_id`=0,`begin_tx_ymd`=0," : "",
+                        sqlBegin.c_str(),
                         date("%F %T").c_str(), addr->addrId_);
   dbExplorer_.updateOrThrowEx(sql, 1);
 

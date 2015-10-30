@@ -105,12 +105,13 @@ void PreTx::threadConsumeAddr() {
     for (auto &tx : buf) {
       const string txhash = tx.ToString();
       string line;
-      if (txs_.find(tx) != txs_.end()) {
-        continue;  // already exist
-      }
+
+      //
+      // 理论上不会出现重复txhash。（但正式网确实存在两对tx的hash一样）
+      // 即使出现一样的，也无关紧要，因为 pre_parser TxHandler采用upper_bound()方法查找ID
+      //
 
       const int32_t tableIdx = HexToDecLast2Bytes(txhash) % 64;
-      txs_.insert(tx);
       txIds_[tableIdx]++;
       line = Strings::Format("%s,%lld", txhash.c_str(), txIds_[tableIdx]);
 
@@ -124,7 +125,7 @@ void PreTx::threadConsumeAddr() {
     buf.clear();
   }
 
-  LOG_INFO("total tx: %lld", txs_.size());
+  LOG_INFO("total tx: %lld", cnt);
   runningConsumeThreads_--;
 }
 
@@ -145,7 +146,7 @@ void PreTx::threadProcessBlock(const int32_t idx) {
         ScopeLock sl(lock_);
         s = txBuf_.size();
       }
-      if (s > 10000 * 50) {  // 消费线程大约每秒处理10万个地址，防止过速
+      if (s > 10000 * 500) {  // 消费线程大约每秒处理10万个地址，防止过速
         sleepMs(250);
         continue;
       }
@@ -179,12 +180,19 @@ void PreTx::threadProcessBlock(const int32_t idx) {
                            curHeight, blockId);
     }
 
+    // 遍历所有交易，提取涉及到的所有地址
+    vector<uint256> buf;
+    buf.reserve(blk.vtx.size());
+    for (auto &tx : blk.vtx) {
+      buf.push_back(tx.GetHash());
+    }
+
     string logStr;
     {
       ScopeLock sl(lock_);
       // 遍历所有交易，提取涉及到的所有地址
-      for (auto &tx : blk.vtx) {
-        txBuf_.push_back(tx.GetHash());
+      for (auto &txhash : buf) {
+        txBuf_.push_back(txhash);
       }
       logStr = Strings::Format("height: %6d, size: %7.3f KB, txs: %4lld",
                                curHeight, (double)blkRawHex.length()/(2*1000),

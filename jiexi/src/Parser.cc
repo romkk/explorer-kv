@@ -1878,7 +1878,9 @@ void Parser::writeNotificationLogs(const map<int64_t, int64_t> &addressBalance,
 
     NotifyItem item(txLog2->type_, txLog2->tx_.IsCoinBase(),
                     addr->addrId_, txLog2->txId_, addr->addressStr_,
-                    txLog2->txHash_, balanceDiff);
+                    txLog2->txHash_, balanceDiff,
+                    txLog2->blkHeight_, txLog2->blkId_,
+                    (txLog2->blkId_ > 0 ? blockId2Hash(txLog2->blkId_) : uint256()));
     buffer.append(item.toStrLineWithTime() + "\n");
   }
   notifyProducer_->write(buffer);
@@ -2586,9 +2588,20 @@ void Parser::_removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node)
                         tableIdx_AddrTxs(node->ymd_), addr->addrId_, node->txId_);
   dbExplorer_.updateOrThrowEx(sql, 1);
 
+  //
   // 更新地址信息
+  //
   const int64_t received = (node->balanceDiff_ > 0 ? node->balanceDiff_ : 0);
   const int64_t sent     = (node->balanceDiff_ < 0 ? node->balanceDiff_ * -1 : 0);
+
+  string sqlBegin = "";  // 是否更新 `begin_tx_ymd`/`begin_tx_id`
+  // 没有节点了，移除的是唯一的节点
+  if (node->prevYmd_ == 0) {
+    assert(node->prevTxId_ == 0);
+    sqlBegin = "`begin_tx_id`=0,`begin_tx_ymd`=0,";
+    addr->beginTxId_  = 0;
+    addr->beginTxYmd_ = 0;
+  }
 
   // 移除的节点必然是未确认的，需要 unconfirmed_xxxx 余额变更
   sql = Strings::Format("UPDATE `addresses_%04d` SET `tx_count`=`tx_count`-1, "
@@ -2602,8 +2615,7 @@ void Parser::_removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node)
                         tableIdx_Addr(addr->addrId_),
                         received, sent, received, sent,
                         node->prevYmd_, node->prevTxId_,
-                        // 没有倒数第二条，重置起始位置为空
-                        node->prevYmd_ == 0 ? "`begin_tx_id`=0,`begin_tx_ymd`=0," : "",
+                        sqlBegin.c_str(),
                         date("%F %T").c_str(), addr->addrId_);
   dbExplorer_.updateOrThrowEx(sql, 1);
 
@@ -2785,4 +2797,33 @@ bool Parser::tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId) {
 
   return true;
 }
+
+
+uint256 Parser::blockId2Hash(const int64_t blockId) {
+  static map<int64_t, uint256> id2hash_;
+
+  auto it = id2hash_.find(blockId);
+  if (it != id2hash_.end()) {
+    return it->second;
+  }
+
+  MySQLResult res;
+  char **row = nullptr;
+  string sql;
+
+  sql = Strings::Format("SELECT `block_hash` FROM `0_raw_blocks` "
+                        " WHERE `id`=%lld ", blockId);
+  dbExplorer_.query(sql, res);
+  if (res.numRows() == 0) {
+    THROW_EXCEPTION_DBEX("can't find block by blockID(%lld) in table.0_raw_blocks",
+                         blockId);
+  }
+  row = res.nextRow();
+
+  uint256 blockHash(row[0]);
+  id2hash_.insert(make_pair(blockId, blockHash));
+
+  return blockHash;
+}
+
 

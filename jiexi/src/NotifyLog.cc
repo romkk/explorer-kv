@@ -33,9 +33,10 @@ NotifyItem::NotifyItem() {
   reset();
 }
 
-NotifyItem::NotifyItem(int32_t type, bool isCoinbase, int64_t addressId,
-                       int64_t txId, const string &address, const uint256 txhash,
-                       int64_t balanceDiff) {
+NotifyItem::NotifyItem(const int32_t type, bool isCoinbase, const int64_t addressId,
+                       const int64_t txId, const string &address,
+                       const uint256 txhash, int64_t balanceDiff,
+                       const int32_t blkHeight, const int64_t blkId, const uint256 &blkHash) {
   type_        = type;
   isCoinbase_  = isCoinbase;
   addressId_   = addressId;
@@ -43,6 +44,10 @@ NotifyItem::NotifyItem(int32_t type, bool isCoinbase, int64_t addressId,
   address_     = address;
   txhash_      = txhash;
   balanceDiff_ = balanceDiff;
+
+  blkHeight_ = blkHeight;
+  blkId_     = blkId;
+  blkHash_   = blkHash;
 }
 
 void NotifyItem::reset() {
@@ -53,23 +58,27 @@ void NotifyItem::reset() {
   address_     = "";
   txhash_      = uint256();
   balanceDiff_ = 0;
+
+  blkHeight_ = -1;
+  blkId_     = -1;
+  blkHash_   = uint256();
 }
 
 string NotifyItem::toStrLineWithTime() const {
-  return Strings::Format("%s,%d,%d,%lld,%s,%lld,%s,%lld",
+  return Strings::Format("%s,%d,%d,%lld,%s,%lld,%s,%lld,%d,%lld,%s",
                          date("%F %T").c_str(),
                          type_, isCoinbase_ ? 1 : 0,
                          addressId_, address_.c_str(),
-                         txId_, txhash_.ToString().c_str(),
-                         balanceDiff_);
+                         txId_, txhash_.ToString().c_str(), balanceDiff_,
+                         blkHeight_, blkId_, blkHash_.ToString().c_str());
 }
 
 void NotifyItem::parse(const string &line) {
   reset();
 
   // 按照 ',' 切分，最多切8份
-  const vector<string> arr1 = split(line, ',', 8);
-  assert(arr1.size() == 8);
+  const vector<string> arr1 = split(line, ',', 11);
+  assert(arr1.size() == 11);
 
   type_        = atoi(arr1[1].c_str());
   isCoinbase_  = atoi(arr1[2].c_str()) != 0 ? 1 : 0;
@@ -78,6 +87,10 @@ void NotifyItem::parse(const string &line) {
   txId_        = atoi64(arr1[5].c_str());
   txhash_      = uint256(arr1[6]);
   balanceDiff_ = atoi64(arr1[7].c_str());
+
+  blkHeight_   = atoi(arr1[8].c_str());
+  blkId_       = atoi64(arr1[9].c_str());
+  blkHash_     = uint256(arr1[10]);
 }
 
 

@@ -734,14 +734,14 @@ void _saveBlock(BlockInfo &b, FILE *f, FileWriter *fwriter) {
   // `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
   // `next_block_id`, `next_block_hash`, `chain_id`, `size`, `pool_difficulty`,
   // `difficulty`, `difficulty_double`,`tx_count`,
-  // `reward_block`, `reward_fees`, `relayed_by`, `created_at`
+  // `reward_block`, `reward_fees`, `relayed_by`, `bip_vote`, `created_at`
   double diffDobule = 0.0;
   BitsToDifficulty(b.header_.nBits, diffDobule);
   const uint64_t pdiff = TargetToPdiff(b.blockHash_);
   
   line = Strings::Format("%lld,%d,%s,%d,%s,%u,%lld,%u,%u,"
                          "%lld,%s,%lld,%s,"
-                         "%d,%d,%llu,%llu,%f,%d,%lld,%lld,0,%s",
+                         "%d,%d,%llu,%llu,%f,%d,%lld,%lld,0,\"0\",%s",
                          b.blockId_, b.height_, b.blockHash_.ToString().c_str(),
                          b.header_.nVersion, b.header_.hashMerkleRoot.ToString().c_str(),
                          (uint32_t)b.header_.nTime, b.currMaxTimestamp_, b.header_.nBits, b.header_.nNonce,

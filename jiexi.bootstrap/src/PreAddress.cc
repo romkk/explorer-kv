@@ -30,6 +30,75 @@
 #include "bitcoin/base58.h"
 #include "bitcoin/util.h"
 
+
+
+////////////////////////////////////////////////////////////////////////////////
+//------------------------------ PreAddressHolder ------------------------------
+////////////////////////////////////////////////////////////////////////////////
+
+bool PreAddressHolder::isExist(const string &addressStr) {
+  // 现在set中查找，找不到则去vector中搜索
+  if (latestAddresses_->count(addressStr)) {
+    return true;
+  }
+
+  if (addrItems_.size() == 0) {
+    return false;
+  }
+
+  PreAddressItem needle;
+  strncpy(needle.addrStr_, addressStr.c_str(), 35);
+
+  //
+  // binary_search(), 如果要使用upper_bound()请认真评估和测试（upper_bound不能保证找到等值元素）
+  //
+  if (std::binary_search(addrItems_.begin(), addrItems_.end(), needle)) {
+    return true;
+  }
+
+  return false;
+}
+
+void PreAddressHolder::insert(const string &addressStr) {
+  latestAddresses_->insert(addressStr);
+  count_++;
+
+  // 每500万调整一次
+  if (latestAddresses_->size() >= 500 * 10000) {
+    LOG_INFO("adjust memory, move address from set to vector");
+    adjust();
+  }
+}
+
+void PreAddressHolder::adjust() {
+  size_t currSize = addrItems_.size();
+
+  // resize vector
+  addrItems_.resize(currSize + latestAddresses_->size());
+  LOG_INFO("addrItems_.size(): %llu", addrItems_.size());
+
+  // push new address from set to vector
+  for (const auto &it : *latestAddresses_) {
+    strncpy(addrItems_[currSize++].addrStr_, it.c_str(), 35);
+  }
+
+  //
+  // clear set
+  // 释放对象 + tcmalloc，两个手段可以保障内存占用不会那么夸张。（原来1亿地址消耗58G左右内存，现在不到15G内存）
+  //
+  delete latestAddresses_;
+  latestAddresses_ = new set<string>();
+
+  // sort vector, for binary search
+  std::sort(addrItems_.begin(), addrItems_.end());
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+//-------------------------------- PreAddress ---------------------------------
+////////////////////////////////////////////////////////////////////////////////
+
 PreAddress::PreAddress(): f_(nullptr) {
   const string file = Config::GConfig.get("pre.address.output.file", "");
   ;
@@ -104,12 +173,12 @@ void PreAddress::threadConsumeAddr() {
 
     for (auto &addr : buf) {
       string line;
-      if (addresses_.find(addr) != addresses_.end()) {
-        continue;  // already exist
+      if (preAddressHolder_.isExist(addr)) {
+        continue;
       }
 
       const int32_t tableIdx = AddressTableIndex(addr) % 64;
-      addresses_.insert(addr);
+      preAddressHolder_.insert(addr);
       addressesIds_[tableIdx]++;
       line = Strings::Format("%s,%lld", addr.c_str(), addressesIds_[tableIdx]);
 
@@ -122,7 +191,7 @@ void PreAddress::threadConsumeAddr() {
     }
   }
 
-  LOG_INFO("total address: %lld", addresses_.size());
+  LOG_INFO("total address: %llu", preAddressHolder_.count());
   runningConsumeThreads_--;
 }
 
@@ -137,7 +206,7 @@ void PreAddress::threadProcessBlock(const int32_t idx) {
     int32_t chainId;
     int64_t blockId;
 
-    while (1) {
+    while (running_) {
       size_t s;
       {
         ScopeLock sl(lock_);
@@ -149,6 +218,8 @@ void PreAddress::threadProcessBlock(const int32_t idx) {
       }
       break;
     }
+
+    if (!running_) { break; }
 
     {
       // 确保多线程间，块数据是严格按照高度递增获取的

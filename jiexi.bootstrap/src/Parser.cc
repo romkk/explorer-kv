@@ -212,6 +212,9 @@ vector<struct AddrInfo>::iterator AddrHandler::find(const string &address) {
   strncpy(needle.addrStr_, address.c_str(), 35);
   vector<struct AddrInfo>::iterator it;
 
+  //
+  // 这里必须使用：upper_bound()。因为可以确保存在，前向迭代器必然是目标查找元素。
+  //
   it = std::upper_bound(addrInfo_.begin(), addrInfo_.end(), needle);
   if (it > addrInfo_.end() || it <= addrInfo_.begin()) {
     THROW_EXCEPTION_DBEX("AddrHandler can't find AddrInfo by address: %s", address.c_str());
@@ -282,6 +285,9 @@ vector<struct TxInfo>::iterator TxHandler::find(const uint256 &hash) {
   needle.hash256_ = hash;
   vector<struct TxInfo>::iterator it;
 
+  //
+  // 这里必须使用：upper_bound()。因为可以确保存在，前向迭代器必然是目标查找元素。
+  //
   it = std::upper_bound(txInfo_.begin(), txInfo_.end(), needle);
   if (it > txInfo_.end() || it <= txInfo_.begin()) {
     THROW_EXCEPTION_DBEX("TxHandler can't find TxInfo by hash: %s", hash.ToString().c_str());

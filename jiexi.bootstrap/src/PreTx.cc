@@ -64,7 +64,11 @@ void PreTx::stop() {
 }
 
 void PreTx::run() {
-  const int32_t kThreads = 1;  // 生成线程仅允许1个，否则与导入模块的tx id会不一致
+  //
+  // 警告：
+  // 生成线程仅允许1个，否则与导入模块的tx id会不一致
+  //
+  const int32_t kThreads = 1;
 
   // 1. 启动生成线程
   runningProduceThreads_ = kThreads;
@@ -184,7 +188,24 @@ void PreTx::threadProcessBlock(const int32_t idx) {
     vector<uint256> buf;
     buf.reserve(blk.vtx.size());
     for (auto &tx : blk.vtx) {
-      buf.push_back(tx.GetHash());
+      //
+      // 硬编码特殊交易处理
+      //
+      // 1. tx hash: d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599
+      // 该交易在两个不同的高度块(91812, 91842)中出现过
+      // 91842块中有且仅有这一个交易
+      //
+      // 2. tx hash: e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468
+      // 该交易在两个不同的高度块(91722, 91880)中出现过
+      //
+      const uint256 hash = tx.GetHash();
+      if ((curHeight == 91842 && hash == uint256("d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599")) ||
+          (curHeight == 91880 && hash == uint256("e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468")))
+      {
+        LOG_WARN("ignore tx, height: %d, hash: %s", curHeight, hash.ToString().c_str());
+        continue;
+      }
+      buf.push_back(hash);
     }
 
     string logStr;

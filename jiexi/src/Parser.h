@@ -21,6 +21,7 @@
 
 #include "Common.h"
 #include "MySQLConnection.h"
+#include "NotifyLog.h"
 #include "Log2Producer.h"
 #include "Util.h"
 
@@ -95,6 +96,7 @@ public:
 
   int64_t unconfirmedReceived_;
   int64_t unconfirmedSent_;
+  int64_t unconfirmedTxCount_;
 
   int32_t lastConfirmedTxYmd_;
   int64_t lastConfirmedTxId_;
@@ -102,13 +104,16 @@ public:
   int64_t txCount_;
   time_t lastUseTime_;
 
+  string addressStr_;
+
   LastestAddressInfo(int64_t addrId,
                      int32_t beginTxYmd, int32_t endTxYmd,
                      int64_t beginTxId, int64_t endTxId,
                      int64_t unconfirmedReceived, int64_t unconfirmedSent,
                      int32_t lastConfirmedTxYmd, int64_t lastConfirmedTxId,
                      int64_t totalReceived, int64_t totalSent,
-                     int64_t txCount);
+                     int64_t txCount, int64_t unconfirmedTxCount,
+                     const char *address);
   LastestAddressInfo(const LastestAddressInfo &a);
 };
 
@@ -274,6 +279,9 @@ private:
   Inotify inotify_;
   thread watchNotifyThread_;
 
+  // 通知日志
+  NotifyProducer *notifyProducer_;
+
   void threadWatchNotifyFile();
 
   bool tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId);
@@ -292,6 +300,12 @@ private:
   void confirmTx  (class TxLog2 *txLog2);
   void unconfirmTx(class TxLog2 *txLog2);
   void rejectTx   (class TxLog2 *txLog2);
+
+  // remove address cache in ssdb
+  void removeAddressCache(const map<int64_t, int64_t> &addressBalance,
+                          const int32_t ymd);
+  // remove txhash cache
+  void removeTxCache(const uint256 &txHash);
 
   //
   void _accpetTx_insertTxInputs(TxLog2 *txLog2, map<int64_t, int64_t> &addressBalance,
@@ -323,14 +337,19 @@ private:
   // 更新交易 / 节点的 YMD
   void _updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node, const int32_t targetYmd);
 
-  // 移动地址交易节点
-  void _switchAddressTxNode(LastestAddressInfo *addr,
-                            AddressTxNode *prevNode, AddressTxNode *currNode);
-  void moveForwardAddressTxNode (LastestAddressInfo *addr, AddressTxNode *node);
-  void moveBackwardAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node);
-
+  // 交换地址交易节点
+  void _switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
+                                       AddressTxNode *prev, AddressTxNode *curr);
+  void _confirmTx_MoveToFirstUnconfirmed(LastestAddressInfo *addr, AddressTxNode *node);
+  void _rejectTx_MoveToLastUnconfirmed(LastestAddressInfo *addr, AddressTxNode *node);
 
   void writeLastProcessTxlogTime();
+
+  // 写入通知日志文件
+  void writeNotificationLogs(const map<int64_t, int64_t> &addressBalance, class TxLog2 *txLog2);
+
+  // block id 2 hash
+  uint256 blockId2Hash(const int64_t blockId);
 
 public:
   Parser();

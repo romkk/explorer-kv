@@ -241,11 +241,11 @@ void AddrHandler::dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs,
 
     // table.addresses_0000
     //  `id`, `address`, `tx_count`, `total_received`, `total_sent`,
-    //  `unconfirmed_received`, `unconfirmed_sent`, `begin_tx_id`, `begin_tx_ymd`,
+    //  `unconfirmed_received`, `unconfirmed_sent`,`unconfirmed_tx_count`, `begin_tx_id`, `begin_tx_ymd`,
     //  `end_tx_id`, `end_tx_ymd`, `last_confirmed_tx_id`,
     //  `last_confirmed_tx_ymd`, `created_at`, `updated_at`
     s = Strings::Format("%lld,%s,%lld,%lld,%lld,"
-                        "0,0,%lld,%d,%lld,%d,%lld,%d,%s,%s",
+                        "0,0,0,%lld,%d,%lld,%d,%lld,%d,%s,%s",
                         it->addrId_, it->addrStr_, it->idx_, it->totalReceived_,
                         it->totalSent_, it->beginTxId_, it->beginTxYmd_,
                         it->endTxId_, it->endTxYmd_, it->endTxId_, it->endTxYmd_,
@@ -734,14 +734,14 @@ void _saveBlock(BlockInfo &b, FILE *f, FileWriter *fwriter) {
   // `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
   // `next_block_id`, `next_block_hash`, `chain_id`, `size`, `pool_difficulty`,
   // `difficulty`, `difficulty_double`,`tx_count`,
-  // `reward_block`, `reward_fees`, `relayed_by`, `created_at`
+  // `reward_block`, `reward_fees`, `relayed_by`, `bip_vote`, `created_at`
   double diffDobule = 0.0;
   BitsToDifficulty(b.header_.nBits, diffDobule);
   const uint64_t pdiff = TargetToPdiff(b.blockHash_);
   
   line = Strings::Format("%lld,%d,%s,%d,%s,%u,%lld,%u,%u,"
                          "%lld,%s,%lld,%s,"
-                         "%d,%d,%llu,%llu,%f,%d,%lld,%lld,0,%s",
+                         "%d,%d,%llu,%llu,%f,%d,%lld,%lld,0,\"0\",%s",
                          b.blockId_, b.height_, b.blockHash_.ToString().c_str(),
                          b.header_.nVersion, b.header_.hashMerkleRoot.ToString().c_str(),
                          (uint32_t)b.header_.nTime, b.currMaxTimestamp_, b.header_.nBits, b.header_.nNonce,

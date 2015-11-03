@@ -12,7 +12,7 @@ wget --no-check-certificate http://install.ohmyz.sh -O - | sh
 apt-get install -y cmake build-essential autotools-dev libtool autoconf automake
 
 # pkgs
-apt-get install -y libboost-dev libboost-thread-dev libboost-system-dev libboost-regex-dev libboost-filesystem-dev openssl libssl-dev libmysqlclient-dev libcurl4-openssl-dev
+apt-get install -y libboost-dev libboost-thread-dev libboost-system-dev libboost-regex-dev libboost-filesystem-dev openssl libssl-dev libmysqlclient-dev libcurl4-openssl-dev libgoogle-perftools-dev
 
 #
 # build

@@ -7,7 +7,7 @@ set(CMAKE_BUILD_TYPE Release)
 set(CMAKE_CXX_COMPILER "g++")
 set(CMAKE_C_COMPILER "gcc")
 set(CMAKE_CXX_COMPILER_ARG1 "-std=c++0x ")
-set(CMAKE_CXX_FLAGS "-g -O0")
+set(CMAKE_CXX_FLAGS "-g -O2")
 
 set(SSDB_DIR "${CMAKE_CURRENT_BINARY_DIR}/ssdb-1.9.0")
 SET(SSDB_LIBRARIES "${SSDB_DIR}/api/cpp/libssdb-client.a")
@@ -35,6 +35,11 @@ if(NOT MYSQL_FOUND)
   message(FATAL_ERROR "Mysql not found!")
 endif(NOT MYSQL_FOUND)
 
+find_package(TcMalloc)
+if(NOT TCMALLOC_FOUND)
+  message(FATAL_ERROR "TcMalloc not found!")
+endif(NOT TCMALLOC_FOUND)
+
 include_directories(src test ${OPENSSL_INCLUDE_DIR} ${Boost_INCLUDE_DIRS} ${MYSQL_INCLUDE_DIR})
 
 file(GLOB LIB_SOURCES src/*.cc src/bitcoin/*.cpp)
@@ -42,15 +47,15 @@ add_library(explorer STATIC ${LIB_SOURCES})
 
 file(GLOB TPARSER_SOURCES src/tparser/*.cc)
 add_executable(tparser ${TPARSER_SOURCES})
-target_link_libraries(tparser explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${SSDB_LIBRARIES} -lpthread -lcurl)
+target_link_libraries(tparser explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${SSDB_LIBRARIES} ${TCMALLOC_LIBRARY} -lpthread -lcurl)
 
 file(GLOB LOG1PRODUCER_SOURCES src/log1producer/*.cc)
 add_executable(log1producer ${LOG1PRODUCER_SOURCES})
-target_link_libraries(log1producer explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${SSDB_LIBRARIES} -lpthread -lcurl)
+target_link_libraries(log1producer explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${SSDB_LIBRARIES} ${TCMALLOC_LIBRARY} -lpthread -lcurl)
 
 file(GLOB LOG2PRODUCER_SOURCES src/log2producer/*.cc)
 add_executable(log2producer ${LOG2PRODUCER_SOURCES})
-target_link_libraries(log2producer explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${SSDB_LIBRARIES} -lpthread -lcurl)
+target_link_libraries(log2producer explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${SSDB_LIBRARIES} ${TCMALLOC_LIBRARY} -lpthread -lcurl)
 
 file(GLOB_RECURSE TEST_SOURCES test/*.cc)
 add_executable(unittest ${TEST_SOURCES})

@@ -255,6 +255,9 @@ Log2Producer::Log2Producer(): running_(false),
 db_(Config::GConfig.get("mysql.uri")), blkTs_(2016),
 log2BlockBeginHeight_(-1), currBlockHeight_(-1)
 {
+  kTableTxlogs2Fields_ = "`batch_id`, `type`, `block_height`, \
+  `block_id`, `max_block_timestamp`, `tx_hash`, `created_at`, `updated_at`";
+
   log1Dir_ = Config::GConfig.get("log1.dir");
   notifyFileTParser_      = log1Dir_ + "/NOTIFY_LOG2_TO_TPARSER";
   notifyFileLog1Producer_ = log1Dir_ + "/NOTIFY_LOG1_TO_LOG2";
@@ -677,8 +680,6 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
   // 3.0 批量插入数据
   vector<string> values;
   const string nowStr = date("%F %T");
-  const string fields = "`batch_id`, `type`, `block_height`, `block_id`, "
-  "`max_block_timestamp`, `tx_hash`, `created_at`, `updated_at`";
 
   // 冲突的交易，需要做拒绝处理，注意顺序
   // conflictTxs 中其实是逆序，因为前面是先剔除冲突交易树的叶子节点
@@ -714,7 +715,7 @@ void Log2Producer::handleBlockAccept(Log1 &log1Item) {
   }
 
   // 插入本批次数据
-  multiInsert(db_, "0_txlogs2", fields, values);
+  multiInsert(db_, "0_txlogs2", kTableTxlogs2Fields_, values);
 
   // 提交本批数据
   commitBatch(values.size());
@@ -745,6 +746,42 @@ void Log2Producer::commitBatch(const size_t expectAffectedRows) {
   db_.execute("COMMIT");
 }
 
+// 清理txlogs2的内存交易
+void Log2Producer::clearMempoolTxs() {
+  string sql;
+  MySQLResult res;
+  char **row = nullptr;
+
+  //
+  // 由于 table.0_memrepo_txs 是有交易前后依赖顺序的，所以逆序读出，批量移除即可
+  //
+  sql = "SELECT `tx_hash` FROM `0_memrepo_txs` ORDER BY `position` DESC";
+  db_.query(sql, res);
+  if (res.numRows() == 0) {
+    LOG_WARN("table.0_memrepo_txs is empty, clear mempool finish");
+    return;
+  }
+
+  vector<string> values;
+  const string nowStr = date("%F %T");
+  while ((row = res.nextRow()) != nullptr) {
+    const uint256 hash = uint256(row[0]);
+    string item = Strings::Format("-1,%d,-1,-1,0,'%s','%s','%s'",
+                                  LOG2TYPE_TX_REJECT,
+                                  hash.ToString().c_str(),
+                                  nowStr.c_str(), nowStr.c_str());
+    values.push_back(item);
+    memRepo_.removeTx(hash);
+  }
+  assert(memRepo_.size() == 0);
+
+  // 插入本批次数据
+  multiInsert(db_, "0_txlogs2", kTableTxlogs2Fields_, values);
+
+  // 提交本批数据
+  commitBatch(values.size());
+}
+
 void Log2Producer::handleBlockRollback(const int32_t height, const CBlock &blk) {
   //
   // 块高度后退
@@ -772,8 +809,6 @@ void Log2Producer::handleBlockRollback(const int32_t height, const CBlock &blk) 
   //
   vector<string> values;
   const string nowStr = date("%F %T");
-  const string fields = "`batch_id`, `type`, `block_height`, `block_id`,"
-  "`max_block_timestamp`,`tx_hash`, `created_at`, `updated_at`";
 
   // get block ID
   const int64_t blockId = insertRawBlock(db_, blk, height);
@@ -804,7 +839,7 @@ void Log2Producer::handleBlockRollback(const int32_t height, const CBlock &blk) 
   blkTs_.popBlock();
 
   // 插入本批次数据
-  multiInsert(db_, "0_txlogs2", fields, values);
+  multiInsert(db_, "0_txlogs2", kTableTxlogs2Fields_, values);
 
   // 提交本批数据
   commitBatch(values.size());

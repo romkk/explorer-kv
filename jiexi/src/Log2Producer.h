@@ -137,6 +137,7 @@ public:
 
 ///////////////////////////////  Log2Producer  /////////////////////////////////
 class Log2Producer {
+  string kTableTxlogs2Fields_;
   mutex lock_;
   Condition changed_;
 
@@ -188,6 +189,8 @@ class Log2Producer {
 
   void doNotifyTParser();
   void threadWatchNotifyFile();
+
+  void clearMempoolTxs();
 
   void commitBatch(const size_t expectAffectedRows);
 

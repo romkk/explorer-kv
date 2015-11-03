@@ -252,8 +252,7 @@ void BlockTimestamp::popBlock() {
 
 ///////////////////////////////  Log2Producer  /////////////////////////////////
 Log2Producer::Log2Producer(): running_(false),
-db_(Config::GConfig.get("mysql.uri")), blkTs_(2016),
-log2BlockBeginHeight_(-1), currBlockHeight_(-1)
+db_(Config::GConfig.get("mysql.uri")), blkTs_(2016), currBlockHeight_(-1)
 {
   kTableTxlogs2Fields_ = "`batch_id`, `type`, `block_height`, \
   `block_id`, `max_block_timestamp`, `tx_hash`, `created_at`, `updated_at`";
@@ -315,6 +314,9 @@ void Log2Producer::initLog2() {
   MySQLResult res;
   char **row;
 
+  int32_t log2BlockBeginHeight = -1;
+  uint256 log2BlockBeginHash = uint256();
+
   //
   // 清理临时的记录（未完整状态的）
   //
@@ -356,21 +358,21 @@ void Log2Producer::initLog2() {
     db_.query(sql, res);
     assert(res.numRows() != 0);
     row = res.nextRow();
-    log2BlockBeginHash_   = uint256(row[0]);
-    log2BlockBeginHeight_ = atoi(row[1]);
+    log2BlockBeginHash   = uint256(row[0]);
+    log2BlockBeginHeight = atoi(row[1]);
   }
   else {
     // 数据库没有记录，则以配置文件的块信息作为起始块
-    log2BlockBeginHash_   = uint256(Config::GConfig.get("log2.begin.block.hash"));
-    log2BlockBeginHeight_ = (int32_t)Config::GConfig.getInt("log2.begin.block.height");
+    log2BlockBeginHash   = uint256(Config::GConfig.get("log2.begin.block.hash"));
+    log2BlockBeginHeight = (int32_t)Config::GConfig.getInt("log2.begin.block.height");
   }
 
-  if (log2BlockBeginHash_ == uint256() || log2BlockBeginHeight_ < 0) {
+  if (log2BlockBeginHash == uint256() || log2BlockBeginHeight < 0) {
     THROW_EXCEPTION_DBEX("invalid log2 latest block: %d, %s",
-                         log2BlockBeginHeight_, log2BlockBeginHash_.ToString().c_str());
+                         log2BlockBeginHeight, log2BlockBeginHash.ToString().c_str());
   }
   LOG_INFO("log2 latest block, height: %d, hash: %s",
-           log2BlockBeginHeight_, log2BlockBeginHash_.ToString().c_str());
+           log2BlockBeginHeight, log2BlockBeginHash.ToString().c_str());
 
   //
   // 载入内存库中(未确认)交易
@@ -378,82 +380,81 @@ void Log2Producer::initLog2() {
   _initLog2_loadMemrepoTxs(db_, memRepo_);
 
   //
-  // 获取当前高度之前的块的最大时间戳
+  // 获取当前高度之前的块的最大时间戳，构造出 blkTs_
   //
   {
     // 必须 tpaser 消费跟进到最近的 txlogs2，才能保证能从 table.0_blocks 查询到最新
     sql = Strings::Format("SELECT `hash` FROM `0_blocks` WHERE "
                           " `height`=%d AND `chain_id`=0 AND `hash`='%s' ",
-                          log2BlockBeginHeight_, log2BlockBeginHash_.ToString().c_str());
+                          log2BlockBeginHeight, log2BlockBeginHash.ToString().c_str());
     db_.query(sql, res);
     if (res.numRows() == 0) {
       THROW_EXCEPTION_DBEX("can't find block from table.0_blocks, %d : %s, "
                            "please wait util 'tparser' catch up latest txlogs2",
-                           log2BlockBeginHeight_, log2BlockBeginHash_.ToString().c_str());
+                           log2BlockBeginHeight, log2BlockBeginHash.ToString().c_str());
     }
 
     // 获取最近 2016 个块的时间戳
     sql = Strings::Format("SELECT * FROM (SELECT `timestamp`,`height` FROM `0_blocks`"
                           " WHERE `height` <= %d AND `chain_id` = 0 "
                           " ORDER BY `height` DESC LIMIT 2016) AS `t1` ORDER BY `height` ASC ",
-                          log2BlockBeginHeight_);
+                          log2BlockBeginHeight);
     db_.query(sql, res);
     if (res.numRows() == 0) {
       THROW_EXCEPTION_DBEX("can't find max block timestamp, log2BlockHeight: %d",
-                           log2BlockBeginHeight_);
+                           log2BlockBeginHeight);
     }
     for (int32_t i = (int32_t)res.numRows(); i > 0 ; i--) {
       row = res.nextRow();
       const int32_t height = atoi(row[1]);
       blkTs_.pushBlock(height, atoi64(row[0]));
-      assert(height == log2BlockBeginHeight_ - i + 1);
+      assert(height == log2BlockBeginHeight - i + 1);
     }
     LOG_INFO("found max block timestamp: %lld", blkTs_.getMaxTimestamp());
   }
+
+  currBlockHeight_ = log2BlockBeginHeight;
+  currBlockHash_   = log2BlockBeginHash;
 }
 
+void Log2Producer::updateLog1FileStatus() {
+  string sql;
+  const string nowStr = date("%F %T");
+  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%d',`updated_at`='%s' "
+                        " WHERE `key`='log2producer.log1file.index'",
+                        log1FileIndex_, nowStr.c_str());
+  db_.updateOrThrowEx(sql);
+
+  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%d',`updated_at`='%s' "
+                        " WHERE `key`='log2producer.log1file.offset'",
+                        log1FileIndex_, nowStr.c_str());
+  db_.updateOrThrowEx(sql, 1);
+}
 
 void Log2Producer::syncLog1() {
   LogScope ls("Log2Producer::syncLog1()");
-  bool syncSuccess = false;
 
-  //
-  // 遍历 log1 所有文件，直至找到一样的块，若找到则同步完成
-  //
-  std::set<int32_t> filesIdxs;  // log1 所有文件
-  fs::path filesPath(Strings::Format("%s/files", log1Dir_.c_str()));
-  tryCreateDirectory(filesPath);
-  for (fs::directory_iterator end, it(filesPath); it != end; ++it) {
-    filesIdxs.insert(atoi(it->path().stem().c_str()));
-  }
+  // 初始化时，默认索引为零，偏移量为零
+  log1FileIndex_  = 0;
+  log1FileOffset_ = 0;
 
-  // 反序遍历，从最新的文件开始找
-  for (auto it = filesIdxs.rbegin(); it != filesIdxs.rend(); it++) {
-    ifstream fin(Strings::Format("%s/files/%d.log", log1Dir_.c_str(), *it));
-    string line;
-    Log1 log1Item;
-    while (getline(fin, line)) {
-      log1Item.parse(line);
-      if (log1Item.isTx()) { continue; }
-      assert(log1Item.isBlock());
-      if (log1Item.blockHeight_         != log2BlockBeginHeight_ ||
-          log1Item.getBlock().GetHash() != log2BlockBeginHash_) {
-        continue;
+  // 从数据库读取最后记录的索引和偏移量
+  string sql;
+  MySQLResult res;
+  char **row = nullptr;
+  sql = "SELECT `key`,`value` FROM `0_explorer_meta` WHERE `key` IN ('log2producer.log1file.index', 'log2producer.log1file.offset') ";
+  db_.query(sql, res);
+  if (res.numRows() != 0) {
+    assert(res.numRows() == 2);
+    while ((row = res.nextRow()) != nullptr) {
+      if (strcmp(row[0], "log2producer.log1file.index") == 0) {
+        log1FileIndex_ = atoi(row[1]);
       }
-      // 找到高度和哈希一致的块
-      log1FileIndex_  = *it;
-      log1FileOffset_ = fin.tellg();
-      LOG_INFO("sync log1 success, file idx: %d, offset: %lld",
-               log1FileIndex_, log1FileOffset_);
-      syncSuccess = true;
-      break;
-    } /* /while */
-
-    if (syncSuccess) { break; }
-  } /* /for */
-
-  if (!syncSuccess) {
-    THROW_EXCEPTION_DBEX("sync log1 failure");
+      else if (strcmp(row[0], "log2producer.log1file.offset") == 0) {
+        log1FileOffset_ = atoi64(row[1]);
+      }
+    }
+    LOG_INFO("last log1 file, index: %d, offset: %lld", log1FileIndex_, log1FileOffset_);
   }
 }
 
@@ -526,6 +527,8 @@ void Log2Producer::tryReadLog1(vector<string> &lines) {
 }
 
 void Log2Producer::checkEnvironment() {
+  const string nowStr = date("%F %T");
+
   // 检测 innodb_log_file_size
   {
     // 不得低于32MB
@@ -559,6 +562,27 @@ void Log2Producer::checkEnvironment() {
                size, recoSize);
     }
   }
+
+  //
+  // 检测 table.0_explorer_meta 是否存在记录：
+  //     'log2producer.log1file.index', 'log2producer.log1file.offset'
+  //
+  {
+    string sql = "SELECT `key` FROM `0_explorer_meta` WHERE `key` "
+    "IN ('log2producer.log1file.index', 'log2producer.log1file.offset') ";
+    MySQLResult res;
+    db_.query(sql, res);
+    if (res.numRows() > 0 && res.numRows() != 2) {
+      THROW_EXCEPTION_DB("one of ('log2producer.log1file.index', 'log2producer.log1file.offset') is missing");
+    }
+    if (res.numRows() == 0) {
+      sql = Strings::Format("INSERT INTO `0_explorer_meta` (`key`, `value`, `created_at`, `updated_at`)"
+                            " VALUES ('log2producer.log1file.index',  '0', '%s', '%s'), "
+                            "        ('log2producer.log1file.offset', '0', '%s', '%s') ",
+                            nowStr.c_str(), nowStr.c_str(), nowStr.c_str(), nowStr.c_str());
+      db_.updateOrThrowEx(sql, 2);
+    }
+  }
 }
 
 void Log2Producer::init() {
@@ -567,9 +591,6 @@ void Log2Producer::init() {
   checkEnvironment();
   initLog2();
   syncLog1();
-
-  currBlockHeight_ = log2BlockBeginHeight_;
-  currBlockHash_   = log2BlockBeginHash_;
 }
 
 void Log2Producer::stop() {
@@ -616,6 +637,7 @@ void Log2Producer::handleTx(Log1 &log1Item) {
   db_.execute("START TRANSACTION");
   db_.updateOrThrowEx(sql, 1);
   memRepo_.syncToDB(db_);
+  updateLog1FileStatus();
   db_.execute("COMMIT");
 }
 
@@ -743,6 +765,7 @@ void Log2Producer::commitBatch(const size_t expectAffectedRows) {
   db_.execute("START TRANSACTION");
   db_.updateOrThrowEx(sql, (int32_t)expectAffectedRows);
   memRepo_.syncToDB(db_);
+  updateLog1FileStatus();
   db_.execute("COMMIT");
 }
 

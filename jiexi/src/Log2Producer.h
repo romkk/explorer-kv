@@ -156,8 +156,6 @@ class Log2Producer {
   BlockTimestamp blkTs_;
 
   /* log2 */
-  int32_t log2BlockBeginHeight_;
-  uint256 log2BlockBeginHash_;
   int32_t currBlockHeight_;
   uint256 currBlockHash_;
 
@@ -191,6 +189,7 @@ class Log2Producer {
   void threadWatchNotifyFile();
 
   void clearMempoolTxs();
+  void updateLog1FileStatus();
 
   void commitBatch(const size_t expectAffectedRows);
 

@@ -59,6 +59,11 @@ void Log1::parse(const string &line) {
   // type
   const int32_t type = atoi(arr1[1].c_str());
 
+  if (type == TYPE_CLEAR_MEMTXS) {
+    type_ = type;
+    return;
+  }
+
   // 最后一个按照 '|' 切分
   const vector<string> arr2 = split(arr1[2], '|');
 
@@ -113,6 +118,10 @@ bool Log1::isBlock() {
   return type_ == TYPE_BLOCK ? true : false;
 }
 
+bool Log1::isClearMemtxs() {
+  return type_ == TYPE_CLEAR_MEMTXS ? true : false;
+}
+
 string Log1::toString() {
   if (type_ == TYPE_TX) {
     return Strings::Format("(tx: %s)", getTx().GetHash().ToString().c_str());
@@ -120,6 +129,9 @@ string Log1::toString() {
   else if (type_ == TYPE_BLOCK) {
     return Strings::Format("(block: %d, %s)", blockHeight_,
                            getBlock().GetHash().ToString().c_str());
+  }
+  else if (type_ == TYPE_CLEAR_MEMTXS) {
+    return "(clear mempool txs)";
   }
   return "(null)";
 }
@@ -663,7 +675,8 @@ void Log1Producer::syncBitcoind() {
     THROW_EXCEPTION_DBEX("bitcoind's height has been changed, exit. please restart log1producer again.");
   }
 
-  // TODO: 写入一条回撤指令，会令log2producer reject掉当前所有未确认交易
+  // 写入一条回撤指令，会令log2producer reject掉当前所有未确认交易
+  writeLog1(Log1::TYPE_CLEAR_MEMTXS, "");
 
   // 写入当前内存txs
   for (const auto &mempoolTx : mempoolTxs) {

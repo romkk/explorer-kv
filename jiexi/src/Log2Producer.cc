@@ -753,7 +753,8 @@ void Log2Producer::clearMempoolTxs() {
   char **row = nullptr;
 
   //
-  // 由于 table.0_memrepo_txs 是有交易前后依赖顺序的，所以逆序读出，批量移除即可
+  // 由于 table.0_memrepo_txs 是有交易前后依赖顺序的，所以逆序读出，批量移除即可。
+  // 即交易前后相关性借助 table.0_memrepo_txs 来完成。
   //
   sql = "SELECT `tx_hash` FROM `0_memrepo_txs` ORDER BY `position` DESC";
   db_.query(sql, res);
@@ -764,6 +765,8 @@ void Log2Producer::clearMempoolTxs() {
 
   vector<string> values;
   const string nowStr = date("%F %T");
+
+  // 遍历，移除所有内存交易（未确认）
   while ((row = res.nextRow()) != nullptr) {
     const uint256 hash = uint256(row[0]);
     string item = Strings::Format("-1,%d,-1,-1,0,'%s','%s','%s'",

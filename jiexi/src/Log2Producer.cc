@@ -976,6 +976,10 @@ void Log2Producer::run() {
       else if (log1Item.isBlock()) {
         handleBlock(log1Item);
       }
+      // Clear Mempool Txs
+      else if (log1Item.isClearMemtxs()) {
+        clearMempoolTxs();
+      }
       else {
         THROW_EXCEPTION_DBEX("invalid log1 type, log line: %s", line.c_str());
       }

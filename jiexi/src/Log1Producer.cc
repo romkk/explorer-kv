@@ -463,6 +463,129 @@ static void _bitcoind_getBlockByHash(BitcoinRpc &bitcoind, const string &hashStr
   }
 }
 
+static int32_t _bitcoind_getBestHeight(BitcoinRpc &bitcoind) {
+  const string request = Strings::Format("{\"id\":1,\"method\":\"getinfo\",\"params\":[]}");
+  string response;
+  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
+  if (ret != 0) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
+  }
+  JsonNode r;
+  JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
+  if (r["error"].type() != Utilities::JS::type::Undefined &&
+      r["error"].type() == Utilities::JS::type::Obj) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, code: %d, error: %s",
+                         r["error"]["code"].int32(),
+                         r["error"]["message"].str().c_str());
+  }
+  return r["result"]["blocks"].int32();
+}
+
+static void _bitcoind_getrawtransaction(BitcoinRpc &bitcoind, const uint256 &hash, CTransaction &tx) {
+  const string request = Strings::Format("{\"id\":1,\"method\":\"getrawtransaction\",\"params\":[\"%s\", false]}",
+                                         hash.ToString().c_str());
+  string response;
+  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
+  if (ret != 0) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
+  }
+  vector<string> strArr = split(response, '"', 5);
+  assert(strArr.size() == 5);
+  if (!DecodeHexTx(tx, strArr[3])) {
+    LOG_ERROR("rpc request : %s", request.c_str());
+    LOG_ERROR("rpc response: %s", response.c_str());
+    THROW_EXCEPTION_DBEX("decode tx failure, hex: %s", strArr[3].c_str());
+  }
+}
+
+// 获取内存交易列表，并根据交易之间的关联性排好序
+static void _bitcoind_getmempool_txs(BitcoinRpc &bitcoind, vector<CTransaction> &txs) {
+  string request;
+  string response;
+  JsonNode r;
+  map<uint256, set<uint256> > allTxhash;
+
+  vector<uint256> sortedTxs;  // 按照依赖顺序已经排好序的交易
+  set<uint256> sortedTxsSet;
+
+  //
+  // getrawmempool
+  //
+  request = Strings::Format("{\"id\":1,\"method\":\"getrawmempool\",\"params\":[true]}");
+  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
+  if (ret != 0) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
+  }
+  r.reset();
+  JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
+  if (r["error"].type() != Utilities::JS::type::Undefined &&
+      r["error"].type() == Utilities::JS::type::Obj) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, code: %d, error: %s",
+                         r["error"]["code"].int32(),
+                         r["error"]["message"].str().c_str());
+  }
+  for (auto node : r["result"].array()) {
+    const string hashStr = std::string(node.key_start(),node.key_end());
+    allTxhash[uint256(hashStr)] = set<uint256>();
+
+    for (auto dependTx : node["depends"].array()) {
+      allTxhash[uint256(hashStr)].insert(uint256(node.str()));
+    }
+  }
+
+  // 循环遍历
+  // 最多循环次数： allTxhash.size()
+  for (int i = 0; i < allTxhash.size(); i++) {
+    assert(sortedTxs.size() == sortedTxsSet.size());
+    if (sortedTxs.size() == allTxhash.size()) {
+      break;  // 所有交易均已经存放至vector中
+    }
+
+    for (auto it = allTxhash.begin(); it != allTxhash.end(); ) {
+      // alias
+      const uint256 &hash         = it->first;
+      const set<uint256> &depends = it->second;
+
+      // 没有依赖关系的直接推入
+      if (depends.size() == 0) {
+        sortedTxs.push_back(hash);
+        sortedTxsSet.insert(hash);
+        allTxhash.erase(it++);
+
+        continue;
+      }
+
+      // 判断依赖交易是否存在
+      bool allDependsExist = true;
+      for (auto dependTx : depends) {
+        if (sortedTxsSet.find(dependTx) == sortedTxsSet.end()) {
+          allDependsExist = false;
+          break;
+        }
+      }
+      if (allDependsExist) {
+        sortedTxs.push_back(hash);
+        sortedTxsSet.insert(hash);
+        allTxhash.erase(it++);
+      } else {
+        it++;
+      }
+    }
+  }
+  LOG_INFO("getrawmempool size: %llu", sortedTxs.size());
+
+  //
+  // getrawtransaction
+  //
+  txs.clear();
+  txs.reserve(sortedTxs.size());
+  for (auto hash : sortedTxs) {
+    CTransaction tx;
+    _bitcoind_getrawtransaction(bitcoind, hash, tx);
+    txs.push_back(tx);
+  }
+}
+
 void Log1Producer::syncBitcoind() {
   if (!running_) { return; }
   LogScope ls("Log1Producer::syncBitcoind()");
@@ -512,24 +635,7 @@ void Log1Producer::syncBitcoind() {
   //
   // 第二步，从一致块高度开始，每次加一，向前追，直至与bitcoind高度一致
   //
-  int32_t bitcoindBestHeight = -1;
-  {
-    const string request = Strings::Format("{\"id\":1,\"method\":\"getinfo\",\"params\":[]}");
-    string response;
-    const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
-    if (ret != 0) {
-      THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
-    }
-    JsonNode r;
-    JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
-    if (r["error"].type() != Utilities::JS::type::Undefined &&
-        r["error"].type() == Utilities::JS::type::Obj) {
-      THROW_EXCEPTION_DBEX("bitcoind rpc call fail, code: %d, error: %s",
-                           r["error"]["code"].int32(),
-                           r["error"]["message"].str().c_str());
-    }
-    bitcoindBestHeight = r["result"]["blocks"].int32();
-  }
+  int32_t bitcoindBestHeight = _bitcoind_getBestHeight(bitcoind);
   assert(bitcoindBestHeight > 0);
   LOG_INFO("bitcoind best height: %d", bitcoindBestHeight);
 
@@ -544,6 +650,24 @@ void Log1Producer::syncBitcoind() {
 
     chain_.push(height, block.GetHash(), block.hashPrevBlock);
     writeLog1Block(height, block);
+  }
+
+  //
+  // 第三步
+  // 获取当前内存交易，准备写入log1。 获取交易后，再次检测高度，防止高度发生变化。
+  // 若高度不变，写入所有的内存txs至log1。若高度发生变化，则退出。
+  //
+  vector<CTransaction> mempoolTxs;
+  _bitcoind_getmempool_txs(bitcoind, mempoolTxs);
+  if (bitcoindBestHeight != _bitcoind_getBestHeight(bitcoind)) {
+    THROW_EXCEPTION_DBEX("bitcoind's height has been changed, exit. please restart log1producer again.");
+  }
+
+  // TODO: 写入一条回撤指令，会令log2producer reject掉当前所有未确认交易
+
+  // 写入当前内存txs
+  for (const auto &mempoolTx : mempoolTxs) {
+    writeLog1Tx(mempoolTx);
   }
 }
 

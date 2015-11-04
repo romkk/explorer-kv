@@ -252,7 +252,7 @@ void BlockTimestamp::popBlock() {
 
 ///////////////////////////////  Log2Producer  /////////////////////////////////
 Log2Producer::Log2Producer(): running_(false),
-db_(Config::GConfig.get("mysql.uri")), blkTs_(2016), currBlockHeight_(-1)
+db_(Config::GConfig.get("mysql.uri")), blkTs_(2016), currBlockHeight_(-1), currLog1FileOffset_(-1)
 {
   kTableTxlogs2Fields_ = "`batch_id`, `type`, `block_height`, \
   `block_id`, `max_block_timestamp`, `tx_hash`, `created_at`, `updated_at`";
@@ -418,17 +418,31 @@ void Log2Producer::initLog2() {
 }
 
 void Log2Producer::updateLog1FileStatus() {
+  static int32_t log1FileIndex = -1;
+  static int64_t currLog1FileOffset = -1;
+
   string sql;
   const string nowStr = date("%F %T");
-  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%d',`updated_at`='%s' "
-                        " WHERE `key`='log2producer.log1file.index'",
-                        log1FileIndex_, nowStr.c_str());
-  db_.updateOrThrowEx(sql);
 
-  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%d',`updated_at`='%s' "
-                        " WHERE `key`='log2producer.log1file.offset'",
-                        log1FileIndex_, nowStr.c_str());
-  db_.updateOrThrowEx(sql, 1);
+  // index
+  if (log1FileIndex != log1FileIndex_) {
+    sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%d',`updated_at`='%s' "
+                          " WHERE `key`='log2producer.log1file.index'",
+                          log1FileIndex_, nowStr.c_str());
+    db_.updateOrThrowEx(sql);
+
+    log1FileIndex = log1FileIndex_;
+  }
+
+  // offset
+  if (currLog1FileOffset != currLog1FileOffset_) {
+    sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%lld',`updated_at`='%s' "
+                          " WHERE `key`='log2producer.log1file.offset'",
+                          currLog1FileOffset_, nowStr.c_str());
+    db_.updateOrThrowEx(sql, 1);
+    currLog1FileOffset = currLog1FileOffset_;
+  }
+
 }
 
 void Log2Producer::syncLog1() {
@@ -477,7 +491,7 @@ void Log2Producer::tryRemoveOldLog1() {
   }
 }
 
-void Log2Producer::tryReadLog1(vector<string> &lines) {
+void Log2Producer::tryReadLog1(vector<string> &lines, vector<int64_t> &offset) {
   const string currFile = Strings::Format("%s/files/%d.log",
                                           log1Dir_.c_str(), log1FileIndex_);
   const string nextFile = Strings::Format("%s/files/%d.log",
@@ -485,6 +499,9 @@ void Log2Producer::tryReadLog1(vector<string> &lines) {
 
   // 判断是否存在下一个文件，需要在读取当前文件之间判断，防止读取漏掉现有文件的最后内容
   const bool isNextExist = fs::exists(fs::path(nextFile));
+
+  lines.clear();
+  offset.clear();
 
   //
   // 打开文件并尝试读取新行
@@ -501,8 +518,14 @@ void Log2Producer::tryReadLog1(vector<string> &lines) {
       // 读取完最后一行后，再读取一次，才会导致 eof() 为 true
       break;
     }
+
+    const int64_t currOffset = log1Ifstream.tellg();
+
+    // offset肯定是同一个文件内的，不可能跨文件
+
     lines.push_back(line);
-    log1FileOffset_ = log1Ifstream.tellg();
+    offset.push_back(currOffset);
+    log1FileOffset_ = currOffset;
 
     if (lines.size() > 500) {  // 每次最多处理500条日志
       break;
@@ -974,9 +997,13 @@ void Log2Producer::threadWatchNotifyFile() {
 void Log2Producer::run() {
   LogScope ls("Log2Producer::run()");
 
+  vector<string>  lines;
+  vector<int64_t> offsets;
+
   while (running_) {
-    vector<string> lines;
-    tryReadLog1(lines);
+    lines.clear();
+    offsets.clear();
+    tryReadLog1(lines, offsets);
 
     if (!running_) { break; }
 
@@ -987,7 +1014,10 @@ void Log2Producer::run() {
       continue;
     }
 
-    for (const auto &line : lines) {
+    for (size_t i = 0; i < lines.size(); i++) {
+      const string &line   = lines[i];
+      currLog1FileOffset_ = offsets[i];
+
       Log1 log1Item;
       log1Item.parse(line);
 

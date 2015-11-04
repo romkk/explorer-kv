@@ -172,6 +172,8 @@ void Chain::push(const int32_t height, const uint256 &hash,
   const int32_t curHeight = getCurHeight();
   const uint256 curHash   = getCurHash();
 
+//  LOG_DEBUG("chain push block, height: %d, hash: %s", height, hash.ToString().c_str());
+
   /********************* 前进 *********************/
   if (height == curHeight + 1) {
     if (prevHash != curHash) {
@@ -542,7 +544,6 @@ static void _bitcoind_getmempool_txs(BitcoinRpc &bitcoind, vector<CTransaction> 
     allTxhash[uint256(hashStr)] = set<uint256>();
 
     for (auto dependTx : node["depends"].array()) {
-      cout << dependTx.str() << endl;
       allTxhash[uint256(hashStr)].insert(uint256(dependTx.str()));
     }
   }

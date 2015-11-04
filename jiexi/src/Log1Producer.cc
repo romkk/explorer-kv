@@ -400,7 +400,7 @@ void Log1Producer::initLog1() {
       Log1 log1Item;
       while (getline(fin, line)) {
         log1Item.parse(line);
-        if (log1Item.isTx()) { continue; }
+        if (!log1Item.isBlock()) { continue; }
         assert(log1Item.isBlock());
         if (chain_.size() == 0) {
           chain_.pushFirst(log1Item.blockHeight_, log1Item.getBlock().GetHash());
@@ -493,9 +493,9 @@ static int32_t _bitcoind_getBestHeight(BitcoinRpc &bitcoind) {
   return r["result"]["blocks"].int32();
 }
 
-static void _bitcoind_getrawtransaction(BitcoinRpc &bitcoind, const uint256 &hash, CTransaction &tx) {
-  const string request = Strings::Format("{\"id\":1,\"method\":\"getrawtransaction\",\"params\":[\"%s\", false]}",
-                                         hash.ToString().c_str());
+static void _bitcoind_getrawtransaction(BitcoinRpc &bitcoind, const uint256 &hash, CTransaction &tx, bool verbose) {
+  const string request = Strings::Format("{\"id\":1,\"method\":\"getrawtransaction\",\"params\":[\"%s\", %d]}",
+                                         hash.ToString().c_str(), verbose ? 1 : 0);
   string response;
   const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
   if (ret != 0) {
@@ -536,18 +536,22 @@ static void _bitcoind_getmempool_txs(BitcoinRpc &bitcoind, vector<CTransaction> 
                          r["error"]["code"].int32(),
                          r["error"]["message"].str().c_str());
   }
+
   for (auto node : r["result"].array()) {
     const string hashStr = std::string(node.key_start(),node.key_end());
     allTxhash[uint256(hashStr)] = set<uint256>();
 
     for (auto dependTx : node["depends"].array()) {
-      allTxhash[uint256(hashStr)].insert(uint256(node.str()));
+      cout << dependTx.str() << endl;
+      allTxhash[uint256(hashStr)].insert(uint256(dependTx.str()));
     }
   }
 
   // 循环遍历
   // 最多循环次数： allTxhash.size()
-  for (int i = 0; i < allTxhash.size(); i++) {
+  while (1) {
+    const size_t lastSize = sortedTxs.size();
+
     assert(sortedTxs.size() == sortedTxsSet.size());
     if (sortedTxs.size() == allTxhash.size()) {
       break;  // 所有交易均已经存放至vector中
@@ -583,6 +587,11 @@ static void _bitcoind_getmempool_txs(BitcoinRpc &bitcoind, vector<CTransaction> 
         it++;
       }
     }
+
+    if (lastSize == sortedTxs.size()) {
+      LOG_INFO("no more txs, sorted: %llu, all: %llu", sortedTxs.size(), allTxhash.size());
+      break;
+    }
   }
   LOG_INFO("getrawmempool size: %llu", sortedTxs.size());
 
@@ -593,7 +602,7 @@ static void _bitcoind_getmempool_txs(BitcoinRpc &bitcoind, vector<CTransaction> 
   txs.reserve(sortedTxs.size());
   for (auto hash : sortedTxs) {
     CTransaction tx;
-    _bitcoind_getrawtransaction(bitcoind, hash, tx);
+    _bitcoind_getrawtransaction(bitcoind, hash, tx, 0);
     txs.push_back(tx);
   }
 }
@@ -629,6 +638,10 @@ void Log1Producer::syncBitcoind() {
 
     // 不一致，弹出最后一个块
     chain_.pop();
+    if (chain_.size() == 0) {
+      THROW_EXCEPTION_DBEX("can't find matched block, bitcoind has a big fork");
+    }
+
     LOG_INFO("chain pop block, height: %d, hash: %s",
              chain_.getCurHeight(), chain_.getCurHash().ToString().c_str());
 
@@ -638,10 +651,6 @@ void Log1Producer::syncBitcoind() {
     writeLog1Block(chain_.getCurHeight(), block);
     LOG_INFO("sync bitcoind block(-), height: %d, hash: %s",
              chain_.getCurHeight(), chain_.getCurHash().ToString().c_str());
-
-    if (chain_.size() == 0) {
-      THROW_EXCEPTION_DBEX("can't find matched block, bitcoind has a big fork");
-    }
   }
 
   //
@@ -682,6 +691,7 @@ void Log1Producer::syncBitcoind() {
   for (const auto &mempoolTx : mempoolTxs) {
     writeLog1Tx(mempoolTx);
   }
+
 }
 
 void Log1Producer::syncLog0() {

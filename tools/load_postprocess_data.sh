@@ -54,7 +54,7 @@ case "$table" in
         sql="$sql (block_id, position, tx_id, created_at);"
     ;;
     address_txs_*)
-        sql="$sql (address_id, tx_id, tx_height, total_received, balance_diff, balance_final, idx, ymd, prev_ymd, prev_tx_id, next_ymd, next_tx_id, created_at);"
+        sql="$sql (address_id, tx_id, tx_height, total_received, balance_diff, balance_final, idx, ymd, prev_ymd, prev_tx_id, next_ymd, next_tx_id, created_at, updated_at);"
     ;;
     tx_inputs_*)
         sql="$sql (tx_id, position, input_script_asm, input_script_hex, sequence, prev_tx_id, prev_position, prev_value, prev_address, prev_address_ids, created_at);"

@@ -1424,10 +1424,11 @@ void _accpetTx_insertAddressTxs(MySQLConnection &db, class TxLog2 *txLog2,
     //
     if (addr->endTxYmd_ > 0 && addr->endTxId_ > 0) {
       // 更新前向记录
-      sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d, `next_tx_id`=%lld "
+      sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d, `next_tx_id`=%lld,`updated_at`='%s' "
                             " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                            tableIdx_AddrTxs(addr->endTxYmd_), txLog2->ymd_,
-                            txLog2->txId_, addrID, addr->endTxId_);
+                            tableIdx_AddrTxs(addr->endTxYmd_),
+                            txLog2->ymd_, txLog2->txId_, date("%F %T").c_str(),
+                            addrID, addr->endTxId_);
       db.updateOrThrowEx(sql, 1);
 
       if (addr->endTxYmd_ > txLog2->ymd_) {
@@ -1447,12 +1448,13 @@ void _accpetTx_insertAddressTxs(MySQLConnection &db, class TxLog2 *txLog2,
     //
     sql = Strings::Format("INSERT INTO `address_txs_%d` (`address_id`, `tx_id`, `tx_height`,"
                           " `total_received`, `balance_diff`, `balance_final`, `idx`, `ymd`,"
-                          " `prev_ymd`, `prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`)"
+                          " `prev_ymd`, `prev_tx_id`,`next_ymd`,`next_tx_id`,`created_at`,`updated_at`)"
                           " VALUES (%lld, %lld, %d, -1, %lld, -1, %lld, %d, "
-                          "         %d, %lld, 0, 0, '%s') ",
+                          "         %d, %lld, 0, 0, '%s', '%s') ",
                           tableIdx_AddrTxs(txLog2->ymd_), addrID, txLog2->txId_, txLog2->blkHeight_,
                           balanceDiff, addr->txCount_+ 1, txLog2->ymd_,
-                          addr->endTxYmd_, addr->endTxId_, date("%F %T").c_str());
+                          addr->endTxYmd_, addr->endTxId_,
+                          date("%F %T").c_str(), date("%F %T").c_str());
     db.updateOrThrowEx(sql, 1);
 
     //
@@ -1617,10 +1619,11 @@ void Parser::_updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node,
   // 变更前向节点的后续指向
   //
   if (node->prevTxId_ > 0) {
-    sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d "
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=%d,`updated_at`='%s' "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(node->prevYmd_),
-                          targetYmd, node->addressId_, node->prevTxId_);
+                          targetYmd, date("%F %T").c_str(),
+                          node->addressId_, node->prevTxId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
   } else {
     // 变更地址的头交易信息，没有前向节点则说明当前节点就是头节点
@@ -1636,10 +1639,11 @@ void Parser::_updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node,
   //
   if (node->nextTxId_ > 0) {
     // 涉及指向，不涉及金额变化
-    sql = Strings::Format("UPDATE `address_txs_%d` SET `prev_ymd`=%d "
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `prev_ymd`=%d,`updated_at`='%s' "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(node->nextYmd_),
-                          targetYmd, node->addressId_, node->nextTxId_);
+                          targetYmd, date("%F %T").c_str(),
+                          node->addressId_, node->nextTxId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
   } else {
     // 变更地址的尾交易信息，没有后向节点则说明当前节点就是尾节点
@@ -1656,12 +1660,12 @@ void Parser::_updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node,
   // 表列名
   const string fields1 = "`address_id`, `tx_id`, `tx_height`, `total_received`, "
   "`balance_diff`, `balance_final`, `idx`, `ymd`, `prev_ymd`, "
-  "`prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`";
+  "`prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`,`updated_at`";
   // 表列名 (更新了 ymd)
   const string fields2 = Strings::Format("`address_id`, `tx_id`, `tx_height`, `total_received`, "
                                          "`balance_diff`, `balance_final`, `idx`, %d, `prev_ymd`, "
-                                         "`prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`",
-                                         targetYmd);
+                                         "`prev_tx_id`, `next_ymd`, `next_tx_id`, `created_at`, '%s'",
+                                         targetYmd, date("%F %T").c_str());
   sql = Strings::Format("INSERT INTO `address_txs_%d` (%s) "
                         " SELECT %s FROM `address_txs_%d` "
                         " WHERE `address_id`=%lld AND `tx_id`=%lld ",
@@ -1704,16 +1708,17 @@ void Parser::_switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
   // 处理N的后向节点
   //
   if (n->nextTxId_ > 0) {
-    sql = Strings::Format("UPDATE `address_txs_%d` SET `prev_tx_id`=%lld "
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `prev_tx_id`=%lld,`updated_at`='%s' "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(UNCONFIRM_TX_YMD),
-                          m->txId_, addrId, n->nextTxId_);
+                          m->txId_, date("%F %T").c_str(),
+                          addrId, n->nextTxId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
   } else {
     // N没有后续节点，变更地址的尾交易信息
     sql = Strings::Format("UPDATE `addresses_%04d` SET "
-                          " `end_tx_id`=%lld WHERE `id`=%lld ",
-                          tableIdx_Addr(addrId), m->txId_, addrId);
+                          " `end_tx_id`=%lld,`updated_at`='%s' WHERE `id`=%lld ",
+                          tableIdx_Addr(addrId), m->txId_, date("%F %T").c_str(), addrId);
     dbExplorer_.updateOrThrowEx(sql , 1);
 
     addr->endTxId_ = m->txId_;
@@ -1725,10 +1730,11 @@ void Parser::_switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
   // 处理N的前向节点, 必然存在该节点
   //
   if (!isNeighbour) {
-    sql = Strings::Format("UPDATE `address_txs_%d` SET `next_tx_id`=%lld "
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `next_tx_id`=%lld,`updated_at`='%s' "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(UNCONFIRM_TX_YMD),
-                          m->txId_, addrId, n->prevTxId_);
+                          m->txId_, date("%F %T").c_str(),
+                          addrId, n->prevTxId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
 
     sql_m_update += Strings::Format("`prev_ymd`=%d,`prev_tx_id`=%lld,",
@@ -1743,16 +1749,17 @@ void Parser::_switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
   // 处理M的前向节点，该节点可能是确认的、也可能是未确认的，该节点的后向节点必然未确认
   //
   if (m->prevTxId_ > 0) {
-    sql = Strings::Format("UPDATE `address_txs_%d` SET `next_tx_id`=%lld "
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `next_tx_id`=%lld,`updated_at`='%s' "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                          tableIdx_AddrTxs(m->prevYmd_), n->txId_,
+                          tableIdx_AddrTxs(m->prevYmd_),
+                          n->txId_, date("%F %T").c_str(),
                           addrId, m->prevTxId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
   } else {
     // M的前向节点不存在，变更地址的头交易信息
     sql = Strings::Format("UPDATE `addresses_%04d` SET "
-                          " `begin_tx_id`=%lld WHERE `id`=%lld ",
-                          tableIdx_Addr(addrId), n->txId_, addrId);
+                          " `begin_tx_id`=%lld,`updated_at`='%s' WHERE `id`=%lld ",
+                          tableIdx_Addr(addrId), n->txId_, date("%F %T").c_str(), addrId);
     dbExplorer_.updateOrThrowEx(sql , 1);
 
     addr->beginTxId_ = n->txId_;
@@ -1765,10 +1772,11 @@ void Parser::_switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
   // 处理M的后向节点, 必然存在该节点
   //
   if (!isNeighbour) {
-    sql = Strings::Format("UPDATE `address_txs_%d` SET `prev_tx_id`=%lld "
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `prev_tx_id`=%lld,`updated_at`='%s' "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(UNCONFIRM_TX_YMD),
-                          n->txId_, addrId, m->nextTxId_);
+                          n->txId_, date("%F %T").c_str(),
+                          addrId, m->nextTxId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
 
     sql_n_update += Strings::Format("`next_ymd`=%d,`next_tx_id`=%lld,",
@@ -1784,24 +1792,27 @@ void Parser::_switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
   //
   {
     // address_id + idx 为唯一索引，所以需要先置为负的，再设置
-    sql = Strings::Format("UPDATE `address_txs_%d` SET `idx`=%lld "
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `idx`=%lld,`updated_at`='%s' "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(UNCONFIRM_TX_YMD),
-                          -1 * m->idx_, addrId, m->txId_);
+                          -1 * m->idx_, date("%F %T").c_str(),
+                          addrId, m->txId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
 
     sql_n_update.resize(sql_n_update.size() - 1);
-    sql = Strings::Format("UPDATE `address_txs_%d` SET `idx`=%lld, %s "
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `idx`=%lld,`updated_at`='%s', %s "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(UNCONFIRM_TX_YMD),
-                          m->idx_, sql_n_update.c_str(), addrId, n->txId_);
+                          m->idx_, date("%F %T").c_str(),
+                          sql_n_update.c_str(), addrId, n->txId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
 
     sql_m_update.resize(sql_m_update.size() - 1);
-    sql = Strings::Format("UPDATE `address_txs_%d` SET `idx`=%lld, %s "
+    sql = Strings::Format("UPDATE `address_txs_%d` SET `idx`=%lld,`updated_at`='%s', %s "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
                           tableIdx_AddrTxs(UNCONFIRM_TX_YMD),
-                          n->idx_, sql_m_update.c_str(), addrId, m->txId_);
+                          n->idx_, date("%F %T").c_str(),
+                          sql_m_update.c_str(), addrId, m->txId_);
     dbExplorer_.updateOrThrowEx(sql , 1);
   }
 }
@@ -2185,10 +2196,10 @@ void Parser::_confirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr
   //
   // 更新 address_txs_<yyyymm>.tx_height
   //
-  sql = Strings::Format("UPDATE `address_txs_%d` SET `tx_height`=%d,%s "
+  sql = Strings::Format("UPDATE `address_txs_%d` SET `tx_height`=%d,`updated_at`='%s',%s "
                         " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                        tableIdx_AddrTxs(node->ymd_), height, sql2.c_str(),
-                        node->addressId_, node->txId_);
+                        tableIdx_AddrTxs(node->ymd_), height, date("%F %T").c_str(),
+                        sql2.c_str(), node->addressId_, node->txId_);
   dbExplorer_.updateOrThrowEx(sql, 1);
 
   //
@@ -2299,9 +2310,9 @@ void Parser::_unconfirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *ad
   // 更新 address_txs_<yyyymm>.tx_height
   //
   sql = Strings::Format("UPDATE `address_txs_%d` SET `tx_height`=0,"
-                        " `total_received`=0,`balance_final`=0 "
+                        " `total_received`=0,`balance_final`=0,`updated_at`='%s' "
                         " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                        tableIdx_AddrTxs(node->ymd_),
+                        tableIdx_AddrTxs(node->ymd_), date("%F %T").c_str(),
                         node->addressId_, node->txId_);
   dbExplorer_.updateOrThrowEx(sql, 1);
 
@@ -2576,9 +2587,10 @@ void Parser::_removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node)
   if (node->prevYmd_ != 0) {
     assert(node->prevTxId_ != 0);
 
-    sql = Strings::Format("UPDATE `address_txs_%d` SET `next_ymd`=0, `next_tx_id`=0 "
+    sql = Strings::Format("UPDATE `address_txs_%d` SET "
+                          " `next_ymd`=0, `next_tx_id`=0, `updated_at`='%s' "
                           " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-                          tableIdx_AddrTxs(node->prevYmd_),
+                          tableIdx_AddrTxs(node->prevYmd_), date("%F %T").c_str(),
                           addr->addrId_, node->prevTxId_);
     dbExplorer_.updateOrThrowEx(sql, 1);
   }

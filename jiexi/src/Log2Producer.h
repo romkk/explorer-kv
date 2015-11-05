@@ -137,6 +137,7 @@ public:
 
 ///////////////////////////////  Log2Producer  /////////////////////////////////
 class Log2Producer {
+  string kTableTxlogs2Fields_;
   mutex lock_;
   Condition changed_;
 
@@ -150,13 +151,12 @@ class Log2Producer {
   // 最后消费的文件以及游标
   int32_t log1FileIndex_;
   int64_t log1FileOffset_;
+  int64_t currLog1FileOffset_;
 
   // 块最大时间戳
   BlockTimestamp blkTs_;
 
   /* log2 */
-  int32_t log2BlockBeginHeight_;
-  uint256 log2BlockBeginHash_;
   int32_t currBlockHeight_;
   uint256 currBlockHash_;
 
@@ -176,7 +176,7 @@ class Log2Producer {
   void syncLog1();
 
   void tryRemoveOldLog1();  // 移除旧的 log1 日志
-  void tryReadLog1(vector<string> &lines);
+  void tryReadLog1(vector<string> &lines, vector<int64_t> &offset);
 
   void handleTx(Log1 &log1Item);
 
@@ -188,6 +188,9 @@ class Log2Producer {
 
   void doNotifyTParser();
   void threadWatchNotifyFile();
+
+  void clearMempoolTxs();
+  void updateLog1FileStatus();
 
   void commitBatch(const size_t expectAffectedRows);
 

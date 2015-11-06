@@ -916,17 +916,19 @@ void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo,
   string line;
   AddrTx &t = addrInfo->addrTx_;
 
+  const string nowStr = date("%F %T");
+
   // table.address_txs_<yyyymm>
   // `address_id`, `tx_id`, `tx_height`, `total_received`, `balance_diff`,
   // `balance_final`, `idx`, `ymd`, `prev_ymd`, `prev_tx_id`, `next_ymd`,
-  // `next_tx_id`, `created_at`
+  // `next_tx_id`, `created_at`, `updated_at`
   line = Strings::Format("%lld,%lld,%d,%lld,%lld,%lld,%lld,"
-                         "%d,%d,%lld,%d,%lld,%s",
+                         "%d,%d,%lld,%d,%lld,%s,%s",
                          addrInfo->addrId_, t.txId_, t.txHeight_,
                          addrInfo->totalReceived_, t.balanceDiff_, t.balanceFinal_,
                          addrInfo->idx_, t.ymd_, t.prevYmd_, t.prevTxId_,
                          t.nextYmd_, t.nextTxId_,
-                         date("%F %T").c_str());
+                         nowStr.c_str(), nowStr.c_str());
   fwriter->append(line, f);
 }
 

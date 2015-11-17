@@ -41,7 +41,7 @@ class Log1 {
 
 public:
   enum {
-    TYPE_BLOCK = 1, TYPE_TX = 2
+    TYPE_BLOCK = 1, TYPE_TX = 2, TYPE_CLEAR_MEMTXS = 3
   };
 
   int32_t type_;
@@ -55,6 +55,7 @@ public:
   void parse(const string &line);
   bool isTx();
   bool isBlock();
+  bool isClearMemtxs();
   const CBlock &getBlock();
   const CTransaction &getTx();
   string toString();

@@ -130,9 +130,7 @@ bool BitcoinRpc::CheckBitcoind() {
     return false;
   }
   JsonNode result = r["result"];
-  if (result.type() == Utilities::JS::type::Null ||
-      result["errors"].str().length() != 0 ||
-      result["connections"].int32() == 0) {
+  if (result.type() == Utilities::JS::type::Null || result["connections"].int32() == 0) {
     LOG_FATAL("bitcoind is NOT works fine, getinfo: %s", response.c_str());
     return false;
   }

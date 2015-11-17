@@ -1382,8 +1382,8 @@ static LastestAddressInfo *_getAddressInfo(MySQLConnection &db, const int64_t ad
     it = gAddrTxCache.find(addrID);
 
     // clear, 数量限制，防止长时间运行后占用过多内存
-    const size_t  kMaxCacheCount  = IsDebug() ? 20*10000 : 1000*10000;
-    const int32_t kExpiredSeconds = IsDebug() ? 3600*5 : 86400 * 3;
+    const size_t  kMaxCacheCount  = 1000*10000;
+    const int32_t kExpiredSeconds = 86400 * 3;
     if (gAddrTxCache.size() > kMaxCacheCount) {
       LOG_INFO("clear gAddrTxCache begin, count: %llu", gAddrTxCache.size());
       for (auto it2 = gAddrTxCache.begin(); it2 != gAddrTxCache.end(); ) {

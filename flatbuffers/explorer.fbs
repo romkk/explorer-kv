@@ -6,9 +6,14 @@
 // @since 2015-11
 //
 //
-namespace efb;  // explorer flatbuffers
+namespace fbe;  // flatbuffers explorer
 
 enum TxType: byte { NonStandard = 0, PubKey, PubKeyHash, ScriptHash, MultiSig, NullData }
+
+// 00_{tx_hash}
+table TxHex {
+  hex: string;
+}
 
 table TxInput {
   position: int;
@@ -30,6 +35,7 @@ table TxOutput {
   script_type: TxType;
 }
 
+// 01_{tx_hash}
 table Tx {
   height: int = -1;
   is_coinbase: bool;
@@ -37,15 +43,55 @@ table Tx {
   lock_time: uint;
   size: int;
   fee: long;
-  inputs: TxInput;
+  inputs: [TxInput];
   inputs_count: int;
   inputs_value: long;
-  outputs: TxOutput;
+  outputs: [TxOutput];
   outputs_count: int;
   outputs_value: long;
   created_at: string;
 }
 
+table TxSpentBy {
+  tx_hash: string;
+  position: int;
+}
+
+// 02_{tx_hash}
+table TxSpent {
+  spent_txs: [TxSpentBy];
+}
+
+// 10_{block_height}
+table BlockHash {
+  hash: string;
+}
+
+// 11_{block_hash}
+table Block {
+  version: int;
+  mrkl_root: string;
+  timestamp: uint;
+  curr_max_timestamp: uint;
+  bits: uint;
+  nonce: uint;
+  prev_block_hash: string;
+  next_block_hash: string;
+  size: int;
+  pool_difficulty: long;
+  difficulty: double;
+  tx_count: uint;
+  reward_block: long;
+  reward_fees: long;
+  created_at: string;
+}
+
+// 12_{block_hash}_{n}
+table BlockTxsHash {
+  hash_str: string;
+}
+
+// 20_{address}
 struct Address {
   tx_count: int;
   received: long;
@@ -58,7 +104,29 @@ struct Address {
   updated_at: uint;
 }
 
+// 21_{address}_{index}
 table AddressTx {
   tx_hash: string;
+  tx_height: int = -1;
+  ymd: int = -1;
   balance_diff: long;
 }
+
+// 22_{address}_{tx_hash}
+table AddressTxIdx {
+  index: int;  // 地址最大交易数量为int
+}
+
+// 23_{address}_{index}
+table UnspentOutput {
+  tx_hash: string;
+  position: int;
+  position2: short;  // 16 bit: short ushort
+  value: long;
+}
+
+// 24_{address}_{tx_hash}
+table AddressUnspentOutput {
+  index: [int];
+}
+

@@ -249,49 +249,52 @@ inline flatbuffers::Offset<TxOutput> CreateTxOutput(flatbuffers::FlatBufferBuild
 struct Tx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   int32_t height() const { return GetField<int32_t>(4, -1); }
   bool mutate_height(int32_t height) { return SetField(4, height); }
-  uint8_t is_coinbase() const { return GetField<uint8_t>(6, 0); }
-  bool mutate_is_coinbase(uint8_t is_coinbase) { return SetField(6, is_coinbase); }
-  int32_t version() const { return GetField<int32_t>(8, 0); }
-  bool mutate_version(int32_t version) { return SetField(8, version); }
-  uint32_t lock_time() const { return GetField<uint32_t>(10, 0); }
-  bool mutate_lock_time(uint32_t lock_time) { return SetField(10, lock_time); }
-  int32_t size() const { return GetField<int32_t>(12, 0); }
-  bool mutate_size(int32_t size) { return SetField(12, size); }
-  int64_t fee() const { return GetField<int64_t>(14, 0); }
-  bool mutate_fee(int64_t fee) { return SetField(14, fee); }
-  const flatbuffers::Vector<flatbuffers::Offset<TxInput>> *inputs() const { return GetPointer<const flatbuffers::Vector<flatbuffers::Offset<TxInput>> *>(16); }
-  flatbuffers::Vector<flatbuffers::Offset<TxInput>> *mutable_inputs() { return GetPointer<flatbuffers::Vector<flatbuffers::Offset<TxInput>> *>(16); }
-  int32_t inputs_count() const { return GetField<int32_t>(18, 0); }
-  bool mutate_inputs_count(int32_t inputs_count) { return SetField(18, inputs_count); }
-  int64_t inputs_value() const { return GetField<int64_t>(20, 0); }
-  bool mutate_inputs_value(int64_t inputs_value) { return SetField(20, inputs_value); }
-  const flatbuffers::Vector<flatbuffers::Offset<TxOutput>> *outputs() const { return GetPointer<const flatbuffers::Vector<flatbuffers::Offset<TxOutput>> *>(22); }
-  flatbuffers::Vector<flatbuffers::Offset<TxOutput>> *mutable_outputs() { return GetPointer<flatbuffers::Vector<flatbuffers::Offset<TxOutput>> *>(22); }
-  int32_t outputs_count() const { return GetField<int32_t>(24, 0); }
-  bool mutate_outputs_count(int32_t outputs_count) { return SetField(24, outputs_count); }
-  int64_t outputs_value() const { return GetField<int64_t>(26, 0); }
-  bool mutate_outputs_value(int64_t outputs_value) { return SetField(26, outputs_value); }
-  const flatbuffers::String *created_at() const { return GetPointer<const flatbuffers::String *>(28); }
-  flatbuffers::String *mutable_created_at() { return GetPointer<flatbuffers::String *>(28); }
+  int32_t position_in_block() const { return GetField<int32_t>(6, -1); }
+  bool mutate_position_in_block(int32_t position_in_block) { return SetField(6, position_in_block); }
+  uint8_t is_coinbase() const { return GetField<uint8_t>(8, 0); }
+  bool mutate_is_coinbase(uint8_t is_coinbase) { return SetField(8, is_coinbase); }
+  int32_t version() const { return GetField<int32_t>(10, 0); }
+  bool mutate_version(int32_t version) { return SetField(10, version); }
+  uint32_t lock_time() const { return GetField<uint32_t>(12, 0); }
+  bool mutate_lock_time(uint32_t lock_time) { return SetField(12, lock_time); }
+  int32_t size() const { return GetField<int32_t>(14, 0); }
+  bool mutate_size(int32_t size) { return SetField(14, size); }
+  int64_t fee() const { return GetField<int64_t>(16, 0); }
+  bool mutate_fee(int64_t fee) { return SetField(16, fee); }
+  const flatbuffers::Vector<flatbuffers::Offset<TxInput>> *inputs() const { return GetPointer<const flatbuffers::Vector<flatbuffers::Offset<TxInput>> *>(18); }
+  flatbuffers::Vector<flatbuffers::Offset<TxInput>> *mutable_inputs() { return GetPointer<flatbuffers::Vector<flatbuffers::Offset<TxInput>> *>(18); }
+  int32_t inputs_count() const { return GetField<int32_t>(20, 0); }
+  bool mutate_inputs_count(int32_t inputs_count) { return SetField(20, inputs_count); }
+  int64_t inputs_value() const { return GetField<int64_t>(22, 0); }
+  bool mutate_inputs_value(int64_t inputs_value) { return SetField(22, inputs_value); }
+  const flatbuffers::Vector<flatbuffers::Offset<TxOutput>> *outputs() const { return GetPointer<const flatbuffers::Vector<flatbuffers::Offset<TxOutput>> *>(24); }
+  flatbuffers::Vector<flatbuffers::Offset<TxOutput>> *mutable_outputs() { return GetPointer<flatbuffers::Vector<flatbuffers::Offset<TxOutput>> *>(24); }
+  int32_t outputs_count() const { return GetField<int32_t>(26, 0); }
+  bool mutate_outputs_count(int32_t outputs_count) { return SetField(26, outputs_count); }
+  int64_t outputs_value() const { return GetField<int64_t>(28, 0); }
+  bool mutate_outputs_value(int64_t outputs_value) { return SetField(28, outputs_value); }
+  const flatbuffers::String *created_at() const { return GetPointer<const flatbuffers::String *>(30); }
+  flatbuffers::String *mutable_created_at() { return GetPointer<flatbuffers::String *>(30); }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<int32_t>(verifier, 4 /* height */) &&
-           VerifyField<uint8_t>(verifier, 6 /* is_coinbase */) &&
-           VerifyField<int32_t>(verifier, 8 /* version */) &&
-           VerifyField<uint32_t>(verifier, 10 /* lock_time */) &&
-           VerifyField<int32_t>(verifier, 12 /* size */) &&
-           VerifyField<int64_t>(verifier, 14 /* fee */) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 16 /* inputs */) &&
+           VerifyField<int32_t>(verifier, 6 /* position_in_block */) &&
+           VerifyField<uint8_t>(verifier, 8 /* is_coinbase */) &&
+           VerifyField<int32_t>(verifier, 10 /* version */) &&
+           VerifyField<uint32_t>(verifier, 12 /* lock_time */) &&
+           VerifyField<int32_t>(verifier, 14 /* size */) &&
+           VerifyField<int64_t>(verifier, 16 /* fee */) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 18 /* inputs */) &&
            verifier.Verify(inputs()) &&
            verifier.VerifyVectorOfTables(inputs()) &&
-           VerifyField<int32_t>(verifier, 18 /* inputs_count */) &&
-           VerifyField<int64_t>(verifier, 20 /* inputs_value */) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 22 /* outputs */) &&
+           VerifyField<int32_t>(verifier, 20 /* inputs_count */) &&
+           VerifyField<int64_t>(verifier, 22 /* inputs_value */) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 24 /* outputs */) &&
            verifier.Verify(outputs()) &&
            verifier.VerifyVectorOfTables(outputs()) &&
-           VerifyField<int32_t>(verifier, 24 /* outputs_count */) &&
-           VerifyField<int64_t>(verifier, 26 /* outputs_value */) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 28 /* created_at */) &&
+           VerifyField<int32_t>(verifier, 26 /* outputs_count */) &&
+           VerifyField<int64_t>(verifier, 28 /* outputs_value */) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 30 /* created_at */) &&
            verifier.Verify(created_at()) &&
            verifier.EndTable();
   }
@@ -301,28 +304,30 @@ struct TxBuilder {
   flatbuffers::FlatBufferBuilder &fbb_;
   flatbuffers::uoffset_t start_;
   void add_height(int32_t height) { fbb_.AddElement<int32_t>(4, height, -1); }
-  void add_is_coinbase(uint8_t is_coinbase) { fbb_.AddElement<uint8_t>(6, is_coinbase, 0); }
-  void add_version(int32_t version) { fbb_.AddElement<int32_t>(8, version, 0); }
-  void add_lock_time(uint32_t lock_time) { fbb_.AddElement<uint32_t>(10, lock_time, 0); }
-  void add_size(int32_t size) { fbb_.AddElement<int32_t>(12, size, 0); }
-  void add_fee(int64_t fee) { fbb_.AddElement<int64_t>(14, fee, 0); }
-  void add_inputs(flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<TxInput>>> inputs) { fbb_.AddOffset(16, inputs); }
-  void add_inputs_count(int32_t inputs_count) { fbb_.AddElement<int32_t>(18, inputs_count, 0); }
-  void add_inputs_value(int64_t inputs_value) { fbb_.AddElement<int64_t>(20, inputs_value, 0); }
-  void add_outputs(flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<TxOutput>>> outputs) { fbb_.AddOffset(22, outputs); }
-  void add_outputs_count(int32_t outputs_count) { fbb_.AddElement<int32_t>(24, outputs_count, 0); }
-  void add_outputs_value(int64_t outputs_value) { fbb_.AddElement<int64_t>(26, outputs_value, 0); }
-  void add_created_at(flatbuffers::Offset<flatbuffers::String> created_at) { fbb_.AddOffset(28, created_at); }
+  void add_position_in_block(int32_t position_in_block) { fbb_.AddElement<int32_t>(6, position_in_block, -1); }
+  void add_is_coinbase(uint8_t is_coinbase) { fbb_.AddElement<uint8_t>(8, is_coinbase, 0); }
+  void add_version(int32_t version) { fbb_.AddElement<int32_t>(10, version, 0); }
+  void add_lock_time(uint32_t lock_time) { fbb_.AddElement<uint32_t>(12, lock_time, 0); }
+  void add_size(int32_t size) { fbb_.AddElement<int32_t>(14, size, 0); }
+  void add_fee(int64_t fee) { fbb_.AddElement<int64_t>(16, fee, 0); }
+  void add_inputs(flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<TxInput>>> inputs) { fbb_.AddOffset(18, inputs); }
+  void add_inputs_count(int32_t inputs_count) { fbb_.AddElement<int32_t>(20, inputs_count, 0); }
+  void add_inputs_value(int64_t inputs_value) { fbb_.AddElement<int64_t>(22, inputs_value, 0); }
+  void add_outputs(flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<TxOutput>>> outputs) { fbb_.AddOffset(24, outputs); }
+  void add_outputs_count(int32_t outputs_count) { fbb_.AddElement<int32_t>(26, outputs_count, 0); }
+  void add_outputs_value(int64_t outputs_value) { fbb_.AddElement<int64_t>(28, outputs_value, 0); }
+  void add_created_at(flatbuffers::Offset<flatbuffers::String> created_at) { fbb_.AddOffset(30, created_at); }
   TxBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
   TxBuilder &operator=(const TxBuilder &);
   flatbuffers::Offset<Tx> Finish() {
-    auto o = flatbuffers::Offset<Tx>(fbb_.EndTable(start_, 13));
+    auto o = flatbuffers::Offset<Tx>(fbb_.EndTable(start_, 14));
     return o;
   }
 };
 
 inline flatbuffers::Offset<Tx> CreateTx(flatbuffers::FlatBufferBuilder &_fbb,
    int32_t height = -1,
+   int32_t position_in_block = -1,
    uint8_t is_coinbase = 0,
    int32_t version = 0,
    uint32_t lock_time = 0,
@@ -347,6 +352,7 @@ inline flatbuffers::Offset<Tx> CreateTx(flatbuffers::FlatBufferBuilder &_fbb,
   builder_.add_size(size);
   builder_.add_lock_time(lock_time);
   builder_.add_version(version);
+  builder_.add_position_in_block(position_in_block);
   builder_.add_height(height);
   builder_.add_is_coinbase(is_coinbase);
   return builder_.Finish();

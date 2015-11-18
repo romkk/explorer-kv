@@ -38,6 +38,7 @@ table TxOutput {
 // 01_{tx_hash}
 table Tx {
   height: int = -1;
+  position_in_block: int = -1;
   is_coinbase: bool;
   version: int;
   lock_time: uint;

@@ -15,3 +15,4 @@
 22 | address | 22_{address}_{tx_hash} | address txhash -> address tx idx
 23 | address | 23_{address}_{index} | address unspent txs list
 24 | address | 24_{address}_{tx_hash} | [index]，对应该交易产生的某个地址的未花费index
+30 | double spent tx | 30_{tx_hash}_{position} | 双花交易，数组

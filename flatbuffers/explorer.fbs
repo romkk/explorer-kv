@@ -131,3 +131,8 @@ table AddressUnspentOutput {
   index: [int];
 }
 
+// 30_{tx_hash}_{position}
+table DoubleSpending {
+  txs: [string];
+}
+

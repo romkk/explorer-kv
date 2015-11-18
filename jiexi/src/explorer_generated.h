@@ -22,6 +22,7 @@ struct AddressTx;
 struct AddressTxIdx;
 struct UnspentOutput;
 struct AddressUnspentOutput;
+struct DoubleSpending;
 
 enum TxType {
   TxType_NonStandard = 0,
@@ -754,6 +755,37 @@ inline flatbuffers::Offset<AddressUnspentOutput> CreateAddressUnspentOutput(flat
    flatbuffers::Offset<flatbuffers::Vector<int32_t>> index = 0) {
   AddressUnspentOutputBuilder builder_(_fbb);
   builder_.add_index(index);
+  return builder_.Finish();
+}
+
+struct DoubleSpending FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
+  const flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *txs() const { return GetPointer<const flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *>(4); }
+  flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *mutable_txs() { return GetPointer<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *>(4); }
+  bool Verify(flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 4 /* txs */) &&
+           verifier.Verify(txs()) &&
+           verifier.VerifyVectorOfStrings(txs()) &&
+           verifier.EndTable();
+  }
+};
+
+struct DoubleSpendingBuilder {
+  flatbuffers::FlatBufferBuilder &fbb_;
+  flatbuffers::uoffset_t start_;
+  void add_txs(flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> txs) { fbb_.AddOffset(4, txs); }
+  DoubleSpendingBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
+  DoubleSpendingBuilder &operator=(const DoubleSpendingBuilder &);
+  flatbuffers::Offset<DoubleSpending> Finish() {
+    auto o = flatbuffers::Offset<DoubleSpending>(fbb_.EndTable(start_, 1));
+    return o;
+  }
+};
+
+inline flatbuffers::Offset<DoubleSpending> CreateDoubleSpending(flatbuffers::FlatBufferBuilder &_fbb,
+   flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> txs = 0) {
+  DoubleSpendingBuilder builder_(_fbb);
+  builder_.add_txs(txs);
   return builder_.Finish();
 }
 

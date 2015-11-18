@@ -29,7 +29,7 @@ if(NOT TCMALLOC_FOUND)
   message(FATAL_ERROR "TcMalloc not found!")
 endif(NOT TCMALLOC_FOUND)
 
-include_directories(src test ${OPENSSL_INCLUDE_DIR} ${Boost_INCLUDE_DIRS} ${MYSQL_INCLUDE_DIR})
+include_directories(src src/bitcoin test ${OPENSSL_INCLUDE_DIR} ${Boost_INCLUDE_DIRS} ${MYSQL_INCLUDE_DIR})
 
 file(GLOB LIB_SOURCES src/*.cc src/bitcoin/*.cpp)
 add_library(explorer STATIC ${LIB_SOURCES})

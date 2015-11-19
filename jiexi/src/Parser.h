@@ -255,12 +255,6 @@ private:
   void unconfirmTx(class TxLog2 *txLog2);
   void rejectTx   (class TxLog2 *txLog2);
 
-  // remove address cache in ssdb
-  void removeAddressCache(const map<int64_t, int64_t> &addressBalance,
-                          const int32_t ymd);
-  // remove txhash cache
-  void removeTxCache(const uint256 &txHash);
-
   //
   void _accpetTx_insertTxInputs(TxLog2 *txLog2, map<int64_t, int64_t> &addressBalance,
                                 int64_t &valueIn);

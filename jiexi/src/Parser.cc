@@ -771,14 +771,6 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
 
   // 插入数据至 table.block_txs_xxxx
   _insertBlockTxs(dbExplorer_, blk, txLog2->blkId_, hash2id);
-
-  // 清理上一个块的缓存
-  if (cacheEnable_) {
-    // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
-    cache_->insertKV(Strings::Format("blkh_%d", txLog2->blkHeight_ - 1));
-    cache_->insertKV(Strings::Format("blk_%s",
-                                     blk.hashPrevBlock.ToString().c_str()));
-  }
 }
 
 
@@ -1568,10 +1560,6 @@ void Parser::_rejectTx_MoveToLastUnconfirmed(LastestAddressInfo *addr, AddressTx
   _switchUnconfirmedAddressTxNode(addr, node, &lastNode);
 }
 
-void Parser::removeAddressCache(const map<int64_t, int64_t> &addressBalance,
-                                const int32_t ymd) {
-}
-
 // 写入通知日志文件
 void Parser::writeNotificationLogs(const map<int64_t, int64_t> &addressBalance,
                                    class TxLog2 *txLog2) {
@@ -1596,8 +1584,6 @@ void Parser::writeNotificationLogs(const map<int64_t, int64_t> &addressBalance,
   notifyProducer_->write(buffer);
 }
 
-void Parser::removeTxCache(const uint256 &txHash) {
-}
 
 // 接收一个新的交易
 void Parser::acceptTx(class TxLog2 *txLog2) {
@@ -1643,14 +1629,6 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
 
   // 处理未确认计数器和记录
   addUnconfirmedTxPool(txLog2);
-
-  // cache
-  removeAddressCache(addressBalance, txLog2->ymd_);
-  if (!txLog2->tx_.IsCoinBase()) {
-    for (auto &in : txLog2->tx_.vin) {
-      removeTxCache(in.prevout.hash);
-    }
-  }
 
   // notification logs
   writeNotificationLogs(addressBalance, txLog2);
@@ -1984,10 +1962,6 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
   // 处理未确认计数器和记录
   removeUnconfirmedTxPool(txLog2);
 
-  // cache
-  removeAddressCache(*addressBalance, txLog2->ymd_);
-  removeTxCache(txLog2->txHash_);
-
   // notification logs
   writeNotificationLogs(*addressBalance, txLog2);
 }
@@ -2069,10 +2043,6 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
 
   // 处理未确认计数器和记录
   addUnconfirmedTxPool(txLog2);
-
-  // cache
-  removeAddressCache(*addressBalance, txLog2->ymd_);
-  removeTxCache(txLog2->txHash_);
 
   // notification logs
   writeNotificationLogs(*addressBalance, txLog2);
@@ -2385,15 +2355,6 @@ void Parser::rejectTx(class TxLog2 *txLog2) {
 
   // 处理未确认计数器和记录
   removeUnconfirmedTxPool(txLog2);
-
-  // cache
-  removeAddressCache(addressBalance, ymd);
-  if (!txLog2->tx_.IsCoinBase()) {
-    for (auto &in : txLog2->tx_.vin) {
-      removeTxCache(in.prevout.hash);
-    }
-  }
-  removeTxCache(txLog2->txHash_);
 
   // notification logs
   writeNotificationLogs(addressBalance, txLog2);

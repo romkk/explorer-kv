@@ -1062,6 +1062,14 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
 
   // 插入数据至 table.block_txs_xxxx
   _insertBlockTxs(dbExplorer_, blk, txLog2->blkId_, hash2id);
+
+  // 清理上一个块的缓存
+  if (cacheEnable_) {
+    // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
+    cache_->insertKV(Strings::Format("blkh_%d", txLog2->blkHeight_ - 1));
+    cache_->insertKV(Strings::Format("blk_%s",
+                                     blk.hashPrevBlock.ToString().c_str()));
+  }
 }
 
 

@@ -163,281 +163,6 @@ string TxLog2::toString() const {
 }
 
 
-
-
-//////////////////////////////  CacheManager  //////////////////////////////////
-
-CacheManager::CacheManager(const string  SSDBHost,
-                           const int32_t SSDBPort, const string dirURL):
-  ssdb_(nullptr), SSDBHost_(SSDBHost), SSDBPort_(SSDBPort)
-{
-  // create connection
-  ssdb_ = ssdb::Client::connect(SSDBHost_, SSDBPort_);
-  if (ssdb_ == nullptr) {
-    THROW_EXCEPTION_DBEX("fail to connect to ssdb server. host: %s, port: %d",
-                         SSDBHost_.c_str(), SSDBPort_);
-  }
-  running_   = true;
-  ssdbAlive_ = true;
-
-  // remove last '/'
-  dirURL_ = dirURL;
-  if (dirURL_.length() > 1 && dirURL_[dirURL_.length() - 1] == '/') {
-    dirURL_.resize(dirURL_.length() - 1);
-  }
-  // create file if not exist
-  if (dirURL_.size() > 0 &&
-      !boost::filesystem::exists(dirURL_) &&
-      !boost::filesystem::create_directories(dirURL_)) {
-    THROW_EXCEPTION_DBEX("create folder failed: %s", dirURL_.c_str());
-  }
-
-  // setup consumer thread
-  boost::thread t(boost::bind(&CacheManager::threadConsumer, this));
-  runningThreadConsumer_ = true;
-}
-
-CacheManager::~CacheManager() {
-  // 等待数据消费完，最大等待N秒
-  for (int i = 59; i >= 0; i--) {
-    lock_.lock();
-    if (qkv_.size() == 0 && qhashset_.size() == 0) {
-      lock_.unlock();
-      break;
-    }
-    lock_.unlock();
-
-    sleep(2);
-    LOG_WARN("waiting for CacheManager to finish(%d),"
-             " qkv_.size(): %lld, qhashset_.size(): %lld",
-             i, qkv_.size(), qhashset_.size());
-    if (i == 0) {
-      LOG_WARN("reach max try times, focus to stop");
-    }
-  }
-
-  running_ = false;
-
-  while (runningThreadConsumer_) {  // 等待消费线程退出
-    sleepMs(50);
-  }
-
-  if (ssdb_ != nullptr) {
-    delete ssdb_;
-    ssdb_ = nullptr;
-  }
-}
-
-void CacheManager::insertKV(const string &key) {
-  if (qkvTemp_.find(key) != qkvTemp_.end()) {
-    return;
-  }
-
-  string url;
-  if (strncmp(key.c_str(), "tx_", 3) == 0) {
-    url = Strings::Format("/rawtx/%s", key.substr(3).c_str());
-  }
-  else if (strncmp(key.c_str(), "addr_", 5) == 0) {
-    url = Strings::Format("/address/%s", key.substr(5).c_str());
-  }
-  else if (strncmp(key.c_str(), "blkh_", 5) == 0) {
-    url = Strings::Format("/block-height/%s", key.substr(5).c_str());
-  }
-  else if (strncmp(key.c_str(), "blk_", 4) == 0) {
-    url = Strings::Format("/rawblock/%s", key.substr(4).c_str());
-  }
-  if (url.length() > 0) {
-    qUrlTemp_.insert(url);
-    LOG_DEBUG("[CacheManager::insertKV] url: %s", url.c_str());
-  }
-
-  qkvTemp_.insert(key);
-  LOG_DEBUG("[CacheManager::insertKV] key: %s", key.c_str());
-}
-
-void CacheManager::insertHashSet(const string &address,
-                                 const string &tableName) {
-  const string s = address + "." + tableName;
-  if (qhashsetTempSet_.find(s) != qhashsetTempSet_.end()) {
-    return;  // already exist, ignore
-  }
-
-  qhashsetTempSet_.insert(s);
-  qhashsetTemp_.push_back(std::make_pair(address, tableName));
-  LOG_DEBUG("[CacheManager::insertHashSet] address:%s, tableName: %s",
-            address.c_str(), tableName.c_str());
-}
-
-void CacheManager::commit() {
-  ScopeLock sl(lock_);
-
-  // KV
-  // 超过500万，丢弃数据，防止撑爆内存
-  if (qkv_.size() > 500 * 10000) {
-    vector<string>().swap(qkv_);
-  }
-  for (auto &it : qkvTemp_) {
-    qkv_.push_back(it);
-  }
-  qkvTemp_.clear();
-
-  // Hash SET
-  // 超过500万，丢弃数据，防止撑爆内存
-  if (qhashset_.size() > 500 * 10000) {
-    vector<std::pair<string, string> >().swap(qhashset_);
-  }
-  for (auto &it : qhashsetTemp_) {
-    qhashset_.push_back(std::make_pair(it.first, it.second));
-  }
-  qhashsetTemp_.clear();
-  qhashsetTempSet_.clear();
-
-  // URL
-  // 超过500万，丢弃数据，防止撑爆内存
-  if (qUrl_.size() > 500 * 10000) {
-    vector<string>().swap(qUrl_);
-  }
-  for (auto &it : qUrlTemp_) {
-    qUrl_.push_back(it);
-  }
-  qUrlTemp_.clear();
-}
-
-void CacheManager::flushURL(vector<string> &buf) {
-  {
-    ScopeLock sl(lock_);
-    buf.insert(buf.end(), qUrl_.begin(), qUrl_.end());
-    qUrl_.clear();
-  }
-  if (buf.size() == 0) {
-    return;
-  }
-
-  const string name = Strings::Format("%s/%s",
-                                      dirURL_.length() ? dirURL_.c_str() : ".",
-                                      date("%Y%m%d.%H%M%S").c_str());
-  const string nameTmp = name + ".tmp";
-
-  // write to disk
-  std::ofstream file(nameTmp, std::ios_base::app | std::ios_base::out);
-  if (!file.is_open()) {
-    LOG_ERROR("open file fail: %s", name.c_str());
-    return;
-  }
-  for (auto &line : buf) {
-    LOG_DEBUG("line: %s", line.c_str());
-    file << line << "?skipcache=1" << std::endl;
-  }
-  file.close();
-
-  LOG_DEBUG("[CacheManager::flushURL] write %lld to file: %s", buf.size(), name.c_str());
-
-  // rename
-  boost::filesystem::rename(nameTmp, name);
-  buf.clear();
-}
-
-//
-// SSDB数据结构文档：http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
-//
-void CacheManager::threadConsumer() {
-  vector<string> buf, bufUrl;
-  vector<std::pair<string, string> > bufHashSet;
-  buf.reserve(1024);
-  bufUrl.reserve(1024);
-  bufHashSet.reserve(1024);
-  ssdb::Status s;
-  int64_t successCount, itemCount;
-  time_t lastFlushTime = time(nullptr) - 10;
-
-  while (running_) {
-    assert(ssdbAlive_ == true);
-    assert(ssdb_ != nullptr);
-    itemCount = successCount = 0;
-
-    // Key - Value
-    {
-      ScopeLock sl(lock_);
-      buf.insert(buf.end(), qkv_.begin(), qkv_.end());
-      qkv_.clear();
-    }
-    if (buf.size()) {
-      itemCount += buf.size();
-      s = ssdb_->multi_del(buf);
-      LOG_DEBUG("ssdb KV del, count: %lld", buf.size());
-      if (s.error()) {
-        LOG_ERROR("ssdb KV del fail");
-      } else {
-        successCount += buf.size();
-      }
-    }
-
-    // HashSet: 目前HashSet类型就一个: addr_table_{addr_id}
-    {
-      ScopeLock sl(lock_);
-      bufHashSet.insert(bufHashSet.end(), qhashset_.begin(), qhashset_.end());
-      qhashset_.clear();
-    }
-    if (bufHashSet.size()) {
-      itemCount += bufHashSet.size();
-      LOG_DEBUG("ssdb HashSet del, count: %lld", bufHashSet.size());
-      for (auto &it : bufHashSet) {
-        const string name = "addr_table_" + it.first;
-        s = ssdb_->hdel(name, it.second);
-        if (s.error()) {
-          LOG_ERROR("ssdb HashSet del fail: %s, %s",
-                    name.c_str(), it.second.c_str());
-        } else {
-          successCount++;
-        }
-      }
-    }
-
-    // flush URL
-    if (lastFlushTime + 60 < time(nullptr)) {
-      lastFlushTime = time(nullptr);
-      flushURL(bufUrl);
-    }
-
-    if (itemCount != successCount) {
-      LOG_ERROR("ssdb some items failure, total: %lld, success: %lld",
-                itemCount, successCount);
-    }
-
-    if (itemCount == 0) {
-      sleepMs(250);  // 暂无数据
-    } else if (itemCount == successCount) {
-      // 全部执行成功，清理数据
-      buf.clear();
-      bufHashSet.clear();
-    }
-
-    // 成功数量为零，说明SSDB server端出故障了，尝试重新连接
-    if (itemCount > 0 && successCount == 0) {
-      delete ssdb_;
-      ssdb_      = nullptr;
-      ssdbAlive_ = false;
-
-      while (running_) {
-        LOG_INFO("we lost ssdb server, try reconnect...");
-        sleep(1);
-
-        ssdb_ = ssdb::Client::connect(SSDBHost_, SSDBPort_);
-        if (ssdb_ != nullptr) {
-          ssdbAlive_ = true;
-          LOG_INFO("reconnect ssdb success");
-          break;
-        }
-        LOG_ERROR("reconnect to ssdb server fail. host: %s, port: %d",
-                  SSDBHost_.c_str(), SSDBPort_);
-      }
-    }
-  } /* /while */
-
-  runningThreadConsumer_ = false;
-}
-
-
 /////////////////////////////////  AddressTxNode  ///////////////////////////////////
 AddressTxNode::AddressTxNode() {
   memset(&ymd_, 0, sizeof(AddressTxNode));
@@ -528,16 +253,9 @@ void TxInfoCache::getTxInfo(MySQLConnection &db,
 
 /////////////////////////////////  Parser  ///////////////////////////////////
 Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
-running_(true), cache_(nullptr),
+running_(true),
 unconfirmedTxsSize_(0), unconfirmedTxsCount_(0), blkTs_(2016), notifyProducer_(nullptr)
 {
-  // setup cache manager: SSDB
-  cacheEnable_ = Config::GConfig.getBool("ssdb.enable", false);
-  if (cacheEnable_) {
-    cache_ = new CacheManager(Config::GConfig.get("ssdb.host"),
-                              (int32_t)Config::GConfig.getInt("ssdb.port"),
-                              Config::GConfig.get("url.file.dir", ""));
-  }
   notifyFileLog2Producer_ = Config::GConfig.get("notify.log2producer.file");
   if (notifyFileLog2Producer_.empty()) {
     THROW_EXCEPTION_DBEX("empty config: notify.log2producer.file");
@@ -558,11 +276,6 @@ unconfirmedTxsSize_(0), unconfirmedTxsCount_(0), blkTs_(2016), notifyProducer_(n
 
 Parser::~Parser() {
   stop();
-
-  if (cache_ != nullptr) {
-    delete cache_;
-    cache_ = nullptr;
-  }
 
   if (watchNotifyThread_.joinable()) {
     watchNotifyThread_.join();
@@ -775,10 +488,6 @@ void Parser::run() {
       lastTxLog2 = txLog2;
 
       writeLastProcessTxlogTime();
-
-      if (cache_ != nullptr) {
-        cache_->commit();
-      }
 
       if (blockHash.length()) {  // 目前仅用在URL回调上，仅使用一次
         callBlockRelayParseUrl(blockHash);
@@ -1853,24 +1562,6 @@ void Parser::_rejectTx_MoveToLastUnconfirmed(LastestAddressInfo *addr, AddressTx
 
 void Parser::removeAddressCache(const map<int64_t, int64_t> &addressBalance,
                                 const int32_t ymd) {
-  if (!cacheEnable_) {
-    return;
-  }
-
-  //
-  // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
-  //
-  for (auto it : addressBalance) {
-    const int64_t addrID = it.first;
-    LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
-
-    // 清理 addr_xxxx 的缓存计数器
-    cache_->insertKV(Strings::Format("addr_%s", addr->addressStr_.c_str()));
-
-    // 清理 address_txs_xxxx 的缓存计数器
-    cache_->insertHashSet(addr->addressStr_,
-                          Strings::Format("address_txs_%d", tableIdx_AddrTxs(ymd)));
-  }
 }
 
 // 写入通知日志文件
@@ -1898,15 +1589,6 @@ void Parser::writeNotificationLogs(const map<int64_t, int64_t> &addressBalance,
 }
 
 void Parser::removeTxCache(const uint256 &txHash) {
-  if (!cacheEnable_) {
-    return;
-  }
-
-  //
-  // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
-  //
-  // 删除: tx_{hash}
-  cache_->insertKV(Strings::Format("tx_%s", txHash.ToString().c_str()));
 }
 
 // 接收一个新的交易
@@ -2422,13 +2104,6 @@ void Parser::rejectBlock(TxLog2 *txLog2) {
 
   // 移除块时间戳
   blkTs_.popBlock();
-
-  if (cacheEnable_) {
-    // http://twiki.bitmain.com/bin/view/Main/SSDB-Cache
-    cache_->insertKV(Strings::Format("blkh_%d", txLog2->blkHeight_));
-    cache_->insertKV(Strings::Format("blk_%s",
-                                     header.GetHash().ToString().c_str()));
-  }
 }
 
 // 回滚，重新插入未花费记录

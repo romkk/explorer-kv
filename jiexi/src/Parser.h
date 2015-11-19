@@ -30,8 +30,6 @@
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
 
-#include "SSDB_client.h"
-
 // tparser的异常，整数
 #define EXCEPTION_TPARSER_TX_INVALID_INPUT 100
 
@@ -164,47 +162,6 @@ public:
 };
 
 
-///////////////////////////////  CacheManager  /////////////////////////////////
-// 若SSDB宕机，则丢弃数据
-class CacheManager {
-  atomic<bool> running_;
-  atomic<bool> runningThreadConsumer_;
-  atomic<bool> ssdbAlive_;
-
-  ssdb::Client *ssdb_;
-  string  SSDBHost_;
-  int32_t SSDBPort_;
-
-  mutex lock_;
-
-  // 待删除队列，临时
-  set<string> qkvTemp_;
-  set<string> qhashsetTempSet_;  // 辅助去重
-  vector<std::pair<string, string> > qhashsetTemp_;
-  // 待删除队列，正式
-  vector<string> qkv_;
-  vector<std::pair<string, string> > qhashset_;
-
-  // 待触发的URL列表
-  string dirURL_;
-  set<string>    qUrlTemp_;
-  vector<string> qUrl_;
-
-  void threadConsumer();
-
-  void flushURL(vector<string> &buf);
-
-public:
-  CacheManager(const string  SSDBHost, const int32_t SSDBPort, const string dirURL);
-  ~CacheManager();
-
-  // non-thread safe
-  void insertKV(const string &key);
-  void insertHashSet(const string &address, const string &tableName);
-
-  void commit();
-};
-
 ///////////////////////////////  AddressTxNode  /////////////////////////////////
 class AddressTxNode {
 public:
@@ -259,9 +216,6 @@ private:
 
   atomic<bool> running_;
   MySQLConnection dbExplorer_;
-
-  CacheManager *cache_;
-  bool cacheEnable_;
 
   int64_t unconfirmedTxsSize_;
   int32_t unconfirmedTxsCount_;

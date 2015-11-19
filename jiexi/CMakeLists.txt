@@ -9,15 +9,15 @@ set(CMAKE_C_COMPILER "gcc")
 set(CMAKE_CXX_COMPILER_ARG1 "-std=c++0x ")
 set(CMAKE_CXX_FLAGS "-g -O2")
 
-set(SSDB_DIR "${CMAKE_CURRENT_BINARY_DIR}/ssdb-1.9.0")
-SET(SSDB_LIBRARIES "${SSDB_DIR}/api/cpp/libssdb-client.a")
-if (NOT EXISTS ${SSDB_LIBRARIES})
-  message(STATUS "get ssdb...")
-  execute_process(COMMAND wget https://github.com/ideawu/ssdb/archive/1.9.0.tar.gz)
-  execute_process(COMMAND tar zxf 1.9.0.tar.gz)
-  execute_process(COMMAND rm 1.9.0.tar.gz)
-  execute_process(WORKING_DIRECTORY "${SSDB_DIR}"
-                  COMMAND make)
+set(ROCKSDB_DIR "${CMAKE_CURRENT_BINARY_DIR}/rocksdb-4.1")
+set(ROCKSDB_LIBRARIES "${ROCKSDB_DIR}/librocksdb.a")
+if (NOT EXISTS ${ROCKSDB_LIBRARIES})
+  message(STATUS "get rocksdb...")
+  execute_process(COMMAND wget https://github.com/facebook/rocksdb/archive/v4.1.tar.gz -O rocksdb-4.1.tar.gz)
+  execute_process(COMMAND tar zxf rocksdb-4.1.tar.gz)
+  execute_process(COMMAND rm rocksdb-4.1.tar.gz)
+  execute_process(WORKING_DIRECTORY "${ROCKSDB_DIR}"
+                  COMMAND make -j4 static_lib)
 endif()
 
 find_package(OpenSSL)
@@ -47,15 +47,15 @@ add_library(explorer STATIC ${LIB_SOURCES})
 
 file(GLOB TPARSER_SOURCES src/tparser/*.cc)
 add_executable(tparser ${TPARSER_SOURCES})
-target_link_libraries(tparser explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${SSDB_LIBRARIES} ${TCMALLOC_LIBRARY} -lpthread -lcurl)
+target_link_libraries(tparser explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${TCMALLOC_LIBRARY} -lpthread -lcurl)
 
 file(GLOB LOG1PRODUCER_SOURCES src/log1producer/*.cc)
 add_executable(log1producer ${LOG1PRODUCER_SOURCES})
-target_link_libraries(log1producer explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${SSDB_LIBRARIES} ${TCMALLOC_LIBRARY} -lpthread -lcurl)
+target_link_libraries(log1producer explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${TCMALLOC_LIBRARY} -lpthread -lcurl)
 
 file(GLOB LOG2PRODUCER_SOURCES src/log2producer/*.cc)
 add_executable(log2producer ${LOG2PRODUCER_SOURCES})
-target_link_libraries(log2producer explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${SSDB_LIBRARIES} ${TCMALLOC_LIBRARY} -lpthread -lcurl)
+target_link_libraries(log2producer explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${TCMALLOC_LIBRARY} -lpthread -lcurl)
 
 file(GLOB_RECURSE TEST_SOURCES test/*.cc)
 add_executable(unittest ${TEST_SOURCES})

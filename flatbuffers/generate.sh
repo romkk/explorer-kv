@@ -4,3 +4,4 @@ cd $SROOT
 export LC_ALL=C
 
 flatc --gen-mutable -c -o ../jiexi/src explorer.fbs
+flatc --gen-mutable -c -o ../jiexi.bootstrap/src explorer.fbs

@@ -8,31 +8,27 @@
 //
 namespace fbe;  // flatbuffers explorer
 
-enum TxType: byte { NonStandard = 0, PubKey, PubKeyHash, ScriptHash, MultiSig, NullData }
-
 // 00_{tx_hash}
 table TxHex {
   hex: string;
 }
 
 table TxInput {
-  position: int;
   script_asm: string;
   script_hex: string;
   sequence: long;
   prev_tx_hash: string;
-  prev_position: int;
-  prev_value: long;
-  prev_address: string;
+  prev_position: int = -1;  // coinbase tx prev_postion = -1, prev_value = 0
+  prev_value: long = 0;
+  prev_addresses: [string];
 }
 
 table TxOutput {
-  position: int;
-  address: string;
+  addresses: [string];
   value: long;
   script_asm: string;
   script_hex: string;
-  script_type: TxType;
+  script_type: string;
 }
 
 // 01_{tx_hash}
@@ -126,13 +122,12 @@ table UnspentOutput {
   value: long;
 }
 
-// 24_{address}_{tx_hash}
-table AddressUnspentOutput {
-  index: [int];
+// 24_{address}_{tx_hash}_{position}
+table UnspentOutputIdx {
+  index: int;
 }
 
 // 30_{tx_hash}_{position}
 table DoubleSpending {
   txs: [string];
 }
-

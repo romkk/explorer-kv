@@ -19,26 +19,52 @@
 #ifndef KVDB_H_
 #define KVDB_H_
 
+#include "bitcoin/core.h"
+#include "bitcoin/key.h"
+
 #include "rocksdb/db.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/options.h"
 
 #include "Common.h"
 
+#include "explorer_generated.h"
+
+#define KVDB_PREFIX_TX_RAW_HEX   "00_"
+#define KVDB_PREFIX_TX_OBJECT    "01_"
+#define KVDB_PREFIX_TX_SPEND     "02_"
+
+#define KVDB_PREFIX_ADDR_UNSPENT    "23_"
+#define KVDB_PREFIX_ADDR_UNSPENT_INDEX    "24_"
+
+
+
 class KVDB {
+  rocksdb::DB *db_;
+  rocksdb::Options options;
+
+  string kDBPath_;
 
 public:
-  KVDB() {}
+  KVDB(const string &dbPath);
   ~KVDB() {}
 
-  void get(const string &key, vector<uint8_t> &buffer) {}
+  void open();
+
+  void del(const string &key);
+  void get(const string &key, string &value) {}
   void set(const string &key, const vector<uint8_t> &buffer) {}
+  void set(const string &key, const uint8_t *data, const size_t length) {}
 
   void multiGet(const vector<string> &keys, vector<vector<uint8_t> > &bufferVec) {}
   void multiSet(const vector<string> &keys, const vector<vector<uint8_t> > &bufferVec) {}
 
   void rangeGetGT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec) {}
   void rangeGetLT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec) {}
+
+  void getPrevTxOutputs(const CTransaction &tx,
+                        vector<string> &prevTxsData,
+                        vector<const fbe::TxOutput *> &prevTxOutputs);
 };
 
 #endif

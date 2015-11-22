@@ -840,214 +840,6 @@ DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t po
   return o;
 }
 
-void Parser::_accpetTx_insertTxInputs(TxLog2 *txLog2,
-                                      map<int64_t, int64_t> &addressBalance,
-                                      int64_t &valueIn) {
-  int n;
-  const string tableName = Strings::Format("tx_inputs_%04d", txLog2->txId_ % 100);
-  const string now = date("%F %T");
-  // table.tx_inputs_xxxx
-  const string fields = "`tx_id`, `position`, `input_script_asm`, `input_script_hex`,"
-  " `sequence`, `prev_tx_id`, `prev_position`, `prev_value`,"
-  " `prev_address`, `prev_address_ids`, `created_at`";
-  vector<string> values;
-  string sql;
-
-  n = -1;
-  for (auto &in : txLog2->tx_.vin) {
-    n++;
-    uint256 prevHash;
-    int64_t prevTxId;
-    int32_t prevPos;
-
-    if (txLog2->tx_.IsCoinBase()) {
-      prevHash = 0;
-      prevTxId = 0;
-      prevPos  = -1;
-
-      // 插入当前交易的inputs, coinbase tx的 scriptSig 不做decode，可能含有非法字符
-      // 通常无法解析成功
-      // coinbase无法担心其长度，bitcoind对coinbase tx的coinbase字段长度做了限制
-      values.push_back(Strings::Format("%lld,%d,'','%s',%u,"
-                                       "0,-1,0,'','','%s'",
-                                       txLog2->txId_, n,
-                                       HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
-                                       in.nSequence, now.c_str()));
-    } else
-    {
-      prevHash = in.prevout.hash;
-      prevTxId = txHash2Id(dbExplorer_, prevHash);
-      prevPos  = (int32_t)in.prevout.n;
-
-      // 将前向交易标记为已花费
-      sql = Strings::Format("UPDATE `tx_outputs_%04d` SET "
-                            " `spent_tx_id`=%lld, `spent_position`=%d"
-                            " WHERE `tx_id`=%lld AND `position`=%d "
-                            " AND `spent_tx_id`=0 AND `spent_position`=-1 ",
-                            prevTxId % 100, txLog2->txId_, n,
-                            prevTxId, prevPos);
-      if (dbExplorer_.update(sql) != 1) {
-        assert(txLog2->type_ == LOG2TYPE_TX_ACCEPT);
-        //
-        // 说明前向交易不存在，忽略该 txlog2
-        // accept tx 前向 tx 不存在时，跳过某个 txlog2. 因为 log1producer 初始化
-        // 同步时，追 bitcoind 会忽略中间的tx（tx很久都没有得到确认），而后某个tx依赖此，
-        // 则导致无法accept后一个tx.
-        //
-        // 意味这条 txlog2 会引发系统异常，我们删除掉这条 txlog2
-        //
-        dbExplorer_.execute("ROLLBACK");  // 回滚掉当前事务
-        // 执行删除
-        LOG_WARN("delete txlog2: %s", txLog2->toString().c_str());
-        string delSql = Strings::Format("DELETE FROM `0_txlogs2` WHERE `id`=%lld", txLog2->id_);
-        dbExplorer_.updateOrThrowEx(delSql, 1);
-
-        // 抛出异常
-        LOG_FATAL("invalid input: %lld:%s:%d, prev output: %lld:%s:%d",
-                  txLog2->txId_, txLog2->txHash_.ToString().c_str(), n,
-                  prevTxId, prevHash.ToString().c_str(), prevPos);
-        throw EXCEPTION_TPARSER_TX_INVALID_INPUT;
-      }
-
-      // 将 address_unspent_outputs_xxxx 相关记录删除
-      _removeUnspentOutputs(dbExplorer_, prevTxId, prevPos, addressBalance);
-
-      // 插入当前交易的inputs
-      DBTxOutput dbTxOutput = getTxOutput(dbExplorer_, prevTxId, prevPos);
-      if (dbTxOutput.txId == 0) {
-        THROW_EXCEPTION_DBEX("can't find tx output, txId: %lld, hash: %s, position: %d",
-                             prevTxId, prevHash.ToString().c_str(), prevPos);
-      }
-      values.push_back(Strings::Format("%lld,%d,'%s','%s',%u,%lld,%d,"
-                                       "%lld,'%s','%s','%s'",
-                                       txLog2->txId_, n,
-                                       in.scriptSig.ToString().c_str(),
-                                       HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
-                                       in.nSequence, prevTxId, prevPos,
-                                       dbTxOutput.value,
-                                       dbTxOutput.address.c_str(),
-                                       dbTxOutput.addressIds.c_str(),
-                                       now.c_str()));
-      valueIn += dbTxOutput.value;
-    }
-  } /* /for */
-
-  // 执行插入 inputs
-  if (!multiInsert(dbExplorer_, tableName, fields, values)) {
-    THROW_EXCEPTION_DBEX("insert inputs fail, txId: %lld, hash: %s",
-                         txLog2->txId_, txLog2->tx_.GetHash().ToString().c_str());
-  }
-}
-
-
-static
-void _accpetTx_insertTxOutputs(MySQLConnection &db,
-                               TxLog2 *txLog2, map<int64_t, int64_t> &addressBalance) {
-  int n;
-  const string now = date("%F %T");
-  set<string> allAddresss;
-
-  // 提取涉及到的所有地址
-  n = -1;
-  for (auto &out : txLog2->tx_.vout) {
-    n++;
-    txnouttype type;
-    vector<CTxDestination> addresses;
-    int nRequired;
-    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
-               txLog2->txId_, txLog2->tx_.GetHash().ToString().c_str(), n);
-      continue;
-    }
-    for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
-      const string addrStr = CBitcoinAddress(addr).ToString();
-      allAddresss.insert(CBitcoinAddress(addr).ToString());
-    }
-  }
-  // 拿到所有地址的id
-  map<string, int64_t> addrMap;
-  GetAddressIds(db, allAddresss, addrMap);
-
-  // 处理输出
-  // (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)
-  n = -1;
-  vector<string> itemValues;
-  for (auto &out : txLog2->tx_.vout) {
-    n++;
-    string addressStr;
-    string addressIdsStr;
-    txnouttype type;
-    vector<CTxDestination> addresses;
-    int nRequired;
-    ExtractDestinations(out.scriptPubKey, type, addresses, nRequired);
-
-    // 解地址可能失败，但依然有 tx_outputs_xxxx 记录
-    // 输出无有效地址的奇葩TX:
-    //   testnet3: e920604f540fec21f66b6a94d59ca8b1fbde27fc7b4bc8163b3ede1a1f90c245
-
-    // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
-    int i = -1;
-    for (auto &addr : addresses) {
-      i++;
-      const string addrStr = CBitcoinAddress(addr).ToString();
-      const int64_t addrId = addrMap[addrStr];
-      addressStr    += addrStr + ",";
-      addressIdsStr += Strings::Format("%lld", addrId) + ",";
-
-      // 增加每个地址的余额
-      addressBalance[addrId] += out.nValue;
-
-      // 每一个输出地址均生成一条 address_unspent_outputs 记录
-      string sql = Strings::Format("INSERT INTO `address_unspent_outputs_%04d`"
-                                   " (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)"
-                                   " VALUES (%lld, %lld, %d, %d, %d, %lld, '%s') ",
-                                   addrId % 10, addrId, txLog2->txId_, n, i, txLog2->blkHeight_,
-                                   out.nValue, now.c_str());
-      db.updateOrThrowEx(sql, 1);
-    }
-
-    // 去掉拼接的最后一个逗号
-    if (addressStr.length())
-      addressStr.resize(addressStr.length() - 1);
-    if (addressIdsStr.length())
-      addressIdsStr.resize(addressIdsStr.length() - 1);
-
-    // tx_outputs
-    // Parser::init(): 当前MySQL max_allowed_packet 为 64MB
-    string outputScriptAsm = out.scriptPubKey.ToString();
-    const string outputScriptHex = HexStr(out.scriptPubKey.begin(), out.scriptPubKey.end());
-    if (outputScriptAsm.length() > 16*1024*1024 ||
-        (outputScriptAsm.length() > 1*1024*1024 &&
-         outputScriptAsm.length() > outputScriptHex.length() * 4)) {
-      outputScriptAsm = "";
-    }
-    // output Hex奇葩的交易：
-    // http://tbtc.blockr.io/tx/info/c333a53f0174166236e341af9cad795d21578fb87ad7a1b6d2cf8aa9c722083c
-    itemValues.push_back(Strings::Format("%lld,%d,'%s','%s',"
-                                         "%lld,'%s','%s','%s',"
-                                         "0,-1,'%s','%s'",
-                                         // `tx_id`,`position`,`address`,`address_ids`
-                                         txLog2->txId_, n, addressStr.c_str(), addressIdsStr.c_str(),
-                                         // `value`,`output_script_asm`,`output_script_hex`,`output_script_type`
-                                         out.nValue,
-                                         outputScriptAsm.c_str(),
-                                         outputScriptHex.length() < 32*1024*1024 ? outputScriptHex.c_str() : "",
-                                         GetTxnOutputType(type) ? GetTxnOutputType(type) : "",
-                                         // `spent_tx_id`,`spent_position`,`created_at`,`updated_at`
-                                         now.c_str(), now.c_str()));
-  }
-
-  // table.tx_outputs_xxxx
-  const string tableNameTxOutputs = Strings::Format("tx_outputs_%04d", txLog2->txId_ % 100);
-  const string fieldsTxOutputs = "`tx_id`,`position`,`address`,`address_ids`,`value`,"
-  "`output_script_asm`,`output_script_hex`,`output_script_type`,"
-  "`spent_tx_id`,`spent_position`,`created_at`,`updated_at`";
-  // multi insert outputs
-  if (!multiInsert(db, tableNameTxOutputs, fieldsTxOutputs, itemValues)) {
-    THROW_EXCEPTION_DBEX("insert outputs fail, txId: %lld, hash: %s",
-                         txLog2->txId_, txLog2->tx_.GetHash().ToString().c_str());
-  }
-}
 
 // 获取地址信息
 static LastestAddressInfo *_getAddressInfo(MySQLConnection &db, const int64_t addrID) {
@@ -1204,45 +996,6 @@ void _accpetTx_insertAddressTxs(MySQLConnection &db, class TxLog2 *txLog2,
 
   } /* /for */
 }
-
-// 插入交易
-static
-void _accpetTx_insertTx(MySQLConnection &db, class TxLog2 *txLog2, int64_t valueIn) {
-  //
-  // (`tx_id`, `hash`, `height`, `is_coinbase`, `version`, `lock_time`,
-  //  `size`, `fee`, `total_in_value`, `total_out_value`,
-  // `inputs_count`, `outputs_count`, `created_at`)
-  //
-  const string tName = Strings::Format("txs_%04d", tableIdx_Tx(txLog2->txId_));
-  const CTransaction &tx = txLog2->tx_;  // alias
-  string sql;
-
-  int64_t fee = 0;
-  const int64_t valueOut = txLog2->tx_.GetValueOut();
-  if (txLog2->tx_.IsCoinBase()) {
-    // coinbase的fee为 block rewards
-    fee = valueOut;
-  } else {
-    fee = valueIn - valueOut;
-  }
-
-  sql = Strings::Format("INSERT INTO `%s`(`tx_id`, `hash`, `height`, `ymd`, `is_coinbase`,"
-                        " `version`, `lock_time`, `size`, `fee`, `total_in_value`, "
-                        " `total_out_value`, `inputs_count`, `outputs_count`, `created_at`)"
-                        " VALUES (%lld, '%s', %d, %d, %d, %d, %u, %d, %lld, %lld, %lld, %d, %d, '%s') ",
-                        tName.c_str(),
-                        // `tx_id`, `hash`, `height`
-                        txLog2->txId_, txLog2->txHash_.ToString().c_str(),
-                        txLog2->blkHeight_, txLog2->ymd_,
-                        // `is_coinbase`, `version`, `lock_time`
-                        txLog2->tx_.IsCoinBase() ? 1 : 0, tx.nVersion, tx.nLockTime,
-                        // `size`, `fee`, `total_in_value`, `total_out_value`
-                        txLog2->txHex_.length()/2, fee, valueIn, valueOut,
-                        // `inputs_count`, `outputs_count`, `created_at`
-                        tx.vin.size(), tx.vout.size(), date("%F %T").c_str());
-  db.updateOrThrowEx(sql, 1);
-}
-
 
 void Parser::addUnconfirmedTxPool(class TxLog2 *txLog2) {
   string sql;
@@ -1584,10 +1337,80 @@ void Parser::writeNotificationLogs(const map<int64_t, int64_t> &addressBalance,
   notifyProducer_->write(buffer);
 }
 
+// 插入交易的raw hex
+static void _acceptTx_insertRawHex(KVDB &kvdb, const string &txHex, const uint256 &hash) {
+  flatbuffers::FlatBufferBuilder fbb;
+  auto fb_hex = fbb.CreateString(txHex);
+
+  fbe::TxHexBuilder txHexBuilder(fbb);
+  txHexBuilder.add_hex(fb_hex);
+  auto fb_txHex = txHexBuilder.Finish();
+
+  kvdb.set(KVDB_PREFIX_TX_RAW_HEX + hash.ToString(),
+           fbb.GetBufferPointer(), fbb.GetSize());
+}
+
+// 移除prev unspent outputs
+static void _acceptTx_removeUnspentOutputs(KVDB &kvdb, const uint256 &hash, CTransaction &tx,
+                                           vector<const fbe::TxOutput *> &prevTxOutputs) {
+  assert(prevTxOutputs.size() == tx.vin.size());
+
+  string key;
+  int n = -1;  // postion
+
+  for (auto fb_txoutput : prevTxOutputs) {
+    n++;
+
+    auto addresses = fb_txoutput->addresses();
+    const uint256 &prevHash = tx.vin[n].prevout.hash;
+
+    // 绝大部分只有一个地址，但存在多个地址可能，所以不得不采用循环
+    for (size_t j = 0; j < addresses->size(); j++) {
+      const string address = addresses->operator[](j)->str();
+
+      // 某个地址的未花费index
+      // 24_{address}_{tx_hash}_{position}
+      key = Strings::Format("%s%s_%s_%d", KVDB_PREFIX_ADDR_UNSPENT_INDEX,
+                            address.c_str(), prevHash.ToString().c_str(), n);
+      string value;
+      kvdb.get(key, value);
+      auto unspentOutputIdx = flatbuffers::GetRoot<fbe::UnspentOutputIdx>(value.data());
+
+      // 删除之
+      // 23_{address}_{010index}
+      key = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_UNSPENT, address.c_str(),
+                            unspentOutputIdx->index());
+      kvdb.del(key);
+    }
+  }
+}
+
+// 生成被消费记录
+static void _acceptTx_insertSpendTxs(KVDB &kvdb, const uint256 &hash, CTransaction &tx) {
+  flatbuffers::FlatBufferBuilder fbb;
+  string key;
+  auto fb_spentHash = fbb.CreateString(hash.ToString());
+
+  int n = -1;  // postion
+  for (const auto &in : tx.vin) {
+    n++;
+    const uint256 &prevHash = in.prevout.hash;
+    // 02_{tx_hash}_{position}
+    key = Strings::Format("%s%s_%u", KVDB_PREFIX_TX_SPEND,
+                          prevHash.ToString().c_str(), in.prevout.n);
+
+    fbe::TxSpentByBuilder txSpentByBuilder(fbb);
+    txSpentByBuilder.add_position(n);
+    txSpentByBuilder.add_tx_hash(fb_spentHash);
+    txSpentByBuilder.Finish();
+    kvdb.set(key, fbb.GetBufferPointer(), fbb.GetSize());
+  }
+}
 
 // 接收一个新的交易
 void Parser::acceptTx(class TxLog2 *txLog2) {
   assert(txLog2->blkHeight_ == -1);
+  CTransaction &tx = txLog2->tx_;
 
   // 硬编码特殊交易处理
   //
@@ -1606,163 +1429,221 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
     return;
   }
 
-  // 交易的输入之和，遍历交易后才能得出
-  int64_t valueIn = 0;
+  int64_t valueIn = 0;  // 交易的输入之和，遍历交易后才能得出
+  vector<const fbe::TxOutput *> prevTxOutputs;
+  vector<string> prevTxsData;
+  map<string, int64_t> addressBalance;
 
-  // 同一个地址只能产生一条交易记录: address <-> tx <-> balance_diff
-  map<int64_t/* addrID */, int64_t/*  balance diff */> addressBalance;
+  flatbuffers::FlatBufferBuilder fbb;
+  vector<flatbuffers::Offset<fbe::TxInput > > fb_txInputs;
+  vector<flatbuffers::Offset<fbe::TxOutput> > fb_txOutputs;
+  vector<flatbuffers::Offset<fbe::UnspentOutput> > fb_unspentOutputs;
 
-  // 处理inputs
-  _accpetTx_insertTxInputs(txLog2, addressBalance, valueIn);
+  // 读取前向交易的输出
+  kvdb_.getPrevTxOutputs(tx, prevTxsData, prevTxOutputs);
 
-  // 处理outputs
-  _accpetTx_insertTxOutputs(dbExplorer_, txLog2, addressBalance);
+  //
+  // inputs
+  //
+  {
+    int n = -1;
+    for (const auto &in : tx.vin) {
+      n++;
+      auto fb_ScriptHex = fbb.CreateString(HexStr(in.scriptSig.begin(), in.scriptSig.end()));
 
-  // 缓存 addressBalance, 减少 confirm tx 操作时查找关联地址变更记录的开销
-  _setTxAddressBalance(txLog2, addressBalance);
+      if (txLog2->tx_.IsCoinBase()) {
+        // 插入当前交易的inputs, coinbase tx的 scriptSig 不做decode，可能含有非法字符
+        // 通常无法解析成功, 不解析 scriptAsm
+        // coinbase无法担心其长度，bitcoind对coinbase tx的coinbase字段长度做了限制
 
-  // 变更地址相关信息
-  _accpetTx_insertAddressTxs(dbExplorer_, txLog2, addressBalance);
 
-  // 插入交易tx
-  _accpetTx_insertTx(dbExplorer_, txLog2, valueIn);
+        fbe::TxInputBuilder txInputBuilder(fbb);
+        txInputBuilder.add_prev_position(-1);
+        txInputBuilder.add_prev_value(0);
+        txInputBuilder.add_script_hex(fb_ScriptHex);
+        txInputBuilder.add_sequence(in.nSequence);
+        fb_txInputs.push_back(txInputBuilder.Finish());
+      }
+      else
+      {
+        auto addresses      = prevTxOutputs[n]->addresses();
+        const int64_t value = prevTxOutputs[n]->value();
+
+        vector<flatbuffers::Offset<flatbuffers::String> > fb_addressesVec;
+        for (size_t j = 0; j < addresses->size(); j++) {
+          const string address = addresses->operator[](j)->str();
+          addressBalance[address] += value * -1;
+          fb_addressesVec.push_back(fbb.CreateString(address));
+        }
+        valueIn += value;
+
+        auto fb_prevAddresses = fbb.CreateVector(fb_addressesVec);
+        auto fb_prevTxHash    = fbb.CreateString(in.prevout.hash.ToString());
+        auto fb_ScriptAsm     = fbb.CreateString(in.scriptSig.ToString());
+
+        fbe::TxInputBuilder txInputBuilder(fbb);
+        txInputBuilder.add_prev_addresses(fb_prevAddresses);
+        txInputBuilder.add_prev_position(in.prevout.n);
+        txInputBuilder.add_prev_tx_hash(fb_prevTxHash);
+        txInputBuilder.add_prev_value(value);
+        txInputBuilder.add_script_asm(fb_ScriptAsm);
+        txInputBuilder.add_script_hex(fb_ScriptHex);
+        txInputBuilder.add_sequence(in.nSequence);
+
+        fb_txInputs.push_back(txInputBuilder.Finish());
+      }
+    }
+  }
+  auto fb_txObjInputs = fbb.CreateVector(fb_txInputs);
+
+  //
+  // outputs
+  //
+  {
+    int n = -1;
+    for (const auto &out : tx.vout) {
+      n++;
+      string addressStr;
+      txnouttype type;
+      vector<CTxDestination> addresses;
+      int nRequired;
+      ExtractDestinations(out.scriptPubKey, type, addresses, nRequired);
+
+      // 解地址可能失败，但依然有 tx_outputs_xxxx 记录
+      // 输出无有效地址的奇葩TX:
+      //   testnet3: e920604f540fec21f66b6a94d59ca8b1fbde27fc7b4bc8163b3ede1a1f90c245
+
+      // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
+      vector<flatbuffers::Offset<flatbuffers::String> > fb_addressesVec;
+      int16_t j = -1;
+      for (auto &addr : addresses) {
+        j++;
+        const string addrStr = CBitcoinAddress(addr).ToString();
+        addressBalance[addrStr] += out.nValue;
+        fb_addressesVec.push_back(fbb.CreateString(addrStr));
+
+        // unspent output
+        auto fb_txHash = fbb.CreateString(txLog2->txHash_.ToString());
+        fbe::UnspentOutputBuilder unspentOutputBuilder(fbb);
+        unspentOutputBuilder.add_tx_hash(fb_txHash);
+        unspentOutputBuilder.add_position(n);
+        unspentOutputBuilder.add_position2(j);
+        unspentOutputBuilder.add_value(out.nValue);
+        fb_unspentOutputs.push_back(unspentOutputBuilder.Finish());
+
+        // TODO: save unspent outputs
+      }
+
+      // output Hex奇葩的交易：
+      // http://tbtc.blockr.io/tx/info/c333a53f0174166236e341af9cad795d21578fb87ad7a1b6d2cf8aa9c722083c
+      string outputScriptAsm = out.scriptPubKey.ToString();
+      const string outputScriptHex = HexStr(out.scriptPubKey.begin(), out.scriptPubKey.end());
+      if (outputScriptAsm.length() > 2*1024*1024) {
+        outputScriptAsm = "";
+      }
+
+      auto fb_addresses  = fbb.CreateVector(fb_addressesVec);
+      auto fb_scriptAsm  = fbb.CreateString(outputScriptAsm);
+      auto fb_scriptHex  = fbb.CreateString(outputScriptHex);
+      auto fb_scriptType = fbb.CreateString(GetTxnOutputType(type) ? GetTxnOutputType(type) : "");
+
+      fbe::TxOutputBuilder txOutputBuilder(fbb);
+      txOutputBuilder.add_addresses(fb_addresses);
+      txOutputBuilder.add_value(out.nValue);
+      txOutputBuilder.add_script_asm(fb_scriptAsm);
+      txOutputBuilder.add_script_hex(fb_scriptHex);
+      txOutputBuilder.add_script_type(fb_scriptType);
+      fb_txOutputs.push_back(txOutputBuilder.Finish());
+    }
+  }
+  auto fb_txObjOutputs = fbb.CreateVector(fb_txOutputs);
+
+  const int64_t valueOut = txLog2->tx_.GetValueOut();
+  int64_t fee = 0;
+  {
+    if (txLog2->tx_.IsCoinBase()) {
+      fee = valueOut;  // coinbase的fee为 block rewards
+    } else {
+      fee = valueIn - valueOut;
+    }
+  }
+
+  //
+  // build tx object
+  //
+  auto createdAt = fbb.CreateString(date("%F %T"));
+
+  fbe::TxBuilder txBuilder(fbb);
+  txBuilder.add_is_coinbase(tx.IsCoinBase());
+  txBuilder.add_version(tx.nVersion);
+  txBuilder.add_lock_time(tx.nLockTime);
+  txBuilder.add_size((int)(txLog2->txHex_.length()/2));
+  txBuilder.add_fee(fee);
+  txBuilder.add_inputs(fb_txObjInputs);
+  txBuilder.add_inputs_count((int)tx.vin.size());
+  txBuilder.add_inputs_value(valueIn);
+  txBuilder.add_outputs(fb_txObjOutputs);
+  txBuilder.add_outputs_count((int)tx.vout.size());
+  txBuilder.add_outputs_value(valueOut);
+  txBuilder.add_created_at(createdAt);
+  txBuilder.Finish();
+
+  // insert tx object, 需要紧跟 Finish() 函数，否则 fbb 内存会破坏
+  kvdb_.set(KVDB_PREFIX_TX_OBJECT + txLog2->txHash_.ToString(),
+            fbb.GetBufferPointer(), fbb.GetSize());
+
+  // insert tx raw hex
+  _acceptTx_insertRawHex(kvdb_, txLog2->txHex_, txLog2->txHash_);
+
+  // remove unspent
+  _acceptTx_removeUnspentOutputs(kvdb_, txLog2->txHash_, tx, prevTxOutputs);
+
+  // insert spent txs
+  _acceptTx_insertSpendTxs(kvdb_, txLog2->txHash_, tx);
 
   // 处理未确认计数器和记录
   addUnconfirmedTxPool(txLog2);
 
   // notification logs
-  writeNotificationLogs(addressBalance, txLog2);
-}
-
-// 设置地址的余额变更情况
-void Parser::_setTxAddressBalance(class TxLog2 *txLog2,
-                                  const map<int64_t, int64_t> &addressBalance) {
-  assert(addressBalanceCache_.find(txLog2->txHash_) == addressBalanceCache_.end());
-  addressBalanceCache_[txLog2->txHash_] = addressBalance;
-
-  // 读取一次：更新tx的最后读取时间
-  _getTxAddressBalance(txLog2->txId_, txLog2->txHash_, txLog2->tx_);
+//  writeNotificationLogs(addressBalance, txLog2);
 }
 
 // 获取tx对应各个地址的余额变更情况
-map<int64_t, int64_t> *Parser::_getTxAddressBalance(const int64_t txID,
-                                                    const uint256 &txHash,
-                                                    const CTransaction &tx) {
-  // 存放每个tx的读取时间
-  static map<uint256, time_t> txsTime_;
-
-  txsTime_[txHash] = time(nullptr);
-
-  if (addressBalanceCache_.find(txHash) != addressBalanceCache_.end()) {
-    return &(addressBalanceCache_[txHash]);
-  }
-
-  map<int64_t/* addrID */, int64_t/*  balance diff */> addressBalance;
-
-  MySQLResult res;
-  string sql;
-  char **row;
-  set<string> allAddresss;
-  int n;
-
+void Parser::_getTxAddressBalance(const uint256 &txHash, const CTransaction &tx,
+                                  vector<fbe::TxOutput> &prevTxOutputs,
+                                  map<string, int64_t> &addressBalance) {
   //
   // vin
   //
   if (!tx.IsCoinBase()) {
     for (auto &in : tx.vin) {
       uint256 prevHash = in.prevout.hash;
-      int64_t prevTxId = txHash2Id(dbExplorer_, prevHash);
       int32_t prevPos  = (int32_t)in.prevout.n;
 
-      // 获取相关output信息
-      sql = Strings::Format("SELECT `address_ids`,`value` FROM `tx_outputs_%04d` "
-                            " WHERE `tx_id`=%lld AND `position`=%d",
-                            tableIdx_TxOutput(prevTxId), prevTxId, prevPos);
-      dbExplorer_.query(sql, res);
-      assert(res.numRows() == 1);
-
-      // 获取地址
-      row = res.nextRow();
-      vector<string> addressIdsStrVec = split(string(row[0]), '|');
-      for (auto &addrIdStr : addressIdsStrVec) {
-        addressBalance[atoi64(addrIdStr.c_str())] += -1 * atoi64(row[1])/* value */;
-      }
+      // 获取相关prev output信息
+      // TODO
     }
   }
 
   //
   // vout
   //
-  // 提取涉及到的所有地址
-  n = -1;
+  int position = -1;
   for (auto &out : tx.vout) {
-    n++;
     txnouttype type;
     vector<CTxDestination> addresses;
     int nRequired;
     if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
-               txID, txHash.ToString().c_str(), n);
+      LOG_WARN("extract destinations failure, hash: %s, position: %d",
+               txHash.ToString().c_str(), position);
       continue;
     }
-    for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
-      const string addrStr = CBitcoinAddress(addr).ToString();
-      allAddresss.insert(CBitcoinAddress(addr).ToString());
-    }
-  }
-  // 拿到所有地址的id
-  map<string, int64_t> addrMap;
-  GetAddressIds(dbExplorer_, allAddresss, addrMap);
-
-  for (auto &out : tx.vout) {
-    txnouttype type;
-    vector<CTxDestination> addresses;
-    int nRequired;
-    ExtractDestinations(out.scriptPubKey, type, addresses, nRequired);
-
     // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
     for (auto &addr : addresses) {
       const string addrStr = CBitcoinAddress(addr).ToString();
-      const int64_t addrId = addrMap[addrStr];
-      // 增加每个地址的余额
-      addressBalance[addrId] += out.nValue;
+      addressBalance[addrStr] += out.nValue;
     }
   }
-
-  // 设置缓存
-  addressBalanceCache_[txHash] = addressBalance;
-
-  //
-  // 删掉过期的数据
-  //
-  // 超过 50万 记录数则触发, 每天大约TX数量, 1000 * 144 = 14万
-  const int kMaxItemsCount     = 100 * 10000;
-  const time_t kExpiredSeconds = 86400 * 3;
-  if (addressBalanceCache_.size() > kMaxItemsCount) {
-    LOG_INFO("clear addressBalanceCache start, count: %llu", addressBalanceCache_.size());
-
-    // 删掉最近未使用的tx
-    for (auto it = txsTime_.begin(); it != txsTime_.end(); ) {
-      if (it->second + kExpiredSeconds < time(nullptr)) {
-        txsTime_.erase(it++);
-      } else {
-        it++;
-      }
-    }
-    // 已 txsTime_ 涉及的 tx 为准，不存在的都删除
-    for (auto it = addressBalanceCache_.begin(); it != addressBalanceCache_.end(); ) {
-      if (txsTime_.count(it->first) == 0) {
-        addressBalanceCache_.erase(it++);
-      } else {
-        it++;
-      }
-    }
-    LOG_INFO("clear addressBalanceCache end, count: %llu", addressBalanceCache_.size());
-    assert(addressBalanceCache_.size() == txsTime_.size());
-  }
-
-  assert(addressBalanceCache_.count(txHash) != 0);
-  return &(addressBalanceCache_[txHash]);
 }
 
 int32_t prevYmd(const int32_t ymd) {
@@ -1900,12 +1781,11 @@ void Parser::_confirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr
 void Parser::confirmTx(class TxLog2 *txLog2) {
   //
   // confirm: 变更为确认（设定块高度值等），若不是紧接着上个已确认的交易，则调整交易链。
-  //          若该交易涉及日期变更（从上月末变更为下月初），则需要移动其后所有的tx至新日期表中
   //
   string sql;
 
   // 拿到关联地址的余额变更记录，可能需要调整交易链
-  auto addressBalance = _getTxAddressBalance(txLog2->txId_, txLog2->txHash_, txLog2->tx_);
+  auto addressBalance = _getTxAddressBalance(txLog2->txHash_, txLog2->tx_);
 
   for (auto &it : *addressBalance) {
     const int64_t addrID       = it.first;
@@ -1963,7 +1843,7 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
   removeUnconfirmedTxPool(txLog2);
 
   // notification logs
-  writeNotificationLogs(*addressBalance, txLog2);
+//  writeNotificationLogs(*addressBalance, txLog2);
 }
 
 // unconfirm tx (address node)
@@ -2019,7 +1899,7 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
   string sql;
 
   // 拿到关联地址的余额变更记录，可能需要调整交易链
-  auto addressBalance = _getTxAddressBalance(txLog2->txId_, txLog2->txHash_, txLog2->tx_);
+  auto addressBalance = _getTxAddressBalance(txLog2->txHash_, txLog2->tx_);
 
   for (auto &it : *addressBalance) {
     const int64_t addrID       = it.first;
@@ -2045,7 +1925,7 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
   addUnconfirmedTxPool(txLog2);
 
   // notification logs
-  writeNotificationLogs(*addressBalance, txLog2);
+//  writeNotificationLogs(*addressBalance, txLog2);
 }
 
 // 回滚一个块操作
@@ -2357,7 +2237,7 @@ void Parser::rejectTx(class TxLog2 *txLog2) {
   removeUnconfirmedTxPool(txLog2);
 
   // notification logs
-  writeNotificationLogs(addressBalance, txLog2);
+//  writeNotificationLogs(addressBalance, txLog2);
 }
 
 // 获取上次 txlog2 的进度ID

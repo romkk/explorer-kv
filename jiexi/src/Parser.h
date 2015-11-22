@@ -30,6 +30,8 @@
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
 
+#include "KVDB.h"
+
 // tparser的异常，整数
 #define EXCEPTION_TPARSER_TX_INVALID_INPUT 100
 
@@ -220,7 +222,8 @@ private:
   int64_t unconfirmedTxsSize_;
   int32_t unconfirmedTxsCount_;
 
-  map<uint256/* tx hash */, map<int64_t/* addrID */, int64_t/* balance diff */> > addressBalanceCache_;
+  // kv
+  KVDB kvdb_;
 
   // 块最大时间戳
   BlockTimestamp blkTs_;
@@ -255,17 +258,12 @@ private:
   void unconfirmTx(class TxLog2 *txLog2);
   void rejectTx   (class TxLog2 *txLog2);
 
-  //
-  void _accpetTx_insertTxInputs(TxLog2 *txLog2, map<int64_t, int64_t> &addressBalance,
-                                int64_t &valueIn);
   bool hasAccepted(class TxLog2 *txLog2);
 
   // 获取tx对应各个地址的余额变更情况
-  map<int64_t, int64_t> *_getTxAddressBalance(const int64_t txID,
-                                              const uint256 &txHash,
-                                              const CTransaction &tx);
-  void _setTxAddressBalance(class TxLog2 *txLog2, const map<int64_t, int64_t> &addressBalanceCache);
-
+  void _getTxAddressBalance(const uint256 &txHash, const CTransaction &tx,
+                            vector<fbe::TxOutput> &prevTxOutputs,
+                            map<string, int64_t> &addressBalance);
 
   // 操作 tx 的辅助函数
   void _getAddressTxNode(const int64_t txId,

@@ -49,14 +49,10 @@ table Tx {
   created_at: string;
 }
 
+// 02_{tx_hash}
 table TxSpentBy {
   tx_hash: string;
   position: int;
-}
-
-// 02_{tx_hash}
-table TxSpent {
-  spent_txs: [TxSpentBy];
 }
 
 // 10_{block_height}

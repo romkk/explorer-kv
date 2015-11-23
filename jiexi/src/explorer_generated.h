@@ -8,7 +8,6 @@
 
 namespace fbe {
 
-struct TxHex;
 struct TxInput;
 struct TxOutput;
 struct Tx;
@@ -19,8 +18,8 @@ struct BlockTxsHash;
 struct Address;
 struct AddressTx;
 struct AddressTxIdx;
-struct UnspentOutput;
-struct UnspentOutputIdx;
+struct AddressUnspent;
+struct AddressUnspentIdx;
 struct DoubleSpending;
 
 MANUALLY_ALIGNED_STRUCT(8) Address FLATBUFFERS_FINAL_CLASS {
@@ -33,14 +32,16 @@ MANUALLY_ALIGNED_STRUCT(8) Address FLATBUFFERS_FINAL_CLASS {
   int32_t __padding1;
   int64_t unconfirmed_received_;
   int64_t unconfirmed_sent_;
+  int32_t unspent_tx_count_;
+  int32_t unspent_tx_index_;
   int32_t last_confirmed_tx_idx_;
   uint32_t created_at_;
   uint32_t updated_at_;
   int32_t __padding2;
 
  public:
-  Address(int32_t tx_count, int64_t received, int64_t sent, int32_t unconfirmed_tx_count, int64_t unconfirmed_received, int64_t unconfirmed_sent, int32_t last_confirmed_tx_idx, uint32_t created_at, uint32_t updated_at)
-    : tx_count_(flatbuffers::EndianScalar(tx_count)), __padding0(0), received_(flatbuffers::EndianScalar(received)), sent_(flatbuffers::EndianScalar(sent)), unconfirmed_tx_count_(flatbuffers::EndianScalar(unconfirmed_tx_count)), __padding1(0), unconfirmed_received_(flatbuffers::EndianScalar(unconfirmed_received)), unconfirmed_sent_(flatbuffers::EndianScalar(unconfirmed_sent)), last_confirmed_tx_idx_(flatbuffers::EndianScalar(last_confirmed_tx_idx)), created_at_(flatbuffers::EndianScalar(created_at)), updated_at_(flatbuffers::EndianScalar(updated_at)), __padding2(0) { (void)__padding0; (void)__padding1; (void)__padding2; }
+  Address(int32_t tx_count, int64_t received, int64_t sent, int32_t unconfirmed_tx_count, int64_t unconfirmed_received, int64_t unconfirmed_sent, int32_t unspent_tx_count, int32_t unspent_tx_index, int32_t last_confirmed_tx_idx, uint32_t created_at, uint32_t updated_at)
+    : tx_count_(flatbuffers::EndianScalar(tx_count)), __padding0(0), received_(flatbuffers::EndianScalar(received)), sent_(flatbuffers::EndianScalar(sent)), unconfirmed_tx_count_(flatbuffers::EndianScalar(unconfirmed_tx_count)), __padding1(0), unconfirmed_received_(flatbuffers::EndianScalar(unconfirmed_received)), unconfirmed_sent_(flatbuffers::EndianScalar(unconfirmed_sent)), unspent_tx_count_(flatbuffers::EndianScalar(unspent_tx_count)), unspent_tx_index_(flatbuffers::EndianScalar(unspent_tx_index)), last_confirmed_tx_idx_(flatbuffers::EndianScalar(last_confirmed_tx_idx)), created_at_(flatbuffers::EndianScalar(created_at)), updated_at_(flatbuffers::EndianScalar(updated_at)), __padding2(0) { (void)__padding0; (void)__padding1; (void)__padding2; }
 
   int32_t tx_count() const { return flatbuffers::EndianScalar(tx_count_); }
   void mutate_tx_count(int32_t tx_count) { flatbuffers::WriteScalar(&tx_count_, tx_count); }
@@ -54,6 +55,10 @@ MANUALLY_ALIGNED_STRUCT(8) Address FLATBUFFERS_FINAL_CLASS {
   void mutate_unconfirmed_received(int64_t unconfirmed_received) { flatbuffers::WriteScalar(&unconfirmed_received_, unconfirmed_received); }
   int64_t unconfirmed_sent() const { return flatbuffers::EndianScalar(unconfirmed_sent_); }
   void mutate_unconfirmed_sent(int64_t unconfirmed_sent) { flatbuffers::WriteScalar(&unconfirmed_sent_, unconfirmed_sent); }
+  int32_t unspent_tx_count() const { return flatbuffers::EndianScalar(unspent_tx_count_); }
+  void mutate_unspent_tx_count(int32_t unspent_tx_count) { flatbuffers::WriteScalar(&unspent_tx_count_, unspent_tx_count); }
+  int32_t unspent_tx_index() const { return flatbuffers::EndianScalar(unspent_tx_index_); }
+  void mutate_unspent_tx_index(int32_t unspent_tx_index) { flatbuffers::WriteScalar(&unspent_tx_index_, unspent_tx_index); }
   int32_t last_confirmed_tx_idx() const { return flatbuffers::EndianScalar(last_confirmed_tx_idx_); }
   void mutate_last_confirmed_tx_idx(int32_t last_confirmed_tx_idx) { flatbuffers::WriteScalar(&last_confirmed_tx_idx_, last_confirmed_tx_idx); }
   uint32_t created_at() const { return flatbuffers::EndianScalar(created_at_); }
@@ -61,37 +66,7 @@ MANUALLY_ALIGNED_STRUCT(8) Address FLATBUFFERS_FINAL_CLASS {
   uint32_t updated_at() const { return flatbuffers::EndianScalar(updated_at_); }
   void mutate_updated_at(uint32_t updated_at) { flatbuffers::WriteScalar(&updated_at_, updated_at); }
 };
-STRUCT_END(Address, 64);
-
-struct TxHex FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
-  const flatbuffers::String *hex() const { return GetPointer<const flatbuffers::String *>(4); }
-  flatbuffers::String *mutable_hex() { return GetPointer<flatbuffers::String *>(4); }
-  bool Verify(flatbuffers::Verifier &verifier) const {
-    return VerifyTableStart(verifier) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 4 /* hex */) &&
-           verifier.Verify(hex()) &&
-           verifier.EndTable();
-  }
-};
-
-struct TxHexBuilder {
-  flatbuffers::FlatBufferBuilder &fbb_;
-  flatbuffers::uoffset_t start_;
-  void add_hex(flatbuffers::Offset<flatbuffers::String> hex) { fbb_.AddOffset(4, hex); }
-  TxHexBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
-  TxHexBuilder &operator=(const TxHexBuilder &);
-  flatbuffers::Offset<TxHex> Finish() {
-    auto o = flatbuffers::Offset<TxHex>(fbb_.EndTable(start_, 1));
-    return o;
-  }
-};
-
-inline flatbuffers::Offset<TxHex> CreateTxHex(flatbuffers::FlatBufferBuilder &_fbb,
-   flatbuffers::Offset<flatbuffers::String> hex = 0) {
-  TxHexBuilder builder_(_fbb);
-  builder_.add_hex(hex);
-  return builder_.Finish();
-}
+STRUCT_END(Address, 72);
 
 struct TxInput FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   const flatbuffers::String *script_asm() const { return GetPointer<const flatbuffers::String *>(4); }
@@ -623,7 +598,7 @@ inline flatbuffers::Offset<AddressTxIdx> CreateAddressTxIdx(flatbuffers::FlatBuf
   return builder_.Finish();
 }
 
-struct UnspentOutput FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
+struct AddressUnspent FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   const flatbuffers::String *tx_hash() const { return GetPointer<const flatbuffers::String *>(4); }
   flatbuffers::String *mutable_tx_hash() { return GetPointer<flatbuffers::String *>(4); }
   int32_t position() const { return GetField<int32_t>(6, 0); }
@@ -643,27 +618,27 @@ struct UnspentOutput FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   }
 };
 
-struct UnspentOutputBuilder {
+struct AddressUnspentBuilder {
   flatbuffers::FlatBufferBuilder &fbb_;
   flatbuffers::uoffset_t start_;
   void add_tx_hash(flatbuffers::Offset<flatbuffers::String> tx_hash) { fbb_.AddOffset(4, tx_hash); }
   void add_position(int32_t position) { fbb_.AddElement<int32_t>(6, position, 0); }
   void add_position2(int16_t position2) { fbb_.AddElement<int16_t>(8, position2, 0); }
   void add_value(int64_t value) { fbb_.AddElement<int64_t>(10, value, 0); }
-  UnspentOutputBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
-  UnspentOutputBuilder &operator=(const UnspentOutputBuilder &);
-  flatbuffers::Offset<UnspentOutput> Finish() {
-    auto o = flatbuffers::Offset<UnspentOutput>(fbb_.EndTable(start_, 4));
+  AddressUnspentBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
+  AddressUnspentBuilder &operator=(const AddressUnspentBuilder &);
+  flatbuffers::Offset<AddressUnspent> Finish() {
+    auto o = flatbuffers::Offset<AddressUnspent>(fbb_.EndTable(start_, 4));
     return o;
   }
 };
 
-inline flatbuffers::Offset<UnspentOutput> CreateUnspentOutput(flatbuffers::FlatBufferBuilder &_fbb,
+inline flatbuffers::Offset<AddressUnspent> CreateAddressUnspent(flatbuffers::FlatBufferBuilder &_fbb,
    flatbuffers::Offset<flatbuffers::String> tx_hash = 0,
    int32_t position = 0,
    int16_t position2 = 0,
    int64_t value = 0) {
-  UnspentOutputBuilder builder_(_fbb);
+  AddressUnspentBuilder builder_(_fbb);
   builder_.add_value(value);
   builder_.add_position(position);
   builder_.add_tx_hash(tx_hash);
@@ -671,7 +646,7 @@ inline flatbuffers::Offset<UnspentOutput> CreateUnspentOutput(flatbuffers::FlatB
   return builder_.Finish();
 }
 
-struct UnspentOutputIdx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
+struct AddressUnspentIdx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   int32_t index() const { return GetField<int32_t>(4, 0); }
   bool mutate_index(int32_t index) { return SetField(4, index); }
   bool Verify(flatbuffers::Verifier &verifier) const {
@@ -681,21 +656,21 @@ struct UnspentOutputIdx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   }
 };
 
-struct UnspentOutputIdxBuilder {
+struct AddressUnspentIdxBuilder {
   flatbuffers::FlatBufferBuilder &fbb_;
   flatbuffers::uoffset_t start_;
   void add_index(int32_t index) { fbb_.AddElement<int32_t>(4, index, 0); }
-  UnspentOutputIdxBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
-  UnspentOutputIdxBuilder &operator=(const UnspentOutputIdxBuilder &);
-  flatbuffers::Offset<UnspentOutputIdx> Finish() {
-    auto o = flatbuffers::Offset<UnspentOutputIdx>(fbb_.EndTable(start_, 1));
+  AddressUnspentIdxBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
+  AddressUnspentIdxBuilder &operator=(const AddressUnspentIdxBuilder &);
+  flatbuffers::Offset<AddressUnspentIdx> Finish() {
+    auto o = flatbuffers::Offset<AddressUnspentIdx>(fbb_.EndTable(start_, 1));
     return o;
   }
 };
 
-inline flatbuffers::Offset<UnspentOutputIdx> CreateUnspentOutputIdx(flatbuffers::FlatBufferBuilder &_fbb,
+inline flatbuffers::Offset<AddressUnspentIdx> CreateAddressUnspentIdx(flatbuffers::FlatBufferBuilder &_fbb,
    int32_t index = 0) {
-  UnspentOutputIdxBuilder builder_(_fbb);
+  AddressUnspentIdxBuilder builder_(_fbb);
   builder_.add_index(index);
   return builder_.Finish();
 }

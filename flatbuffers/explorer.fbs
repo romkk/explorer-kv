@@ -8,11 +8,6 @@
 //
 namespace fbe;  // flatbuffers explorer
 
-// 00_{tx_hash}
-table TxHex {
-  hex: string;
-}
-
 table TxInput {
   script_asm: string;
   script_hex: string;
@@ -92,6 +87,8 @@ struct Address {
   unconfirmed_tx_count: int;
   unconfirmed_received: long;
   unconfirmed_sent: long;
+  unspent_tx_count: int;
+  unspent_tx_index: int;
   last_confirmed_tx_idx: int;
   created_at: uint;
   updated_at: uint;
@@ -111,7 +108,7 @@ table AddressTxIdx {
 }
 
 // 23_{address}_{index}
-table UnspentOutput {
+table AddressUnspent {
   tx_hash: string;
   position: int;
   position2: short;  // 16 bit: short ushort
@@ -119,7 +116,7 @@ table UnspentOutput {
 }
 
 // 24_{address}_{tx_hash}_{position}
-table UnspentOutputIdx {
+table AddressUnspentIdx {
   index: int;
 }
 

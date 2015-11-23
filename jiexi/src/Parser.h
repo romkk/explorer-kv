@@ -85,35 +85,27 @@ public:
 ////////////////////////////  LastestAddressInfo  ///////////////////////////////
 class LastestAddressInfo {
 public:
-  int64_t addrId_;
-  int32_t beginTxYmd_;
-  int32_t endTxYmd_;
-  int64_t beginTxId_;
-  int64_t endTxId_;
+  int32_t txCount_;
+  int64_t received_;
+  int64_t sent_;
 
-  int64_t totalReceived_;
-  int64_t totalSent_;
-
+  int32_t unconfirmedTxCount_;
   int64_t unconfirmedReceived_;
   int64_t unconfirmedSent_;
-  int64_t unconfirmedTxCount_;
 
-  int32_t lastConfirmedTxYmd_;
-  int64_t lastConfirmedTxId_;
+  int32_t unspentTxCount_;  // 未花费的数量
+  int32_t unspentTxIndex_;  // 当前最大未花费的索引，每次来都加一
 
-  int64_t txCount_;
-  time_t lastUseTime_;
+  int32_t lastConfirmedTxIdx_;
 
-  string addressStr_;
+  int64_t lastUseIdx_;  // 用于清理缓存，和address本身无关
 
-  LastestAddressInfo(int64_t addrId,
-                     int32_t beginTxYmd, int32_t endTxYmd,
-                     int64_t beginTxId, int64_t endTxId,
-                     int64_t unconfirmedReceived, int64_t unconfirmedSent,
-                     int32_t lastConfirmedTxYmd, int64_t lastConfirmedTxId,
-                     int64_t totalReceived, int64_t totalSent,
-                     int64_t txCount, int64_t unconfirmedTxCount,
-                     const char *address);
+  LastestAddressInfo(const int64_t lastUseIdx);
+  LastestAddressInfo(const int32_t txCount, const int64_t received, const int64_t sent,
+                     const int32_t unconfirmedTxCount, const int64_t unconfirmedReceived, const int64_t unconfirmedSent,
+                     const int32_t unspentTxCount, const int32_t unspentTxIndex,
+                     const int32_t lastConfirmedTxIdx,
+                     const int64_t lastUseIdx);
   LastestAddressInfo(const LastestAddressInfo &a);
 };
 

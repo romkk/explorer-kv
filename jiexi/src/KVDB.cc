@@ -28,16 +28,16 @@
 
 KVDB::KVDB(const string &dbPath): db_(nullptr), kDBPath_(dbPath) {
   // Optimize RocksDB. This is the easiest way to get RocksDB to perform well
-  options.IncreaseParallelism();
-  options.OptimizeLevelStyleCompaction();
+  options_.IncreaseParallelism();
+  options_.OptimizeLevelStyleCompaction();
 
   // create the DB if it's not already present
-  options.create_if_missing = true;
+  options_.create_if_missing = true;
 }
 
 void KVDB::open() {
   // open DB
-  rocksdb::Status s = rocksdb::DB::Open(options, kDBPath_, &db_);
+  rocksdb::Status s = rocksdb::DB::Open(options_, kDBPath_, &db_);
   if (!s.ok()) {
     THROW_EXCEPTION_DBEX("open rocks db fail");
   }

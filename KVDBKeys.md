@@ -4,8 +4,8 @@
 
 编码 | 类型 | Key | 说明 
 ------ | ------ | ------
-00 | transaction | 00\_{tx_hash} | tx raw hex
-01 | transaction | 01\_{tx_hash} | tx object (json)
+00 | transaction | 00\_{tx_hash} | tx raw hex (binary)，一次插入不再变更
+01 | transaction | 01\_{tx_hash} | tx object，一次插入不再变更
 02 | transaction | 02\_{tx_hash}\_{position} | spent txs, value记录该hash被谁花费了
 10 | block | 10\_{block_height} | block height -> hash
 11 | block | 11\_{block_hash} | block object (json)

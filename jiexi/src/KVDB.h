@@ -34,18 +34,22 @@
 #define KVDB_PREFIX_TX_OBJECT    "01_"
 #define KVDB_PREFIX_TX_SPEND     "02_"
 
+#define KVDB_PREFIX_ADDR_OBJECT     "20_"
+#define KVDB_PREFIX_ADDR_TX         "21_"
+#define KVDB_PREFIX_ADDR_TX_INDEX   "22_"
 #define KVDB_PREFIX_ADDR_UNSPENT    "23_"
-#define KVDB_PREFIX_ADDR_UNSPENT_INDEX    "24_"
+#define KVDB_PREFIX_ADDR_UNSPENT_INDEX  "24_"
 
 
 
 class KVDB {
-  rocksdb::DB *db_;
-  rocksdb::Options options;
+  rocksdb::Options options_;
 
   string kDBPath_;
 
 public:
+  rocksdb::DB *db_;
+
   KVDB(const string &dbPath);
   ~KVDB() {}
 
@@ -55,6 +59,7 @@ public:
   void get(const string &key, string &value) {}
   void set(const string &key, const vector<uint8_t> &buffer) {}
   void set(const string &key, const uint8_t *data, const size_t length) {}
+
 
   void multiGet(const vector<string> &keys, vector<vector<uint8_t> > &bufferVec) {}
   void multiSet(const vector<string> &keys, const vector<vector<uint8_t> > &bufferVec) {}

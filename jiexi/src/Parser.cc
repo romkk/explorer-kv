@@ -841,7 +841,6 @@ DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t po
 
 // 获取地址信息
 static LastestAddressInfo *_getAddressInfo(KVDB &kvdb, const string &address) {
-  // use CTxDestination/hash160 as map key
   static std::map<string, LastestAddressInfo *> _addrTxCache;
   static int64_t lastUseIdx = 0;
 
@@ -1504,6 +1503,10 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
         txInputBuilder.add_sequence(in.nSequence);
 
         fb_txInputs.push_back(txInputBuilder.Finish());
+
+        // TODO: 从未花费记录中，删除prev hash记录
+        // TODO: 生成前向交易的花费记录
+
       }
     }
   }

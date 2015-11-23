@@ -48,12 +48,30 @@ PreTx::PreTx(): f_(nullptr) {
   runningConsumeThreads_ = 0;
 
   txBuf_.reserve(50*10000);
+
+  //
+  // KVDB
+  //
+  // Optimize RocksDB. This is the easiest way to get RocksDB to perform well
+  kvOptions_.IncreaseParallelism();
+  kvOptions_.OptimizeLevelStyleCompaction();
+  // create the DB if it's not already present
+  kvOptions_.create_if_missing = true;
+
+  // open DB
+  const string kDBPath = "./rocksdb";
+  rocksdb::Status s = rocksdb::DB::Open(kvOptions_, kDBPath, &kvdb_);
+  if (!s.ok()) {
+    THROW_EXCEPTION_DBEX("open rocks db fail");
+  }
 }
 
 PreTx::~PreTx() {
   fclose(f_);
   stop();
   LOG_INFO("PreTx stopped");
+
+  delete kvdb_;
 }
 
 void PreTx::stop() {
@@ -106,7 +124,7 @@ void PreTx::threadConsumeAddr() {
       continue;
     }
 
-    for (auto &tx : buf) {
+    for (const auto &tx : buf) {
       const string txhash = tx.ToString();
       string line;
 
@@ -187,7 +205,7 @@ void PreTx::threadProcessBlock(const int32_t idx) {
     // 遍历所有交易，提取涉及到的所有地址
     vector<uint256> buf;
     buf.reserve(blk.vtx.size());
-    for (auto &tx : blk.vtx) {
+    for (const auto &tx : blk.vtx) {
       //
       // 硬编码特殊交易处理
       //
@@ -206,6 +224,15 @@ void PreTx::threadProcessBlock(const int32_t idx) {
         continue;
       }
       buf.push_back(hash);
+
+      // kvdb
+      {
+        const string key = Strings::Format("01_%s", tx.GetHash().ToString().c_str());
+        CDataStream ssTx(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+        ssTx << tx;
+        rocksdb::Slice value(&(*ssTx.begin()), ssTx.size());
+        kvdb_->Put(rocksdb::WriteOptions(), key, value);
+      }
     }
 
     string logStr;

@@ -22,6 +22,9 @@
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
 
+#include "rocksdb/db.h"
+#include "rocksdb/slice.h"
+#include "rocksdb/options.h"
 
 // 预处理交易
 class PreTx {
@@ -37,6 +40,10 @@ private:
   vector<int64_t> txIds_;
   FILE *f_;
   mutex lock_;
+
+  // rocksdb
+  rocksdb::DB *kvdb_;
+  rocksdb::Options kvOptions_;
 
   void threadProcessBlock(const int32_t idx);
   void threadConsumeAddr();

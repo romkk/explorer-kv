@@ -253,9 +253,7 @@ private:
   bool hasAccepted(class TxLog2 *txLog2);
 
   // 获取tx对应各个地址的余额变更情况
-  void _getTxAddressBalance(const uint256 &txHash, const CTransaction &tx,
-                            vector<fbe::TxOutput> &prevTxOutputs,
-                            map<string, int64_t> &addressBalance);
+  void _getTxAddressBalance(const CTransaction &tx, map<string, int64_t> &addressBalance);
 
   // 操作 tx 的辅助函数
   void _getAddressTxNode(const int64_t txId,

@@ -995,6 +995,49 @@ static void _acceptTx_insertAddressUnspent(KVDB &kvdb, const int64_t nValue,
   }
 }
 
+void Parser::_getTxAddressBalance(const CTransaction &tx, map<string, int64_t> &addressBalance) {
+  addressBalance.clear();
+
+  //
+  // inputs
+  //
+  if (!tx.IsCoinBase()) {
+    vector<const fbe::TxOutput *> prevTxOutputs;
+    vector<string> prevTxsData;  // prevTxsData 必须一直存在，否则 prevTxOutputs 读取无效内存
+
+    // 读取前向交易的输出
+    kvdb_.getPrevTxOutputs(tx, prevTxsData, prevTxOutputs);
+
+    for (size_t n = 0; n < tx.vin.size(); n ++) {
+      auto addresses      = prevTxOutputs[n]->addresses();
+      const int64_t value = prevTxOutputs[n]->value();
+
+      for (flatbuffers::uoffset_t j = 0; j < addresses->size(); j++) {
+        const string address = addresses->operator[](j)->str();
+        addressBalance[address] += value * -1;
+      }
+    }
+  }
+
+  //
+  // outputs
+  //
+  {
+    for (const auto &out : tx.vout) {
+      string addressStr;
+      txnouttype type;
+      vector<CTxDestination> addresses;
+      int nRequired;
+      if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
+        continue;
+      }
+      for (auto &addr : addresses) {
+        addressBalance[CBitcoinAddress(addr).ToString()] += out.nValue;
+      }
+    }
+  }
+}
+
 // 接收一个新的交易
 void Parser::acceptTx(class TxLog2 *txLog2) {
   assert(txLog2->blkHeight_ == -1);
@@ -1019,7 +1062,7 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
 
   int64_t valueIn = 0;  // 交易的输入之和，遍历交易后才能得出
   vector<const fbe::TxOutput *> prevTxOutputs;
-  vector<string> prevTxsData;
+  vector<string> prevTxsData;  // prevTxsData 必须一直存在，否则 prevTxOutputs 读取无效内存
   map<string/* address */, int64_t/* balance_diff */> addressBalance;
 
   flatbuffers::FlatBufferBuilder fbb;
@@ -1201,7 +1244,6 @@ int32_t prevYmd(const int32_t ymd) {
   // 向前步进一天
   return atoi(date("%Y%m%d", t - 86400).c_str());
 }
-
 
 
 // 确认一个交易

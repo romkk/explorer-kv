@@ -12,7 +12,6 @@ struct TxInput;
 struct TxOutput;
 struct Tx;
 struct TxSpentBy;
-struct BlockHash;
 struct Block;
 struct BlockTxsHash;
 struct Address;
@@ -344,36 +343,6 @@ inline flatbuffers::Offset<TxSpentBy> CreateTxSpentBy(flatbuffers::FlatBufferBui
   return builder_.Finish();
 }
 
-struct BlockHash FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
-  const flatbuffers::String *hash() const { return GetPointer<const flatbuffers::String *>(4); }
-  flatbuffers::String *mutable_hash() { return GetPointer<flatbuffers::String *>(4); }
-  bool Verify(flatbuffers::Verifier &verifier) const {
-    return VerifyTableStart(verifier) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 4 /* hash */) &&
-           verifier.Verify(hash()) &&
-           verifier.EndTable();
-  }
-};
-
-struct BlockHashBuilder {
-  flatbuffers::FlatBufferBuilder &fbb_;
-  flatbuffers::uoffset_t start_;
-  void add_hash(flatbuffers::Offset<flatbuffers::String> hash) { fbb_.AddOffset(4, hash); }
-  BlockHashBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
-  BlockHashBuilder &operator=(const BlockHashBuilder &);
-  flatbuffers::Offset<BlockHash> Finish() {
-    auto o = flatbuffers::Offset<BlockHash>(fbb_.EndTable(start_, 1));
-    return o;
-  }
-};
-
-inline flatbuffers::Offset<BlockHash> CreateBlockHash(flatbuffers::FlatBufferBuilder &_fbb,
-   flatbuffers::Offset<flatbuffers::String> hash = 0) {
-  BlockHashBuilder builder_(_fbb);
-  builder_.add_hash(hash);
-  return builder_.Finish();
-}
-
 struct Block FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   int32_t version() const { return GetField<int32_t>(4, 0); }
   bool mutate_version(int32_t version) { return SetField(4, version); }
@@ -381,50 +350,47 @@ struct Block FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   flatbuffers::String *mutable_mrkl_root() { return GetPointer<flatbuffers::String *>(6); }
   uint32_t timestamp() const { return GetField<uint32_t>(8, 0); }
   bool mutate_timestamp(uint32_t timestamp) { return SetField(8, timestamp); }
-  uint32_t curr_max_timestamp() const { return GetField<uint32_t>(10, 0); }
-  bool mutate_curr_max_timestamp(uint32_t curr_max_timestamp) { return SetField(10, curr_max_timestamp); }
-  uint32_t bits() const { return GetField<uint32_t>(12, 0); }
-  bool mutate_bits(uint32_t bits) { return SetField(12, bits); }
-  uint32_t nonce() const { return GetField<uint32_t>(14, 0); }
-  bool mutate_nonce(uint32_t nonce) { return SetField(14, nonce); }
-  const flatbuffers::String *prev_block_hash() const { return GetPointer<const flatbuffers::String *>(16); }
-  flatbuffers::String *mutable_prev_block_hash() { return GetPointer<flatbuffers::String *>(16); }
-  const flatbuffers::String *next_block_hash() const { return GetPointer<const flatbuffers::String *>(18); }
-  flatbuffers::String *mutable_next_block_hash() { return GetPointer<flatbuffers::String *>(18); }
-  int32_t size() const { return GetField<int32_t>(20, 0); }
-  bool mutate_size(int32_t size) { return SetField(20, size); }
-  int64_t pool_difficulty() const { return GetField<int64_t>(22, 0); }
-  bool mutate_pool_difficulty(int64_t pool_difficulty) { return SetField(22, pool_difficulty); }
-  double difficulty() const { return GetField<double>(24, 0); }
-  bool mutate_difficulty(double difficulty) { return SetField(24, difficulty); }
-  uint32_t tx_count() const { return GetField<uint32_t>(26, 0); }
-  bool mutate_tx_count(uint32_t tx_count) { return SetField(26, tx_count); }
-  int64_t reward_block() const { return GetField<int64_t>(28, 0); }
-  bool mutate_reward_block(int64_t reward_block) { return SetField(28, reward_block); }
-  int64_t reward_fees() const { return GetField<int64_t>(30, 0); }
-  bool mutate_reward_fees(int64_t reward_fees) { return SetField(30, reward_fees); }
-  const flatbuffers::String *created_at() const { return GetPointer<const flatbuffers::String *>(32); }
-  flatbuffers::String *mutable_created_at() { return GetPointer<flatbuffers::String *>(32); }
+  uint32_t bits() const { return GetField<uint32_t>(10, 0); }
+  bool mutate_bits(uint32_t bits) { return SetField(10, bits); }
+  uint32_t nonce() const { return GetField<uint32_t>(12, 0); }
+  bool mutate_nonce(uint32_t nonce) { return SetField(12, nonce); }
+  const flatbuffers::String *prev_block_hash() const { return GetPointer<const flatbuffers::String *>(14); }
+  flatbuffers::String *mutable_prev_block_hash() { return GetPointer<flatbuffers::String *>(14); }
+  const flatbuffers::String *next_block_hash() const { return GetPointer<const flatbuffers::String *>(16); }
+  flatbuffers::String *mutable_next_block_hash() { return GetPointer<flatbuffers::String *>(16); }
+  int32_t size() const { return GetField<int32_t>(18, 0); }
+  bool mutate_size(int32_t size) { return SetField(18, size); }
+  int64_t pool_difficulty() const { return GetField<int64_t>(20, 0); }
+  bool mutate_pool_difficulty(int64_t pool_difficulty) { return SetField(20, pool_difficulty); }
+  double difficulty() const { return GetField<double>(22, 0); }
+  bool mutate_difficulty(double difficulty) { return SetField(22, difficulty); }
+  uint32_t tx_count() const { return GetField<uint32_t>(24, 0); }
+  bool mutate_tx_count(uint32_t tx_count) { return SetField(24, tx_count); }
+  int64_t reward_block() const { return GetField<int64_t>(26, 0); }
+  bool mutate_reward_block(int64_t reward_block) { return SetField(26, reward_block); }
+  int64_t reward_fees() const { return GetField<int64_t>(28, 0); }
+  bool mutate_reward_fees(int64_t reward_fees) { return SetField(28, reward_fees); }
+  const flatbuffers::String *created_at() const { return GetPointer<const flatbuffers::String *>(30); }
+  flatbuffers::String *mutable_created_at() { return GetPointer<flatbuffers::String *>(30); }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<int32_t>(verifier, 4 /* version */) &&
            VerifyField<flatbuffers::uoffset_t>(verifier, 6 /* mrkl_root */) &&
            verifier.Verify(mrkl_root()) &&
            VerifyField<uint32_t>(verifier, 8 /* timestamp */) &&
-           VerifyField<uint32_t>(verifier, 10 /* curr_max_timestamp */) &&
-           VerifyField<uint32_t>(verifier, 12 /* bits */) &&
-           VerifyField<uint32_t>(verifier, 14 /* nonce */) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 16 /* prev_block_hash */) &&
+           VerifyField<uint32_t>(verifier, 10 /* bits */) &&
+           VerifyField<uint32_t>(verifier, 12 /* nonce */) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 14 /* prev_block_hash */) &&
            verifier.Verify(prev_block_hash()) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 18 /* next_block_hash */) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 16 /* next_block_hash */) &&
            verifier.Verify(next_block_hash()) &&
-           VerifyField<int32_t>(verifier, 20 /* size */) &&
-           VerifyField<int64_t>(verifier, 22 /* pool_difficulty */) &&
-           VerifyField<double>(verifier, 24 /* difficulty */) &&
-           VerifyField<uint32_t>(verifier, 26 /* tx_count */) &&
-           VerifyField<int64_t>(verifier, 28 /* reward_block */) &&
-           VerifyField<int64_t>(verifier, 30 /* reward_fees */) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 32 /* created_at */) &&
+           VerifyField<int32_t>(verifier, 18 /* size */) &&
+           VerifyField<int64_t>(verifier, 20 /* pool_difficulty */) &&
+           VerifyField<double>(verifier, 22 /* difficulty */) &&
+           VerifyField<uint32_t>(verifier, 24 /* tx_count */) &&
+           VerifyField<int64_t>(verifier, 26 /* reward_block */) &&
+           VerifyField<int64_t>(verifier, 28 /* reward_fees */) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 30 /* created_at */) &&
            verifier.Verify(created_at()) &&
            verifier.EndTable();
   }
@@ -436,22 +402,21 @@ struct BlockBuilder {
   void add_version(int32_t version) { fbb_.AddElement<int32_t>(4, version, 0); }
   void add_mrkl_root(flatbuffers::Offset<flatbuffers::String> mrkl_root) { fbb_.AddOffset(6, mrkl_root); }
   void add_timestamp(uint32_t timestamp) { fbb_.AddElement<uint32_t>(8, timestamp, 0); }
-  void add_curr_max_timestamp(uint32_t curr_max_timestamp) { fbb_.AddElement<uint32_t>(10, curr_max_timestamp, 0); }
-  void add_bits(uint32_t bits) { fbb_.AddElement<uint32_t>(12, bits, 0); }
-  void add_nonce(uint32_t nonce) { fbb_.AddElement<uint32_t>(14, nonce, 0); }
-  void add_prev_block_hash(flatbuffers::Offset<flatbuffers::String> prev_block_hash) { fbb_.AddOffset(16, prev_block_hash); }
-  void add_next_block_hash(flatbuffers::Offset<flatbuffers::String> next_block_hash) { fbb_.AddOffset(18, next_block_hash); }
-  void add_size(int32_t size) { fbb_.AddElement<int32_t>(20, size, 0); }
-  void add_pool_difficulty(int64_t pool_difficulty) { fbb_.AddElement<int64_t>(22, pool_difficulty, 0); }
-  void add_difficulty(double difficulty) { fbb_.AddElement<double>(24, difficulty, 0); }
-  void add_tx_count(uint32_t tx_count) { fbb_.AddElement<uint32_t>(26, tx_count, 0); }
-  void add_reward_block(int64_t reward_block) { fbb_.AddElement<int64_t>(28, reward_block, 0); }
-  void add_reward_fees(int64_t reward_fees) { fbb_.AddElement<int64_t>(30, reward_fees, 0); }
-  void add_created_at(flatbuffers::Offset<flatbuffers::String> created_at) { fbb_.AddOffset(32, created_at); }
+  void add_bits(uint32_t bits) { fbb_.AddElement<uint32_t>(10, bits, 0); }
+  void add_nonce(uint32_t nonce) { fbb_.AddElement<uint32_t>(12, nonce, 0); }
+  void add_prev_block_hash(flatbuffers::Offset<flatbuffers::String> prev_block_hash) { fbb_.AddOffset(14, prev_block_hash); }
+  void add_next_block_hash(flatbuffers::Offset<flatbuffers::String> next_block_hash) { fbb_.AddOffset(16, next_block_hash); }
+  void add_size(int32_t size) { fbb_.AddElement<int32_t>(18, size, 0); }
+  void add_pool_difficulty(int64_t pool_difficulty) { fbb_.AddElement<int64_t>(20, pool_difficulty, 0); }
+  void add_difficulty(double difficulty) { fbb_.AddElement<double>(22, difficulty, 0); }
+  void add_tx_count(uint32_t tx_count) { fbb_.AddElement<uint32_t>(24, tx_count, 0); }
+  void add_reward_block(int64_t reward_block) { fbb_.AddElement<int64_t>(26, reward_block, 0); }
+  void add_reward_fees(int64_t reward_fees) { fbb_.AddElement<int64_t>(28, reward_fees, 0); }
+  void add_created_at(flatbuffers::Offset<flatbuffers::String> created_at) { fbb_.AddOffset(30, created_at); }
   BlockBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
   BlockBuilder &operator=(const BlockBuilder &);
   flatbuffers::Offset<Block> Finish() {
-    auto o = flatbuffers::Offset<Block>(fbb_.EndTable(start_, 15));
+    auto o = flatbuffers::Offset<Block>(fbb_.EndTable(start_, 14));
     return o;
   }
 };
@@ -460,7 +425,6 @@ inline flatbuffers::Offset<Block> CreateBlock(flatbuffers::FlatBufferBuilder &_f
    int32_t version = 0,
    flatbuffers::Offset<flatbuffers::String> mrkl_root = 0,
    uint32_t timestamp = 0,
-   uint32_t curr_max_timestamp = 0,
    uint32_t bits = 0,
    uint32_t nonce = 0,
    flatbuffers::Offset<flatbuffers::String> prev_block_hash = 0,
@@ -484,7 +448,6 @@ inline flatbuffers::Offset<Block> CreateBlock(flatbuffers::FlatBufferBuilder &_f
   builder_.add_prev_block_hash(prev_block_hash);
   builder_.add_nonce(nonce);
   builder_.add_bits(bits);
-  builder_.add_curr_max_timestamp(curr_max_timestamp);
   builder_.add_timestamp(timestamp);
   builder_.add_mrkl_root(mrkl_root);
   builder_.add_version(version);

@@ -13,8 +13,8 @@ table TxInput {
   script_hex: string;
   sequence: long;
   prev_tx_hash: string;
-  prev_position: int = -1;  // coinbase tx prev_postion = -1, prev_value = 0
-  prev_value: long = 0;
+  prev_position: int;  // coinbase tx prev_postion = -1, prev_value = 0
+  prev_value: long;
   prev_addresses: [string];
 }
 
@@ -28,8 +28,8 @@ table TxOutput {
 
 // 01_{tx_hash}
 table Tx {
-  height: int = -1;
-  position_in_block: int = -1;
+  height: int;
+  position_in_block: int;
   is_coinbase: bool;
   version: int;
   lock_time: uint;
@@ -50,17 +50,11 @@ table TxSpentBy {
   position: int;
 }
 
-// 10_{block_height}
-table BlockHash {
-  hash: string;
-}
-
 // 11_{block_hash}
 table Block {
   version: int;
   mrkl_root: string;
   timestamp: uint;
-  curr_max_timestamp: uint;
   bits: uint;
   nonce: uint;
   prev_block_hash: string;
@@ -97,8 +91,8 @@ struct Address {
 // 21_{address}_{index}
 table AddressTx {
   tx_hash: string;
-  tx_height: int = -1;
-  ymd: int = -1;
+  tx_height: int;
+  ymd: int;
   balance_diff: long;
 }
 

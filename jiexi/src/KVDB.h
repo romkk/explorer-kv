@@ -34,12 +34,15 @@
 #define KVDB_PREFIX_TX_OBJECT    "01_"
 #define KVDB_PREFIX_TX_SPEND     "02_"
 
+#define KVDB_PREFIX_BLOCK_HEIGHT     "10_"
+#define KVDB_PREFIX_BLOCK_OBJECT     "11_"
+#define KVDB_PREFIX_BLOCK_TXS_STR    "12_"
+
 #define KVDB_PREFIX_ADDR_OBJECT     "20_"
 #define KVDB_PREFIX_ADDR_TX         "21_"
 #define KVDB_PREFIX_ADDR_TX_INDEX   "22_"
 #define KVDB_PREFIX_ADDR_UNSPENT    "23_"
 #define KVDB_PREFIX_ADDR_UNSPENT_INDEX  "24_"
-
 
 
 class KVDB {
@@ -57,6 +60,7 @@ public:
 
   void del(const string &key);
   void get(const string &key, string &value) {}
+  void set(const string &key, const string &value) {}
   void set(const string &key, const vector<uint8_t> &buffer) {}
   void set(const string &key, const uint8_t *data, const size_t length) {}
 

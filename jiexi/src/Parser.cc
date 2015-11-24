@@ -41,9 +41,9 @@ RawBlock::RawBlock(const int64_t blockId, const int32_t height, const int32_t ch
   hex_     = hex;
 }
 
-////////////////////////////  LastestAddressInfo  //////////////////////////////
+////////////////////////////  AddressInfo  //////////////////////////////
 
-LastestAddressInfo::LastestAddressInfo(const int64_t lastUseIdx) {
+AddressInfo::AddressInfo(const int64_t lastUseIdx) {
   txCount_  = 0;
   received_ = 0;
   sent_     = 0;
@@ -58,7 +58,7 @@ LastestAddressInfo::LastestAddressInfo(const int64_t lastUseIdx) {
 
   lastUseIdx_ = lastUseIdx;
 }
-LastestAddressInfo::LastestAddressInfo(const int32_t txCount,
+AddressInfo::AddressInfo(const int32_t txCount,
                                        const int64_t received, const int64_t sent,
                                        const int32_t unconfirmedTxCount,
                                        const int64_t unconfirmedReceived,
@@ -82,7 +82,7 @@ LastestAddressInfo::LastestAddressInfo(const int32_t txCount,
   lastUseIdx_ = lastUseIdx;
 }
 
-LastestAddressInfo::LastestAddressInfo(const LastestAddressInfo &a) {
+AddressInfo::AddressInfo(const AddressInfo &a) {
   txCount_  = a.txCount_;
   received_ = a.received_;
   sent_     = a.sent_;
@@ -309,7 +309,7 @@ bool Parser::init() {
 
   // 检测DB参数： max_allowed_packet
   const int32_t maxAllowed = atoi(dbExplorer_.getVariable("max_allowed_packet").c_str());
-  const int32_t kMinAllowed = 64*1024*1024;
+  const int32_t kMinAllowed = 8*1024*1024;
   if (maxAllowed < kMinAllowed) {
     LOG_FATAL("mysql.db.max_allowed_packet(%d) is too small, should >= %d",
               maxAllowed, kMinAllowed);
@@ -317,43 +317,24 @@ bool Parser::init() {
   }
 
   //
-  // jiexi.unconfirmed_txs.count & jiexi.unconfirmed_txs.size
+  // 90_tparser_unconfirmed_txs_count, 90_tparser_unconfirmed_txs_size
   //
   {
-    sql = Strings::Format("DELETE FROM `0_explorer_meta` WHERE `key` IN "
-                          " ('jiexi.unconfirmed_txs.count', 'jiexi.unconfirmed_txs.size')");
-    dbExplorer_.updateOrThrowEx(sql);
+    string key;
+    string value;
 
-    sql = Strings::Format("SELECT COUNT(*), IFNULL(SUM(`size`), 0) FROM `0_unconfirmed_txs`");
-    dbExplorer_.query(sql, res);
-    row = res.nextRow();
-    unconfirmedTxsCount_ = atoi(row[0]);
-    unconfirmedTxsSize_  = atoi64(row[1]);
-
-    // 严禁使用MYSQL函数NOW()，防止时区错乱
-    sql = Strings::Format("INSERT INTO `0_explorer_meta` (`key`, `value`, `created_at`, `updated_at`)"
-                          " VALUES ('jiexi.unconfirmed_txs.count',  '%d', '%s', '%s'), "
-                          "        ('jiexi.unconfirmed_txs.size', '%lld', '%s', '%s') ",
-                          unconfirmedTxsCount_, nowStr.c_str(), nowStr.c_str(),
-                          unconfirmedTxsSize_, nowStr.c_str(), nowStr.c_str());
-    dbExplorer_.updateOrThrowEx(sql, 2);
-  }
-
-  //
-  // 获取最近 2016 个块的时间戳
-  //
-  {
-    sql = Strings::Format("SELECT * FROM (SELECT `timestamp`,`height` FROM `0_blocks`"
-                          "  WHERE `chain_id` = 0 ORDER BY `height` DESC LIMIT 2016) "
-                          " AS `t1` ORDER BY `height` ASC ");
-    dbExplorer_.query(sql, res);
-    if (res.numRows() == 0) {
-      THROW_EXCEPTION_DBEX("can't find max block timestamp");
+    // unconfirmedTxsCount_
+    key = "90_tparser_unconfirmed_txs_count";
+    kvdb_.get(key, value);
+    if (value.size() != 0) {
+      unconfirmedTxsCount_ = atoi(value.c_str());
     }
-    while ((row = res.nextRow()) != nullptr) {
-      blkTs_.pushBlock(atoi(row[1]), atoi64(row[0]));
+
+    key = "90_tparser_unconfirmed_txs_size";
+    kvdb_.get(key, value);
+    if (value.size() != 0) {
+      unconfirmedTxsSize_ = atoi64(value.c_str());
     }
-    LOG_INFO("found max block timestamp: %lld", blkTs_.getMaxTimestamp());
   }
 
   watchNotifyThread_ = thread(&Parser::threadWatchNotifyFile, this);
@@ -565,32 +546,6 @@ void Parser::checkTableAddressTxs(const uint32_t timestamp) {
   addressTxs.insert(ymd);
 }
 
-// 根据Hash，查询ID
-void Parser::txsHash2ids(const std::set<uint256> &hashVec,
-                         std::map<uint256, int64_t> &hash2id) {
-  MySQLResult res;
-  string sql;
-  char **row;
-
-  // tx <-> raw_tx， hash/ID均一一对应，表数量一致
-  for (auto &hash : hashVec) {
-    if (hash2id.find(hash) != hash2id.end()) {
-      continue;
-    }
-    const string hashStr = hash.ToString();
-    sql = Strings::Format("SELECT `id` FROM `raw_txs_%04d` WHERE `tx_hash`='%s'",
-                          HexToDecLast2Bytes(hashStr) % 64, hashStr.c_str());
-    dbExplorer_.query(sql, res);
-    if (res.numRows() != 1) {
-      THROW_EXCEPTION_DBEX("can't find tx's ID, hash: %s", hashStr.c_str());
-    }
-    row = res.nextRow();
-    hash2id.insert(std::make_pair(hash, atoi64(row[0])));
-  }
-
-  assert(hash2id.size() >= hashVec.size());
-}
-
 void Parser::updateLastTxlog2Id(const int64_t newId) {
   string sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = '%lld',`updated_at`='%s' "
                                " WHERE `key`='jiexi.last_txlog2_offset'",
@@ -598,143 +553,93 @@ void Parser::updateLastTxlog2Id(const int64_t newId) {
   dbExplorer_.updateOrThrowEx(sql, 1);
 }
 
-void _insertBlock(MySQLConnection &db, const CBlock &blk,
-                  const int64_t blockId, const int32_t height,
-                  const int32_t blockBytes, const int64_t maxBlockTimestamp) {
+void _insertBlock(KVDB &kvdb, const CBlock &blk, const int32_t height, const int32_t blockSize) {
   CBlockHeader header = blk.GetBlockHeader();  // alias
-  uint256 blockHash = blk.GetHash();
-  string prevBlockHash = header.hashPrevBlock.ToString();
-  MySQLResult res;
-  char **row = nullptr;
-  string sql;
+  const uint256 blockHash    = blk.GetHash();
+  const string blockHashStr  = blockHash.ToString();
+  const string prevBlockHash = header.hashPrevBlock.ToString();
+  flatbuffers::FlatBufferBuilder fbb;
 
-  // 查询前向块信息，前向块信息必然存在(创始块没有前向块)
-  int64_t prevBlockId = 0;
-  if (height > 0) {
-    sql = Strings::Format("SELECT `block_id` FROM `0_blocks` WHERE `hash` = '%s'",
-                          prevBlockHash.c_str());
-    db.query(sql, res);
-    if (res.numRows() != 1) {
-      THROW_EXCEPTION_DBEX("prev block not exist in DB, hash: ", prevBlockHash.c_str());
-    }
-    row = res.nextRow();
-    prevBlockId = atoi64(row[0]);
-    assert(prevBlockId > 0);
+  double difficulty = 0;
+  BitsToDifficulty(header.nBits, difficulty);
+  const uint64_t pdiff = TargetToPdiff(blockHash);
+
+  const int64_t rewardBlock = GetBlockValue(height, 0);
+  const int64_t rewardFees  = blk.vtx[0].GetValueOut() - rewardBlock;
+  assert(rewardFees >= 0);
+
+  {
+    auto fb_createdAt = fbb.CreateString(date("%F %T"));
+    auto fb_mrklRoot = fbb.CreateString(header.hashMerkleRoot.ToString());
+    // next hash需要"填零"，保持长度一致, 当下一个块来临时，直接对那块内存进行改写操作
+    auto fb_nextBlkHash = fbb.CreateString(uint256().ToString());
+    auto fb_prevBlkHash = fbb.CreateString(prevBlockHash);
+
+    fbe::BlockBuilder blockBuilder(fbb);
+    blockBuilder.add_bits(header.nBits);
+    blockBuilder.add_created_at(fb_createdAt);
+    blockBuilder.add_difficulty(difficulty);
+    blockBuilder.add_mrkl_root(fb_mrklRoot);
+    blockBuilder.add_next_block_hash(fb_nextBlkHash);
+    blockBuilder.add_nonce(header.nNonce);
+    blockBuilder.add_pool_difficulty(pdiff);
+    blockBuilder.add_prev_block_hash(fb_prevBlkHash);
+    blockBuilder.add_reward_block(rewardBlock);
+    blockBuilder.add_reward_fees(rewardFees);
+    blockBuilder.add_size(blockSize);
+    blockBuilder.add_timestamp(header.nTime);
+    blockBuilder.add_tx_count((uint32_t)blk.vtx.size());
+    blockBuilder.add_version(header.nVersion);
+    blockBuilder.Finish();
+
+    // 11_{block_hash}, 需紧接 blockBuilder.Finish()
+    const string key11 = Strings::Format("%s%s", KVDB_PREFIX_BLOCK_OBJECT, blockHash.ToString().c_str());
+    kvdb.set(key11, fbb.GetBufferPointer(), fbb.GetSize());
   }
 
-  //
-  // 将当前高度的块的chainID增一，若存在分叉的话. UNIQUE	(height, chain_id)
-  // 当前即将插入的块的chainID必然为0
-  // 0_raw_blocks.chain_id 与 0_blocks.chain_id 同一个块的 chain_id 不一定一致
-  //
-  sql = Strings::Format("SELECT `block_id` FROM `0_blocks` "
-                        " WHERE `height` = %lld ORDER BY `chain_id` DESC ",
-                        height);
-  db.query(sql, res);
-  while ((row = res.nextRow()) != nullptr) {
-    const string sql2 = Strings::Format("UPDATE `0_blocks` SET `chain_id`=`chain_id`+1 "
-                                        " WHERE `block_id` = %lld ", atoi64(row[0]));
-    db.updateOrThrowEx(sql2, 1);
-  }
-
-  // 构造插入SQL
-  sql = Strings::Format("SELECT `block_id` FROM `0_blocks` WHERE `block_id`=%lld",
-                        blockId);
-  db.query(sql, res);
-  if (res.numRows() == 0) {  // 不存在则插入，由于有rollback等行为，块由可能已经存在了
-    uint64_t difficulty      = 0;
-    double difficulty_double = 0.0;
-    BitsToDifficulty(header.nBits, difficulty);
-    BitsToDifficulty(header.nBits, difficulty_double);
-    const uint64_t pdiff = TargetToPdiff(blockHash);
-
-    const int64_t rewardBlock = GetBlockValue(height, 0);
-    const int64_t rewardFees  = blk.vtx[0].GetValueOut() - rewardBlock;
-    assert(rewardFees >= 0);
-    string sql1 = Strings::Format("INSERT INTO `0_blocks` (`block_id`, `height`, `hash`,"
-                                  " `version`, `mrkl_root`, `timestamp`,`curr_max_timestamp`, `bits`, `nonce`,"
-                                  " `prev_block_id`, `prev_block_hash`, `next_block_id`, "
-                                  " `next_block_hash`, `chain_id`, `size`,"
-                                  " `pool_difficulty`,`difficulty`, `difficulty_double`, "
-                                  " `tx_count`, `reward_block`, `reward_fees`, "
-                                  " `created_at`) VALUES ("
-                                  // 1. `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`,
-                                  " %lld, %d, '%s', %d, '%s', %u, "
-                                  // 2. `curr_max_timestamp`, `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
-                                  " %lld, %u, %u, %lld, '%s', "
-                                  // 3. `next_block_id`, `next_block_hash`, `chain_id`, `size`,
-                                  " 0, '', %d, %d, "
-                                  // 4. `pool_difficulty`,`difficulty`, `difficulty_double`, `tx_count`,
-                                  " %llu, %llu, %f, %d, "
-                                  // 5. `reward_block`, `reward_fees`, `created_at`
-                                  " %lld, %lld, '%s');",
-                                  // 1.
-                                  blockId, height,
-                                  blockHash.ToString().c_str(),
-                                  header.nVersion,
-                                  header.hashMerkleRoot.ToString().c_str(),
-                                  (uint32_t)header.nTime, maxBlockTimestamp,
-                                  // 2.
-                                  header.nBits, header.nNonce, prevBlockId, prevBlockHash.c_str(),
-                                  // 3.
-                                  0/* chainId */, blockBytes,
-                                  // 4.
-                                  pdiff, difficulty, difficulty_double, blk.vtx.size(),
-                                  // 5.
-                                  rewardBlock, rewardFees, date("%F %T").c_str());
-    db.updateOrThrowEx(sql1, 1);
-  }
+  // 10_{block_height}
+  const string key10 = Strings::Format("%s%010d", KVDB_PREFIX_BLOCK_HEIGHT, height);
+  kvdb.set(key10, blockHashStr);
 
   // 更新前向块信息, 高度一以后的块需要，创始块不需要
   if (height > 0) {
-    string sql2 = Strings::Format("UPDATE `0_blocks` SET `next_block_id`=%lld, `next_block_hash`='%s'"
-                                  " WHERE `hash` = '%s' ",
-                                  blockId, header.GetHash().ToString().c_str(),
-                                  prevBlockHash.c_str());
-    db.updateOrThrowEx(sql2, 1);
+    // 11_{block_hash}
+    const string prevBlkKey = Strings::Format("%s%s", KVDB_PREFIX_BLOCK_OBJECT, prevBlockHash.c_str());
+    string value;
+    kvdb.get(prevBlkKey, value);
+
+    auto prevBlock = flatbuffers::GetMutableRoot<fbe::Block>((void *)value.data());
+    for (flatbuffers::uoffset_t i = 0; i < blockHashStr.length(); i++) {
+      prevBlock->mutable_next_block_hash()->Mutate(i, blockHashStr[i]);
+    }
+    kvdb.set(prevBlkKey, value);
   }
 }
 
 // 已经存在则会忽略
-void _insertBlockTxs(MySQLConnection &db, const CBlock &blk, const int64_t blockId,
-                     std::map<uint256, int64_t> &hash2id) {
-  const string tableName = Strings::Format("block_txs_%04d", blockId % 100);
-  MySQLResult res;
-  char **row = nullptr;
+void _insertBlockTxs(KVDB &kvdb, const CBlock &blk) {
+  const int32_t kBatchSize = 500;  // 每500条为一个批次
 
-  // 检查是否已经存在记录，由于可能发生块链分支切换，或许已经存在
-  string sql = Strings::Format("SELECT IFNULL(MAX(`position`), -1) FROM `%s` WHERE `block_id` = %lld ",
-                               tableName.c_str(), blockId);
-  db.query(sql, res);
-  assert(res.numRows() == 1);
-  row = res.nextRow();
-  int32_t existMaxPosition = atoi(row[0]);
+  int32_t i = 0;
+  string key;
+  string value;
+  for (const auto &tx : blk.vtx) {
+    value += tx.GetHash().ToString();
 
-  // 仅允许两种情况，要么记录全部都存在，要么记录都不存在
-  if (existMaxPosition != -1) {
-    LOG_WARN("block_txs already exist");
-    // 数量不符合，异常
-    if (existMaxPosition != (int32_t)blk.vtx.size() - 1) {
-      THROW_EXCEPTION_DBEX("exist txs is not equal block.vtx, now position is %d, should be %d",
-                           existMaxPosition, (int32_t)blk.vtx.size() - 1);
+    if ((i+1) % kBatchSize == 0) {
+      key = Strings::Format("%s%s_%d", KVDB_PREFIX_BLOCK_TXS_STR,
+                            blk.GetHash().ToString().c_str(), (int32_t)(i/kBatchSize));
+      kvdb.set(key, value);
+      value.clear();
     }
-    return;  // 记录全部都存在
+    i++;
   }
 
-  // 不存在，则插入新的记录
-  // INSERT INTO `block_txs_0000` (`block_id`, `position`, `tx_id`, `created_at`)
-  //    VALUES ('', '', '', '');
-  vector<string> values;
-  const string now = date("%F %T");
-  const string fields = "`block_id`, `position`, `tx_id`, `created_at`";
-  int i = 0;
-  for (auto & it : blk.vtx) {
-    values.push_back(Strings::Format("%lld,%d,%lld,'%s'",
-                                     blockId, i++, hash2id[it.GetHash()],
-                                     now.c_str()));
-  }
-  if (!multiInsert(db, tableName, fields, values)) {
-    THROW_EXCEPTION_DBEX("multi insert failure, table: '%s'", tableName.c_str());
+  if (value.size() != 0) {
+    key = Strings::Format("%s%s_%d", KVDB_PREFIX_BLOCK_TXS_STR,
+                          blk.GetHash().ToString().c_str(), (int32_t)(i/kBatchSize));
+    kvdb.set(key, value);
+    value.clear();
   }
 }
 
@@ -749,66 +654,13 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
   if (!DecodeHexBlk(blk, blkRawHex)) {
     THROW_EXCEPTION_DBEX("decode block hex failure, hex: %s", blkRawHex.c_str());
   }
-
   blockHash = blk.GetHash().ToString();
 
-  // 拿到 tx_hash -> tx_id 的对应关系
-  // 要求"导入"模块(log2producer)：存入所有的区块交易(table.raw_txs_xxxx)
-  std::set<uint256> hashVec;
-  std::map<uint256, int64_t> hash2id;
-  for (auto & it : blk.vtx) {
-    hashVec.insert(it.GetHash());
-  }
-  txsHash2ids(hashVec, hash2id);
-
-  // 先加入到块时间戳里，重新计算时间戳. 回滚块的时候是最后再 pop 块
-  blkTs_.pushBlock(txLog2->blkHeight_, blk.GetBlockTime());
-
   // 插入数据至 table.0_blocks
-  _insertBlock(dbExplorer_, blk, txLog2->blkId_,
-               txLog2->blkHeight_, (int32_t)blkRawHex.length()/2, blkTs_.getMaxTimestamp());
+  _insertBlock(kvdb_, blk, txLog2->blkHeight_, (int32_t)blkRawHex.length()/2);
 
-  // 插入数据至 table.block_txs_xxxx
-  _insertBlockTxs(dbExplorer_, blk, txLog2->blkId_, hash2id);
-}
-
-
-void _removeUnspentOutputs(MySQLConnection &db,
-                           const int64_t txId, const int32_t position,
-                           map<int64_t, int64_t> &addressBalance) {
-  MySQLResult res;
-  string sql;
-  string tableName;
-  char **row;
-  int n;
-
-  // 获取相关output信息
-  tableName = Strings::Format("tx_outputs_%04d", txId % 100);
-  sql = Strings::Format("SELECT `address_ids`,`value` FROM `%s` WHERE `tx_id`=%lld AND `position`=%d",
-                        tableName.c_str(), txId, position);
-  db.query(sql, res);
-  row = res.nextRow();
-  assert(res.numRows() == 1);
-
-  // 获取地址
-  const string s = string(row[0]);
-  const int64_t value = atoi64(row[1]);
-  vector<string> addressIdsStrVec = split(s, '|');
-  n = -1;
-  for (auto &addrIdStr : addressIdsStrVec) {
-    n++;
-    const int64_t addrId = atoi64(addrIdStr.c_str());
-
-    // 减扣该地址额度
-    addressBalance[addrId] += -1 * value;
-
-    // 将 address_unspent_outputs_xxxx 相关记录删除
-    tableName = Strings::Format("address_unspent_outputs_%04d", addrId % 10);
-    sql = Strings::Format("DELETE FROM `%s` WHERE `address_id`=%lld AND `tx_id`=%lld "
-                          " AND `position`=%d AND `position2`=%d ",
-                          tableName.c_str(), addrId, txId, position, n);
-    db.updateOrThrowEx(sql, 1);
-  }
+  // 插入区块交易
+  _insertBlockTxs(kvdb_, blk);
 }
 
 
@@ -840,28 +692,28 @@ DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t po
 }
 
 // 获取地址信息
-static LastestAddressInfo *_getAddressInfo(KVDB &kvdb, const string &address) {
-  static std::map<string, LastestAddressInfo *> _addrTxCache;
+static AddressInfo *_getAddressInfo(KVDB &kvdb, const string &address) {
+  static std::map<string, AddressInfo *> _addrTxCache;
   static int64_t lastUseIdx = 0;
 
   // clear, 数量限制，防止长时间运行后占用过多内存
   const int64_t kMaxCacheCount  = 500*10000;
 
-  std::map<string, LastestAddressInfo *>::iterator it;
+  std::map<string, AddressInfo *>::iterator it;
 
   it = _addrTxCache.find(address);
   if (it == _addrTxCache.end()) {
     const string key = Strings::Format("%s%s", KVDB_PREFIX_ADDR_OBJECT, address.c_str());
     string value;
-    LastestAddressInfo *addressPtr;
+    AddressInfo *addressPtr;
 
     kvdb.get(key, value);
     if (value.size() == 0) {
       // 未找到则新建一个
-      addressPtr = new LastestAddressInfo(lastUseIdx++);
+      addressPtr = new AddressInfo(lastUseIdx++);
     } else {
       auto fbAddress = flatbuffers::GetRoot<fbe::Address>(value.data());
-      addressPtr = new LastestAddressInfo(fbAddress->tx_count(),
+      addressPtr = new AddressInfo(fbAddress->tx_count(),
                                           fbAddress->received(),
                                           fbAddress->sent(),
                                           fbAddress->unconfirmed_tx_count(),
@@ -910,7 +762,7 @@ void _accpetTx_insertAddressTxs(KVDB &kvdb, class TxLog2 *txLog2,
     const int64_t balanceDiff = it.second;
 
     // 获取地址信息
-    LastestAddressInfo *addr = _getAddressInfo(kvdb, address);
+    AddressInfo *addr = _getAddressInfo(kvdb, address);
     const int32_t addressTxIndex = addr->txCount_;  // index start from 0
 
     //
@@ -961,76 +813,47 @@ void _accpetTx_insertAddressTxs(KVDB &kvdb, class TxLog2 *txLog2,
 }
 
 void Parser::addUnconfirmedTxPool(class TxLog2 *txLog2) {
-  string sql;
-  const string nowStr = date("%F %T");
-
-  //
-  // 0_unconfirmed_txs
-  //
-  sql = Strings::Format("INSERT INTO `0_unconfirmed_txs` (`position`,`block_id`,`tx_hash`,`size`,`created_at`)"
-                        " VALUES ("
-                        " (SELECT IFNULL(MAX(`position`), -1) + 1 FROM `0_unconfirmed_txs` as t1), "
-                        " %lld, '%s',%d,'%s') ",
-                        txLog2->blkId_, txLog2->txHash_.ToString().c_str(),
-                        (int32_t)(txLog2->txHex_.length() / 2),
-                        nowStr.c_str());
-  dbExplorer_.updateOrThrowEx(sql, 1);
-
-  //
-  // 0_explorer_meta
-  //
-  // jiexi.unconfirmed_txs.count
-  //
   unconfirmedTxsCount_++;
-  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%d', `updated_at`='%s' "
-                        " WHERE `key` = 'jiexi.unconfirmed_txs.count' ",
-                        unconfirmedTxsCount_, nowStr.c_str());
-  dbExplorer_.updateOrThrowEx(sql, 1);
-
-  //
-  // jiexi.unconfirmed_txs.size
-  //
   unconfirmedTxsSize_ += txLog2->txHex_.length() / 2;
-  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%lld', `updated_at`='%s' "
-                        " WHERE `key` = 'jiexi.unconfirmed_txs.size' ",
-                        unconfirmedTxsSize_, nowStr.c_str());
-  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  // unconfirmedTxsCount_
+  {
+    const string key = "90_tparser_unconfirmed_txs_count";
+    const string value = Strings::Format("%d", unconfirmedTxsCount_);
+    kvdb_.set(key, (const uint8_t *)value.data(), value.size());
+  }
+
+  // unconfirmedTxsSize_
+  {
+    const string key = "90_tparser_unconfirmed_txs_size";
+    const string value = Strings::Format("%lld", unconfirmedTxsSize_);
+    kvdb_.set(key, (const uint8_t *)value.data(), value.size());
+  }
 }
 
 void Parser::removeUnconfirmedTxPool(class TxLog2 *txLog2) {
-  string sql;
-  const string nowStr = date("%F %T");
-  sql = Strings::Format("DELETE FROM `0_unconfirmed_txs` WHERE `tx_hash`='%s'",
-                        txLog2->txHash_.ToString().c_str());
-  dbExplorer_.updateOrThrowEx(sql, 1);
-
-  //
-  // 0_explorer_meta
-  //
-  // jiexi.unconfirmed_txs.count
-  //
   unconfirmedTxsCount_--;
-  assert(unconfirmedTxsCount_ >= 0);
-  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%d', `updated_at`='%s' "
-                        " WHERE `key` = 'jiexi.unconfirmed_txs.count' ",
-                        unconfirmedTxsCount_, nowStr.c_str());
-  dbExplorer_.updateOrThrowEx(sql, 1);
-
-  //
-  // jiexi.unconfirmed_txs.size
-  //
   unconfirmedTxsSize_ -= txLog2->txHex_.length() / 2;
-  assert(unconfirmedTxsSize_ >= 0);
-  sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%lld', `updated_at`='%s' "
-                        " WHERE `key` = 'jiexi.unconfirmed_txs.size' ",
-                        unconfirmedTxsSize_, nowStr.c_str());
-  dbExplorer_.updateOrThrowEx(sql, 1);
+
+  // unconfirmedTxsCount_
+  {
+    const string key = "90_tparser_unconfirmed_txs_count";
+    const string value = Strings::Format("%d", unconfirmedTxsCount_);
+    kvdb_.set(key, (const uint8_t *)value.data(), value.size());
+  }
+
+  // unconfirmedTxsSize_
+  {
+    const string key = "90_tparser_unconfirmed_txs_size";
+    const string value = Strings::Format("%lld", unconfirmedTxsSize_);
+    kvdb_.set(key, (const uint8_t *)value.data(), value.size());
+  }
 }
 
 //
 // 更新节点的YMD
 //
-void Parser::_updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node,
+void Parser::_updateTxNodeYmd(AddressInfo *addr, AddressTxNode *node,
                               const int32_t targetYmd) {
   string sql;
 
@@ -1108,7 +931,7 @@ void Parser::_updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node,
 
 // 交换两个未确认的交易节点, 可跨过N个节点直接交换
 // m必须在n前面
-void Parser::_switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
+void Parser::_switchUnconfirmedAddressTxNode(AddressInfo *addr,
                                              AddressTxNode *m, AddressTxNode *n) {
   //
   // 示意：..., m, ..., n, ...
@@ -1243,7 +1066,7 @@ void Parser::_switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
 }
 
 // 移动未确认的交易节点至第一个未确认的节点
-void Parser::_confirmTx_MoveToFirstUnconfirmed(LastestAddressInfo *addr,
+void Parser::_confirmTx_MoveToFirstUnconfirmed(AddressInfo *addr,
                                                AddressTxNode *node) {
   assert(addr->lastConfirmedTxId_ != node->prevTxId_);
 
@@ -1264,7 +1087,7 @@ void Parser::_confirmTx_MoveToFirstUnconfirmed(LastestAddressInfo *addr,
 }
 
 // 将当前未确认节点移动至交易链的末尾
-void Parser::_rejectTx_MoveToLastUnconfirmed(LastestAddressInfo *addr, AddressTxNode *node) {
+void Parser::_rejectTx_MoveToLastUnconfirmed(AddressInfo *addr, AddressTxNode *node) {
   assert(addr->endTxId_ != node->txId_);
   assert(addr->endTxYmd_ == UNCONFIRM_TX_YMD);
 
@@ -1288,7 +1111,7 @@ void Parser::writeNotificationLogs(const map<int64_t, int64_t> &addressBalance,
   for (auto it : addressBalance) {
     const int64_t addrID      = it.first;
     const int64_t balanceDiff = it.second;
-    LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
+    AddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
 
     NotifyItem item(txLog2->type_, txLog2->tx_.IsCoinBase(),
                     addr->addrId_, txLog2->txId_, addr->addressStr_,
@@ -1345,6 +1168,9 @@ static void _acceptTx_removeUnspentOutputs(KVDB &kvdb, const uint256 &hash, CTra
     for (flatbuffers::uoffset_t j = 0; j < addresses->size(); j++) {
       const string address = addresses->operator[](j)->str();
 
+      AddressInfo *addr = _getAddressInfo(kvdb, address);
+      addr->unspentTxCount_--;  // 地址未花费数量减一
+
       // 某个地址的未花费index
       // 24_{address}_{tx_hash}_{position}
       key = Strings::Format("%s%s_%s_%d", KVDB_PREFIX_ADDR_UNSPENT_INDEX,
@@ -1373,8 +1199,8 @@ static void _acceptTx_insertSpendTxs(KVDB &kvdb, const uint256 &hash, CTransacti
     n++;
     const uint256 &prevHash = in.prevout.hash;
     // 02_{tx_hash}_{position}
-    key = Strings::Format("%s%s_%u", KVDB_PREFIX_TX_SPEND,
-                          prevHash.ToString().c_str(), in.prevout.n);
+    key = Strings::Format("%s%s_%d", KVDB_PREFIX_TX_SPEND,
+                          prevHash.ToString().c_str(), (int32_t)in.prevout.n);
 
     fbe::TxSpentByBuilder txSpentByBuilder(fbb);
     txSpentByBuilder.add_position(n);
@@ -1390,8 +1216,12 @@ static void _acceptTx_insertAddressUnspent(KVDB &kvdb, const int64_t nValue,
                                            const int32_t position, const int32_t position2) {
   flatbuffers::FlatBufferBuilder fbb;
   auto fb_spentHash = fbb.CreateString(hash.ToString());
-  LastestAddressInfo *addr = _getAddressInfo(kvdb, address);
-  const int32_t addressUnspentIndex = addr->unspentTxIndex_++;  // index start from 0
+  AddressInfo *addr = _getAddressInfo(kvdb, address);
+
+  addr->unspentTxIndex_++;
+  addr->unspentTxCount_++;
+
+  const int32_t addressUnspentIndex = addr->unspentTxIndex_;
 
   //
   // 24_{address}_{tx_hash}_{position}
@@ -1489,24 +1319,21 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
         }
         valueIn += value;
 
-        auto fb_prevAddresses = fbb.CreateVector(fb_addressesVec);
-        auto fb_prevTxHash    = fbb.CreateString(in.prevout.hash.ToString());
-        auto fb_ScriptAsm     = fbb.CreateString(in.scriptSig.ToString());
+        {
+          auto fb_prevAddresses = fbb.CreateVector(fb_addressesVec);
+          auto fb_prevTxHash    = fbb.CreateString(in.prevout.hash.ToString());
+          auto fb_ScriptAsm     = fbb.CreateString(in.scriptSig.ToString());
 
-        fbe::TxInputBuilder txInputBuilder(fbb);
-        txInputBuilder.add_prev_addresses(fb_prevAddresses);
-        txInputBuilder.add_prev_position(in.prevout.n);
-        txInputBuilder.add_prev_tx_hash(fb_prevTxHash);
-        txInputBuilder.add_prev_value(value);
-        txInputBuilder.add_script_asm(fb_ScriptAsm);
-        txInputBuilder.add_script_hex(fb_ScriptHex);
-        txInputBuilder.add_sequence(in.nSequence);
-
-        fb_txInputs.push_back(txInputBuilder.Finish());
-
-        // TODO: 从未花费记录中，删除prev hash记录
-        // TODO: 生成前向交易的花费记录
-
+          fbe::TxInputBuilder txInputBuilder(fbb);
+          txInputBuilder.add_prev_addresses(fb_prevAddresses);
+          txInputBuilder.add_prev_position(in.prevout.n);
+          txInputBuilder.add_prev_tx_hash(fb_prevTxHash);
+          txInputBuilder.add_prev_value(value);
+          txInputBuilder.add_script_asm(fb_ScriptAsm);
+          txInputBuilder.add_script_hex(fb_ScriptHex);
+          txInputBuilder.add_sequence(in.nSequence);
+          fb_txInputs.push_back(txInputBuilder.Finish());
+        }
       }
     }
   }
@@ -1599,13 +1426,13 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   // insert tx object, 需要紧跟 txBuilder.Finish() 函数，否则 fbb 内存会破坏
   _acceptTx_insertTxObject(kvdb_, txLog2->txHash_, &fbb);
 
-  // insert tx raw hex
+  // insert tx raw hex，实际插入binary data，减小一半体积
   _acceptTx_insertRawHex(kvdb_, txLog2->txHex_, txLog2->txHash_);
 
-  // remove unspent
+  // remove unspent，移除未花费交易，扣减计数器
   _acceptTx_removeUnspentOutputs(kvdb_, txLog2->txHash_, tx, prevTxOutputs);
 
-  // insert spent txs
+  // insert spent txs, 插入前向交易的花费记录
   _acceptTx_insertSpendTxs(kvdb_, txLog2->txHash_, tx);
 
   // 处理地址交易
@@ -1632,7 +1459,7 @@ int32_t prevYmd(const int32_t ymd) {
 }
 
 void Parser::_getAddressTxNode(const int64_t txId,
-                               const LastestAddressInfo *addr, AddressTxNode *node) {
+                               const AddressInfo *addr, AddressTxNode *node) {
   // 这里涉及的Node通常是最近的，故从最后一个ymd向前找
   int32_t ymd = addr->endTxYmd_;
   string sql;
@@ -1692,7 +1519,7 @@ void Parser::_getAddressTxNode(const int64_t txId,
 }
 
 // confirm tx (address node)
-void Parser::_confirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr,
+void Parser::_confirmAddressTxNode(AddressTxNode *node, AddressInfo *addr,
                                    const int32_t height) {
   string sql;
 
@@ -1764,7 +1591,7 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
     const int64_t addrID       = it.first;
 
     // 获取地址信息
-    LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
+    AddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
 
     // 当前节点
     AddressTxNode currNode;
@@ -1820,7 +1647,7 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
 }
 
 // unconfirm tx (address node)
-void Parser::_unconfirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr) {
+void Parser::_unconfirmAddressTxNode(AddressTxNode *node, AddressInfo *addr) {
   string sql;
 
   //
@@ -1876,7 +1703,7 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
 
   for (auto &it : *addressBalance) {
     const int64_t addrID       = it.first;
-    LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
+    AddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
     AddressTxNode currNode;
     _getAddressTxNode(txLog2->txId_, addr, &currNode);
 
@@ -2086,7 +1913,7 @@ void _rejectTxOutputs(MySQLConnection &db,
 
 
 // 移除地址交易节点 (含地址信息变更)
-void Parser::_removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node) {
+void Parser::_removeAddressTxNode(AddressInfo *addr, AddressTxNode *node) {
   string sql;
 
   // 设置倒数第二条记录 next 记录为空, 如果存在的话
@@ -2156,7 +1983,7 @@ void Parser::_rejectAddressTxs(class TxLog2 *txLog2,
     //
     // 当前要reject的记录不是最后一条记录：需要移动节点
     //
-    LastestAddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
+    AddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
     AddressTxNode currNode;  // 当前节点
 
     while (1) {

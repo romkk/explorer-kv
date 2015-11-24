@@ -82,8 +82,8 @@ public:
 };
 
 
-////////////////////////////  LastestAddressInfo  ///////////////////////////////
-class LastestAddressInfo {
+////////////////////////////  AddressInfo  ///////////////////////////////
+class AddressInfo {
 public:
   int32_t txCount_;
   int64_t received_;
@@ -100,13 +100,13 @@ public:
 
   int64_t lastUseIdx_;  // 用于清理缓存，和address本身无关
 
-  LastestAddressInfo(const int64_t lastUseIdx);
-  LastestAddressInfo(const int32_t txCount, const int64_t received, const int64_t sent,
+  AddressInfo(const int64_t lastUseIdx);
+  AddressInfo(const int32_t txCount, const int64_t received, const int64_t sent,
                      const int32_t unconfirmedTxCount, const int64_t unconfirmedReceived, const int64_t unconfirmedSent,
                      const int32_t unspentTxCount, const int32_t unspentTxIndex,
                      const int32_t lastConfirmedTxIdx,
                      const int64_t lastUseIdx);
-  LastestAddressInfo(const LastestAddressInfo &a);
+  AddressInfo(const AddressInfo &a);
 };
 
 class DBTxOutput {
@@ -259,27 +259,27 @@ private:
 
   // 操作 tx 的辅助函数
   void _getAddressTxNode(const int64_t txId,
-                         const LastestAddressInfo *addr, AddressTxNode *node);
-  void _removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node);
+                         const AddressInfo *addr, AddressTxNode *node);
+  void _removeAddressTxNode(AddressInfo *addr, AddressTxNode *node);
 
   void _rejectAddressTxs(class TxLog2 *txLog2, const map<int64_t, int64_t> &addressBalance);
 
   // 确认交易节点 & 反确认
-  void _confirmAddressTxNode  (AddressTxNode *node, LastestAddressInfo *addr, const int32_t height);
-  void _unconfirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr);
+  void _confirmAddressTxNode  (AddressTxNode *node, AddressInfo *addr, const int32_t height);
+  void _unconfirmAddressTxNode(AddressTxNode *node, AddressInfo *addr);
 
   // 未确认交易池
   void addUnconfirmedTxPool   (class TxLog2 *txLog2);
   void removeUnconfirmedTxPool(class TxLog2 *txLog2);
 
   // 更新交易 / 节点的 YMD
-  void _updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node, const int32_t targetYmd);
+  void _updateTxNodeYmd(AddressInfo *addr, AddressTxNode *node, const int32_t targetYmd);
 
   // 交换地址交易节点
-  void _switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
+  void _switchUnconfirmedAddressTxNode(AddressInfo *addr,
                                        AddressTxNode *prev, AddressTxNode *curr);
-  void _confirmTx_MoveToFirstUnconfirmed(LastestAddressInfo *addr, AddressTxNode *node);
-  void _rejectTx_MoveToLastUnconfirmed(LastestAddressInfo *addr, AddressTxNode *node);
+  void _confirmTx_MoveToFirstUnconfirmed(AddressInfo *addr, AddressTxNode *node);
+  void _rejectTx_MoveToLastUnconfirmed(AddressInfo *addr, AddressTxNode *node);
 
   void writeLastProcessTxlogTime();
 

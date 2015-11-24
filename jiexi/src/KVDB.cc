@@ -43,6 +43,19 @@ void KVDB::open() {
   }
 }
 
+bool KVDB::keyExist(const string &key) {}
+void KVDB::del(const string &key) {}
+void KVDB::get(const string &key, string &value) {}
+void KVDB::set(const string &key, const string &value) {}
+void KVDB::set(const string &key, const vector<uint8_t> &buffer) {}
+void KVDB::set(const string &key, const uint8_t *data, const size_t length) {}
+
+void KVDB::multiGet(const vector<string> &keys, vector<vector<uint8_t> > &bufferVec) {}
+void KVDB::multiSet(const vector<string> &keys, const vector<vector<uint8_t> > &bufferVec) {}
+
+void KVDB::rangeGetGT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec) {}
+void KVDB::rangeGetLT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec) {}
+
 void KVDB::getPrevTxOutputs(const CTransaction &tx,
                             vector<string> &prevTxsData,
                             vector<const fbe::TxOutput *> &prevTxOutputs) {

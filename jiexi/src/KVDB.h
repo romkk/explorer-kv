@@ -58,19 +58,18 @@ public:
 
   void open();
 
-  void keyExist(const string &key);
+  bool keyExist(const string &key);
   void del(const string &key);
-  void get(const string &key, string &value) {}
-  void set(const string &key, const string &value) {}
-  void set(const string &key, const vector<uint8_t> &buffer) {}
-  void set(const string &key, const uint8_t *data, const size_t length) {}
+  void get(const string &key, string &value);
+  void set(const string &key, const string &value);
+  void set(const string &key, const vector<uint8_t> &buffer);
+  void set(const string &key, const uint8_t *data, const size_t length);
 
+  void multiGet(const vector<string> &keys, vector<vector<uint8_t> > &bufferVec);
+  void multiSet(const vector<string> &keys, const vector<vector<uint8_t> > &bufferVec);
 
-  void multiGet(const vector<string> &keys, vector<vector<uint8_t> > &bufferVec) {}
-  void multiSet(const vector<string> &keys, const vector<vector<uint8_t> > &bufferVec) {}
-
-  void rangeGetGT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec) {}
-  void rangeGetLT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec) {}
+  void rangeGetGT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec);
+  void rangeGetLT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec);
 
   void getPrevTxOutputs(const CTransaction &tx,
                         vector<string> &prevTxsData,

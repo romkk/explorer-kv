@@ -297,11 +297,6 @@ void Parser::stop() {
 }
 
 bool Parser::init() {
-  string sql;
-  MySQLResult res;
-  char **row = nullptr;
-  const string nowStr = date("%F %T");
-
   if (!dbExplorer_.ping()) {
     LOG_FATAL("connect to explorer DB failure");
     return false;
@@ -1126,9 +1121,7 @@ void Parser::writeNotificationLogs(const map<int64_t, int64_t> &addressBalance,
 // 插入交易的raw hex
 static void _acceptTx_insertRawHex(KVDB &kvdb, const string &txHex, const uint256 &hash) {
   const string key = KVDB_PREFIX_TX_RAW_HEX + hash.ToString();
-  string value;
-
-  if (kvdb.db_->KeyMayExist(rocksdb::ReadOptions(), key, &value) == true) {
+  if (kvdb.keyExist(key)) {
     return;  // already exist
   }
 
@@ -1141,9 +1134,7 @@ static void _acceptTx_insertRawHex(KVDB &kvdb, const string &txHex, const uint25
 static void _acceptTx_insertTxObject(KVDB &kvdb, const uint256 &hash,
                                      flatbuffers::FlatBufferBuilder *fbb) {
   const string key = KVDB_PREFIX_TX_OBJECT + hash.ToString();
-  string value;
-
-  if (kvdb.db_->KeyMayExist(rocksdb::ReadOptions(), key, &value) == true) {
+  if (kvdb.keyExist(key)) {
     return;  // already exist
   }
 

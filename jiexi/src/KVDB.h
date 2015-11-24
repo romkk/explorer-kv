@@ -58,6 +58,7 @@ public:
 
   void open();
 
+  void keyExist(const string &key);
   void del(const string &key);
   void get(const string &key, string &value) {}
   void set(const string &key, const string &value) {}

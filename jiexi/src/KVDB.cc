@@ -76,7 +76,8 @@ void KVDB::getPrevTxOutputs(const CTransaction &tx,
       keys.push_back(rocksdb::Slice(std::end(keysStr)->data(), std::end(keysStr)->size()));
     }
   }
-
+  
+  prevTxsData.resize(keys.size());
   db_->MultiGet(rocksdb::ReadOptions(), keys, &prevTxsData);
 
   for (size_t i = 0; i < keys.size(); i++) {

@@ -46,12 +46,11 @@
 
 
 class KVDB {
+  rocksdb::DB *db_;
   rocksdb::Options options_;
   string kDBPath_;
 
 public:
-  rocksdb::DB *db_;
-
   KVDB(const string &dbPath);
   ~KVDB() {}
 

@@ -161,16 +161,8 @@ class AddressTxNode {
 public:
   int32_t ymd_;  // 初始化、复制时使用 memcpy(), 保持 ymd_ 为第一个字段
   int32_t txHeight_;
-  int64_t addressId_;
-  int64_t txId_;
-  int64_t totalReceived_;
   int64_t balanceDiff_;
-  int64_t balanceFinal_;
-  int64_t idx_;
-  int32_t prevYmd_;
-  int32_t nextYmd_;
-  int64_t prevTxId_;
-  int64_t nextTxId_;
+  int32_t idx_;
 
   AddressTxNode();
   AddressTxNode(const AddressTxNode &node);
@@ -253,17 +245,17 @@ private:
   bool hasAccepted(class TxLog2 *txLog2);
 
   // 获取tx对应各个地址的余额变更情况
-  void _getTxAddressBalance(const CTransaction &tx, map<string, int64_t> &addressBalance);
+  map<string, int64_t> getTxAddressBalance(const CTransaction &tx);
 
   // 操作 tx 的辅助函数
-  void _getAddressTxNode(const int64_t txId,
-                         const AddressInfo *addr, AddressTxNode *node);
+  void _getAddressTxNode(const string &address, const uint256 &txhash,
+                         AddressTxNode *node);
   void _removeAddressTxNode(AddressInfo *addr, AddressTxNode *node);
 
   void _rejectAddressTxs(class TxLog2 *txLog2, const map<int64_t, int64_t> &addressBalance);
 
   // 确认交易节点 & 反确认
-  void _confirmAddressTxNode  (AddressTxNode *node, AddressInfo *addr, const int32_t height);
+  void _confirmAddressTxNode  (const string &address, AddressTxNode *node, AddressInfo *addr);
   void _unconfirmAddressTxNode(AddressTxNode *node, AddressInfo *addr);
 
   // 未确认交易池
@@ -276,7 +268,8 @@ private:
   // 交换地址交易节点
   void _switchUnconfirmedAddressTxNode(AddressInfo *addr,
                                        AddressTxNode *prev, AddressTxNode *curr);
-  void _confirmTx_MoveToFirstUnconfirmed(AddressInfo *addr, AddressTxNode *node);
+  void _confirmTx_MoveToFirstUnconfirmed(const string &address,
+                                         const int32_t idx1, const int32_t idx2);
   void _rejectTx_MoveToLastUnconfirmed(AddressInfo *addr, AddressTxNode *node);
 
   void writeLastProcessTxlogTime();

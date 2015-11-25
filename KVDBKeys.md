@@ -12,7 +12,7 @@
 12 | block | 12\_{block_hash}\_{n} | string | block transactions, n为批次号，每500条为一个批次, n从零开始
 20 | address | 20\_{address} | FlatBuffer | address object
 21 | address | 21\_{address}\_{010index} | FlatBuffer | address txs list
-22 | address | 22\_{address}\_{tx_hash} | FlatBuffer | address txhash -> address tx idx
+22 | address | 22\_{address}\_{tx_hash} | string | int32_t string, address txhash -> address tx idx
 23 | address | 23\_{address}\_{010index} | FlatBuffer | address unspent txs list
 24 | address | 24\_{address}\_{tx_hash}\_{position} | FlatBuffer | 对应该交易产生的某个地址的未花费index，position表示位于输出的索引号
 30 | double spent tx | 30\_{tx_hash}\_{position} | | 双花交易，数组

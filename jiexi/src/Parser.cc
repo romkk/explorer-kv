@@ -783,14 +783,10 @@ void _accpetTx_insertAddressTxs(KVDB &kvdb, class TxLog2 *txLog2,
     // AddressTxIdx
     //
     {
-      fbe::AddressTxIdxBuilder addressTxIdxBuilder(fbb);
-      addressTxIdxBuilder.add_index(addressTxIndex);
-      addressTxIdxBuilder.Finish();
-
       // 22_{address}_{tx_hash}
       const string key22 = Strings::Format("%s%s_%s", KVDB_PREFIX_ADDR_TX_INDEX, address.c_str(),
                                            txLog2->txHash_.ToString().c_str());
-      kvdb.set(key22, fbb.GetBufferPointer(), fbb.GetSize());
+      kvdb.set(key22, Strings::Format("%d", addressTxIndex));
     }
 
     //
@@ -995,8 +991,8 @@ static void _acceptTx_insertAddressUnspent(KVDB &kvdb, const int64_t nValue,
   }
 }
 
-void Parser::_getTxAddressBalance(const CTransaction &tx, map<string, int64_t> &addressBalance) {
-  addressBalance.clear();
+map<string, int64_t> Parser::getTxAddressBalance(const CTransaction &tx) {
+  map<string, int64_t> addressBalance;
 
   //
   // inputs
@@ -1036,6 +1032,7 @@ void Parser::_getTxAddressBalance(const CTransaction &tx, map<string, int64_t> &
       }
     }
   }
+  return addressBalance;
 }
 
 // 接收一个新的交易
@@ -1245,68 +1242,136 @@ int32_t prevYmd(const int32_t ymd) {
   return atoi(date("%Y%m%d", t - 86400).c_str());
 }
 
+void Parser::_getAddressTxNode(const string &address, const uint256 &txhash,
+                               AddressTxNode *node) {
+  string key;
+  string value;
+
+  //
+  // 22_{address}_{tx_hash}
+  //
+  key = Strings::Format("%s%s_%s", KVDB_PREFIX_ADDR_TX_INDEX,
+                        address.c_str(), txhash.ToString().c_str());
+  kvdb_.get(key, value);
+  if (value.size() == 0) {
+    THROW_EXCEPTION_DBEX("can't find kv item by key: %s", key.c_str());
+  }
+  const int32_t index = atoi(value.c_str());
+
+  //
+  // 21_{address}_{010index}
+  //
+  key = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_TX, address.c_str(), index);
+  kvdb_.get(key, value);
+  auto addressTx = flatbuffers::GetRoot<fbe::AddressTx>(value.data());
+
+  node->txHeight_    = addressTx->tx_height();
+  node->balanceDiff_ = addressTx->balance_diff();
+  node->idx_         = index;
+  node->ymd_         = addressTx->ymd();
+}
+
+void Parser::_confirmTx_MoveToFirstUnconfirmed(const string &address,
+                                               const int32_t idx1, const int32_t idx2) {
+  // idx2 是即将确认的节点
+  vector<string> keys;
+  vector<string> values;
+
+  keys.push_back(Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_TX, address.c_str(), idx1));
+  keys.push_back(Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_TX, address.c_str(), idx2));
+  kvdb_.multiGet(keys, values);
+  auto addressTx1 = flatbuffers::GetRoot<fbe::AddressTx>((void *)values[0].data());
+  auto addressTx2 = flatbuffers::GetRoot<fbe::AddressTx>((void *)values[1].data());
+
+  // switch item
+  kvdb_.set(keys[0], values[1]);
+  kvdb_.set(keys[1], values[0]);
+
+  // 22_{address}_{tx_hash}
+  kvdb_.set(Strings::Format("%s%s_%s", KVDB_PREFIX_ADDR_TX_INDEX, address.c_str(), addressTx1->tx_hash()->c_str()),
+            Strings::Format("%d", idx2));
+  kvdb_.set(Strings::Format("%s%s_%s", KVDB_PREFIX_ADDR_TX_INDEX, address.c_str(), addressTx2->tx_hash()->c_str()),
+            Strings::Format("%d", idx1));
+}
+
+void Parser::_confirmAddressTxNode(const string &address, AddressTxNode *node, AddressInfo *addr) {
+  //
+  // 变更地址未确认额度等信息
+  //
+  {
+    const int64_t received = (node->balanceDiff_ > 0 ? node->balanceDiff_ : 0);
+    const int64_t sent     = (node->balanceDiff_ < 0 ? node->balanceDiff_ * -1 : 0);
+
+    addr->unconfirmedReceived_ -= received;
+    addr->unconfirmedSent_     -= sent;
+    addr->unconfirmedTxCount_--;
+    addr->lastConfirmedTxIdx_   = node->idx_;
+  }
+
+  // update AddressTxNode
+  {
+    const string key = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_TX, address.c_str(), node->idx_);
+    string value;
+    kvdb_.get(key, value);
+    auto addressTx = flatbuffers::GetMutableRoot<fbe::AddressTx>((void *)value.data());
+    addressTx->mutate_ymd(node->ymd_);
+    addressTx->mutate_tx_height(node->txHeight_);
+    kvdb_.set(key, value);
+  }
+}
 
 // 确认一个交易
 void Parser::confirmTx(class TxLog2 *txLog2) {
-//  //
-//  // confirm: 变更为确认（设定块高度值等），若不是紧接着上个已确认的交易，则调整交易链。
-//  //
-//  string sql;
-//
-//  // 拿到关联地址的余额变更记录，可能需要调整交易链
-//  auto addressBalance = _getTxAddressBalance(txLog2->txHash_, txLog2->tx_);
-//
-//  for (auto &it : *addressBalance) {
-//    const int64_t addrID       = it.first;
-//
-//    // 获取地址信息
-//    AddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
-//
-//    // 当前节点
-//    AddressTxNode currNode;
-//
-//    //
-//    // 保障确认的节点在上一个确认节点的后方
-//    //
-//    while (1) {
-//      _getAddressTxNode(txLog2->txId_, addr, &currNode);
-//
-//      // 涉及移动节点的情形: 即将确认的节点不在上一个确认节点的后方，即中间掺杂了其他交易
-//      // 若前面无节点，两个值均为零
-//      if (addr->lastConfirmedTxId_ == currNode.prevTxId_) {
-//        break;
-//      }
-//      // 当前节点交换至第一个未确认节点
-//      _confirmTx_MoveToFirstUnconfirmed(addr, &currNode);
-//    }
-//    assert(currNode.ymd_ == UNCONFIRM_TX_YMD);
-//
-//    //
-//    // 移动数据节点，从 UNCONFIRM_TX_YMD 至 txLog2->ymd_
-//    //
-//    _updateTxNodeYmd(addr, &currNode, txLog2->ymd_);
-//    _getAddressTxNode(txLog2->txId_, addr, &currNode);
-//    assert(currNode.ymd_ == txLog2->ymd_);
-//
-//    //
-//    // 确认
-//    //
-//    _confirmAddressTxNode(&currNode, addr, txLog2->blkHeight_);
-//  } /* /for */
-//
-//  //
-//  // table.txs_xxxx
-//  //
-//  string feeSql;
-//  if (txLog2->tx_.IsCoinBase()) {
-//    // confirm时知道高度值，重新计算 coinbase tx fee
-//    const int64_t fee = txLog2->tx_.GetValueOut() - GetBlockValue(txLog2->blkHeight_, 0);
-//    feeSql = Strings::Format(",fee=%lld ", fee);
-//  }
-//  sql = Strings::Format("UPDATE `txs_%04d` SET `height`=%d,`ymd`=%d %s WHERE `tx_id`=%lld ",
-//                        tableIdx_Tx(txLog2->txId_), txLog2->blkHeight_, txLog2->ymd_,
-//                        feeSql.c_str(), txLog2->txId_);
-//  dbExplorer_.updateOrThrowEx(sql, 1);
+  //
+  // confirm: 变更为确认（设定块高度值等），若不是紧接着上个已确认的交易，则调整交易链。
+  //
+  auto addressBalance = getTxAddressBalance(txLog2->tx_);
+
+  for (auto &it : addressBalance) {
+    const string address      = it.first;
+
+    AddressInfo *addrInfo = _getAddressInfo(kvdb_, address);
+    AddressTxNode currNode;  // 当前节点
+
+    // 保障确认的节点在上一个确认节点的后方
+    while (1) {
+      _getAddressTxNode(address, txLog2->txHash_, &currNode);
+
+      // 涉及移动节点的情形: 即将确认的节点不在上一个确认节点的后方，即中间掺杂了其他交易
+      // 若前面无节点，idx 应该挨着
+      if (addrInfo->lastConfirmedTxIdx_ + 1 == currNode.idx_) {
+        break;
+      }
+      // 当前节点交换至第一个未确认节点 (仅会执行一次)
+      _confirmTx_MoveToFirstUnconfirmed(address, addrInfo->lastConfirmedTxIdx_ + 1, currNode.idx_);
+    }
+
+    // 更新即将确认的节点字段
+    currNode.ymd_      = txLog2->ymd_;
+    currNode.txHeight_ = txLog2->blkHeight_;
+
+    // 确认
+    _confirmAddressTxNode(address, &currNode, addrInfo);
+  } /* /for */
+
+  //
+  // update tx object
+  //
+  {
+    const string key = Strings::Format("%s%s", KVDB_PREFIX_TX_OBJECT, txLog2->txHash_.ToString().c_str());
+    string value;
+    kvdb_.get(key, value);
+    auto txObject = flatbuffers::GetMutableRoot<fbe::Tx>((void *)value.data());
+
+    // confirm时知道高度值，重新计算 coinbase tx fee
+    if (txLog2->tx_.IsCoinBase()) {
+      const int64_t fee = txLog2->tx_.GetValueOut() - GetBlockValue(txLog2->blkHeight_, 0);
+      txObject->mutate_fee(fee);
+    }
+    txObject->mutate_height(txLog2->blkHeight_);
+
+    kvdb_.set(key, value);
+  }
 
   // 处理未确认计数器和记录
   removeUnconfirmedTxPool(txLog2);

@@ -50,8 +50,8 @@ void KVDB::set(const string &key, const string &value) {}
 void KVDB::set(const string &key, const vector<uint8_t> &buffer) {}
 void KVDB::set(const string &key, const uint8_t *data, const size_t length) {}
 
-void KVDB::multiGet(const vector<string> &keys, vector<vector<uint8_t> > &bufferVec) {}
-void KVDB::multiSet(const vector<string> &keys, const vector<vector<uint8_t> > &bufferVec) {}
+void KVDB::multiGet(const vector<string> &keys, vector<string> &bufferVec) {}
+void KVDB::multiSet(const vector<string> &keys, const vector<string> &bufferVec) {}
 
 void KVDB::rangeGetGT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec) {}
 void KVDB::rangeGetLT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec) {}
@@ -73,7 +73,7 @@ void KVDB::getPrevTxOutputs(const CTransaction &tx,
       prevTxHashSet.insert(input.prevout.hash);
 
       keysStr.push_back(KVDB_PREFIX_TX_OBJECT + input.prevout.hash.ToString());
-      keys.push_back(rocksdb::Slice(std::end(keysStr)->data(), std::end(keysStr)->length()));
+      keys.push_back(rocksdb::Slice(std::end(keysStr)->data(), std::end(keysStr)->size()));
     }
   }
 

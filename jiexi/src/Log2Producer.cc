@@ -367,10 +367,10 @@ void Log2Producer::initLog2() {
     log2BlockBeginHeight = (int32_t)Config::GConfig.getInt("log2.begin.block.height");
   }
 
-  if (log2BlockBeginHash == uint256() || log2BlockBeginHeight < 0) {
-    THROW_EXCEPTION_DBEX("invalid log2 latest block: %d, %s",
-                         log2BlockBeginHeight, log2BlockBeginHash.ToString().c_str());
-  }
+//  if (log2BlockBeginHash == uint256() || log2BlockBeginHeight < 0) {
+//    THROW_EXCEPTION_DBEX("invalid log2 latest block: %d, %s",
+//                         log2BlockBeginHeight, log2BlockBeginHash.ToString().c_str());
+//  }
   LOG_INFO("log2 latest block, height: %d, hash: %s",
            log2BlockBeginHeight, log2BlockBeginHash.ToString().c_str());
 
@@ -379,39 +379,39 @@ void Log2Producer::initLog2() {
   //
   _initLog2_loadMemrepoTxs(db_, memRepo_);
 
-  //
-  // 获取当前高度之前的块的最大时间戳，构造出 blkTs_
-  //
-  {
-    // 必须 tpaser 消费跟进到最近的 txlogs2，才能保证能从 table.0_blocks 查询到最新
-    sql = Strings::Format("SELECT `hash` FROM `0_blocks` WHERE "
-                          " `height`=%d AND `chain_id`=0 AND `hash`='%s' ",
-                          log2BlockBeginHeight, log2BlockBeginHash.ToString().c_str());
-    db_.query(sql, res);
-    if (res.numRows() == 0) {
-      THROW_EXCEPTION_DBEX("can't find block from table.0_blocks, %d : %s, "
-                           "please wait util 'tparser' catch up latest txlogs2",
-                           log2BlockBeginHeight, log2BlockBeginHash.ToString().c_str());
-    }
-
-    // 获取最近 2016 个块的时间戳
-    sql = Strings::Format("SELECT * FROM (SELECT `timestamp`,`height` FROM `0_blocks`"
-                          " WHERE `height` <= %d AND `chain_id` = 0 "
-                          " ORDER BY `height` DESC LIMIT 2016) AS `t1` ORDER BY `height` ASC ",
-                          log2BlockBeginHeight);
-    db_.query(sql, res);
-    if (res.numRows() == 0) {
-      THROW_EXCEPTION_DBEX("can't find max block timestamp, log2BlockHeight: %d",
-                           log2BlockBeginHeight);
-    }
-    for (int32_t i = (int32_t)res.numRows(); i > 0 ; i--) {
-      row = res.nextRow();
-      const int32_t height = atoi(row[1]);
-      blkTs_.pushBlock(height, atoi64(row[0]));
-      assert(height == log2BlockBeginHeight - i + 1);
-    }
-    LOG_INFO("found max block timestamp: %lld", blkTs_.getMaxTimestamp());
-  }
+//  //
+//  //   获取当前高度之前的块的最大时间戳，构造出 blkTs_
+//  //  
+//  {
+//    // 必须 tpaser 消费跟进到最近的 txlogs2，才能保证能从 table.0_blocks 查询到最新
+//    sql = Strings::Format("SELECT `hash` FROM `0_blocks` WHERE "
+//                          " `height`=%d AND `chain_id`=0 AND `hash`='%s' ",
+//                          log2BlockBeginHeight, log2BlockBeginHash.ToString().c_str());
+//    db_.query(sql, res);
+//    if (res.numRows() == 0) {
+//      THROW_EXCEPTION_DBEX("can't find block from table.0_blocks, %d : %s, "
+//                           "please wait util 'tparser' catch up latest txlogs2",
+//                           log2BlockBeginHeight, log2BlockBeginHash.ToString().c_str());
+//    }
+//
+//    // 获取最近 2016 个块的时间戳
+//    sql = Strings::Format("SELECT * FROM (SELECT `timestamp`,`height` FROM `0_blocks`"
+//                          " WHERE `height` <= %d AND `chain_id` = 0 "
+//                          " ORDER BY `height` DESC LIMIT 2016) AS `t1` ORDER BY `height` ASC ",
+//                          log2BlockBeginHeight);
+//    db_.query(sql, res);
+//    if (res.numRows() == 0) {
+//      THROW_EXCEPTION_DBEX("can't find max block timestamp, log2BlockHeight: %d",
+//                           log2BlockBeginHeight);
+//    }
+//    for (int32_t i = (int32_t)res.numRows(); i > 0 ; i--) {
+//      row = res.nextRow();
+//      const int32_t height = atoi(row[1]);
+//      blkTs_.pushBlock(height, atoi64(row[0]));
+//      assert(height == log2BlockBeginHeight - i + 1);
+//    }
+//    LOG_INFO("found max block timestamp: %lld", blkTs_.getMaxTimestamp());
+//  }
 
   currBlockHeight_ = log2BlockBeginHeight;
   currBlockHash_   = log2BlockBeginHash;

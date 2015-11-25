@@ -1210,8 +1210,8 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   // insert tx object, 需要紧跟 txBuilder.Finish() 函数，否则 fbb 内存会破坏
   _acceptTx_insertTxObject(kvdb_, txLog2->txHash_, &fbb);
 
-  // insert tx raw hex，实际插入binary data，减小一半体积
-  _acceptTx_insertRawHex(kvdb_, txLog2->txHex_, txLog2->txHash_);
+//  // insert tx raw hex，实际插入binary data，减小一半体积
+//  _acceptTx_insertRawHex(kvdb_, txLog2->txHex_, txLog2->txHash_);
 
   // remove unspent，移除未花费交易，扣减计数器
   _acceptTx_removeUnspentOutputs(kvdb_, txLog2->txHash_, tx, prevTxOutputs);

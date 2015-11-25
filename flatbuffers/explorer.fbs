@@ -96,11 +96,6 @@ table AddressTx {
   balance_diff: long;
 }
 
-// 22_{address}_{tx_hash}
-table AddressTxIdx {
-  index: int;  // 地址最大交易数量为int
-}
-
 // 23_{address}_{index}
 table AddressUnspent {
   tx_hash: string;

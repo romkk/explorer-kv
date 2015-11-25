@@ -16,7 +16,6 @@ struct Block;
 struct BlockTxsHash;
 struct Address;
 struct AddressTx;
-struct AddressTxIdx;
 struct AddressUnspent;
 struct AddressUnspentIdx;
 struct DoubleSpending;
@@ -76,7 +75,7 @@ struct TxInput FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   bool mutate_sequence(int64_t sequence) { return SetField(8, sequence); }
   const flatbuffers::String *prev_tx_hash() const { return GetPointer<const flatbuffers::String *>(10); }
   flatbuffers::String *mutable_prev_tx_hash() { return GetPointer<flatbuffers::String *>(10); }
-  int32_t prev_position() const { return GetField<int32_t>(12, -1); }
+  int32_t prev_position() const { return GetField<int32_t>(12, 0); }
   bool mutate_prev_position(int32_t prev_position) { return SetField(12, prev_position); }
   int64_t prev_value() const { return GetField<int64_t>(14, 0); }
   bool mutate_prev_value(int64_t prev_value) { return SetField(14, prev_value); }
@@ -107,7 +106,7 @@ struct TxInputBuilder {
   void add_script_hex(flatbuffers::Offset<flatbuffers::String> script_hex) { fbb_.AddOffset(6, script_hex); }
   void add_sequence(int64_t sequence) { fbb_.AddElement<int64_t>(8, sequence, 0); }
   void add_prev_tx_hash(flatbuffers::Offset<flatbuffers::String> prev_tx_hash) { fbb_.AddOffset(10, prev_tx_hash); }
-  void add_prev_position(int32_t prev_position) { fbb_.AddElement<int32_t>(12, prev_position, -1); }
+  void add_prev_position(int32_t prev_position) { fbb_.AddElement<int32_t>(12, prev_position, 0); }
   void add_prev_value(int64_t prev_value) { fbb_.AddElement<int64_t>(14, prev_value, 0); }
   void add_prev_addresses(flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> prev_addresses) { fbb_.AddOffset(16, prev_addresses); }
   TxInputBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
@@ -123,7 +122,7 @@ inline flatbuffers::Offset<TxInput> CreateTxInput(flatbuffers::FlatBufferBuilder
    flatbuffers::Offset<flatbuffers::String> script_hex = 0,
    int64_t sequence = 0,
    flatbuffers::Offset<flatbuffers::String> prev_tx_hash = 0,
-   int32_t prev_position = -1,
+   int32_t prev_position = 0,
    int64_t prev_value = 0,
    flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> prev_addresses = 0) {
   TxInputBuilder builder_(_fbb);
@@ -196,9 +195,9 @@ inline flatbuffers::Offset<TxOutput> CreateTxOutput(flatbuffers::FlatBufferBuild
 }
 
 struct Tx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
-  int32_t height() const { return GetField<int32_t>(4, -1); }
+  int32_t height() const { return GetField<int32_t>(4, 0); }
   bool mutate_height(int32_t height) { return SetField(4, height); }
-  int32_t position_in_block() const { return GetField<int32_t>(6, -1); }
+  int32_t position_in_block() const { return GetField<int32_t>(6, 0); }
   bool mutate_position_in_block(int32_t position_in_block) { return SetField(6, position_in_block); }
   uint8_t is_coinbase() const { return GetField<uint8_t>(8, 0); }
   bool mutate_is_coinbase(uint8_t is_coinbase) { return SetField(8, is_coinbase); }
@@ -252,8 +251,8 @@ struct Tx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
 struct TxBuilder {
   flatbuffers::FlatBufferBuilder &fbb_;
   flatbuffers::uoffset_t start_;
-  void add_height(int32_t height) { fbb_.AddElement<int32_t>(4, height, -1); }
-  void add_position_in_block(int32_t position_in_block) { fbb_.AddElement<int32_t>(6, position_in_block, -1); }
+  void add_height(int32_t height) { fbb_.AddElement<int32_t>(4, height, 0); }
+  void add_position_in_block(int32_t position_in_block) { fbb_.AddElement<int32_t>(6, position_in_block, 0); }
   void add_is_coinbase(uint8_t is_coinbase) { fbb_.AddElement<uint8_t>(8, is_coinbase, 0); }
   void add_version(int32_t version) { fbb_.AddElement<int32_t>(10, version, 0); }
   void add_lock_time(uint32_t lock_time) { fbb_.AddElement<uint32_t>(12, lock_time, 0); }
@@ -275,8 +274,8 @@ struct TxBuilder {
 };
 
 inline flatbuffers::Offset<Tx> CreateTx(flatbuffers::FlatBufferBuilder &_fbb,
-   int32_t height = -1,
-   int32_t position_in_block = -1,
+   int32_t height = 0,
+   int32_t position_in_block = 0,
    uint8_t is_coinbase = 0,
    int32_t version = 0,
    uint32_t lock_time = 0,
@@ -487,9 +486,9 @@ inline flatbuffers::Offset<BlockTxsHash> CreateBlockTxsHash(flatbuffers::FlatBuf
 struct AddressTx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   const flatbuffers::String *tx_hash() const { return GetPointer<const flatbuffers::String *>(4); }
   flatbuffers::String *mutable_tx_hash() { return GetPointer<flatbuffers::String *>(4); }
-  int32_t tx_height() const { return GetField<int32_t>(6, -1); }
+  int32_t tx_height() const { return GetField<int32_t>(6, 0); }
   bool mutate_tx_height(int32_t tx_height) { return SetField(6, tx_height); }
-  int32_t ymd() const { return GetField<int32_t>(8, -1); }
+  int32_t ymd() const { return GetField<int32_t>(8, 0); }
   bool mutate_ymd(int32_t ymd) { return SetField(8, ymd); }
   int64_t balance_diff() const { return GetField<int64_t>(10, 0); }
   bool mutate_balance_diff(int64_t balance_diff) { return SetField(10, balance_diff); }
@@ -508,8 +507,8 @@ struct AddressTxBuilder {
   flatbuffers::FlatBufferBuilder &fbb_;
   flatbuffers::uoffset_t start_;
   void add_tx_hash(flatbuffers::Offset<flatbuffers::String> tx_hash) { fbb_.AddOffset(4, tx_hash); }
-  void add_tx_height(int32_t tx_height) { fbb_.AddElement<int32_t>(6, tx_height, -1); }
-  void add_ymd(int32_t ymd) { fbb_.AddElement<int32_t>(8, ymd, -1); }
+  void add_tx_height(int32_t tx_height) { fbb_.AddElement<int32_t>(6, tx_height, 0); }
+  void add_ymd(int32_t ymd) { fbb_.AddElement<int32_t>(8, ymd, 0); }
   void add_balance_diff(int64_t balance_diff) { fbb_.AddElement<int64_t>(10, balance_diff, 0); }
   AddressTxBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
   AddressTxBuilder &operator=(const AddressTxBuilder &);
@@ -521,43 +520,14 @@ struct AddressTxBuilder {
 
 inline flatbuffers::Offset<AddressTx> CreateAddressTx(flatbuffers::FlatBufferBuilder &_fbb,
    flatbuffers::Offset<flatbuffers::String> tx_hash = 0,
-   int32_t tx_height = -1,
-   int32_t ymd = -1,
+   int32_t tx_height = 0,
+   int32_t ymd = 0,
    int64_t balance_diff = 0) {
   AddressTxBuilder builder_(_fbb);
   builder_.add_balance_diff(balance_diff);
   builder_.add_ymd(ymd);
   builder_.add_tx_height(tx_height);
   builder_.add_tx_hash(tx_hash);
-  return builder_.Finish();
-}
-
-struct AddressTxIdx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
-  int32_t index() const { return GetField<int32_t>(4, 0); }
-  bool mutate_index(int32_t index) { return SetField(4, index); }
-  bool Verify(flatbuffers::Verifier &verifier) const {
-    return VerifyTableStart(verifier) &&
-           VerifyField<int32_t>(verifier, 4 /* index */) &&
-           verifier.EndTable();
-  }
-};
-
-struct AddressTxIdxBuilder {
-  flatbuffers::FlatBufferBuilder &fbb_;
-  flatbuffers::uoffset_t start_;
-  void add_index(int32_t index) { fbb_.AddElement<int32_t>(4, index, 0); }
-  AddressTxIdxBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
-  AddressTxIdxBuilder &operator=(const AddressTxIdxBuilder &);
-  flatbuffers::Offset<AddressTxIdx> Finish() {
-    auto o = flatbuffers::Offset<AddressTxIdx>(fbb_.EndTable(start_, 1));
-    return o;
-  }
-};
-
-inline flatbuffers::Offset<AddressTxIdx> CreateAddressTxIdx(flatbuffers::FlatBufferBuilder &_fbb,
-   int32_t index = 0) {
-  AddressTxIdxBuilder builder_(_fbb);
-  builder_.add_index(index);
   return builder_.Finish();
 }
 

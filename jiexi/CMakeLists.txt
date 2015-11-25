@@ -40,8 +40,9 @@ if(NOT TCMALLOC_FOUND)
   message(FATAL_ERROR "TcMalloc not found!")
 endif(NOT TCMALLOC_FOUND)
 
-include_directories(src test ${OPENSSL_INCLUDE_DIR} ${Boost_INCLUDE_DIRS} ${MYSQL_INCLUDE_DIR})
-set(THRID_LIBRARIES "-lcurl -lz -lpthread -lsnappy -lbz2")
+set(LIBEVHTP_INCLUDE_DIRS "/usr/local/include/evhtp")
+include_directories(src test ${OPENSSL_INCLUDE_DIR} ${Boost_INCLUDE_DIRS} ${MYSQL_INCLUDE_DIR} ${LIBEVHTP_INCLUDE_DIRS})
+set(THRID_LIBRARIES "-lcurl -lz -lpthread -lsnappy -lbz2 -levent -levhtp")
 
 file(GLOB LIB_SOURCES src/*.cc src/bitcoin/*.cpp)
 add_library(explorer STATIC ${LIB_SOURCES})
@@ -60,4 +61,8 @@ target_link_libraries(log2producer explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_
 
 file(GLOB_RECURSE TEST_SOURCES test/*.cc)
 add_executable(unittest ${TEST_SOURCES})
-target_link_libraries(unittest explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} -lpthread -lcurl)
+target_link_libraries(unittest explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${THRID_LIBRARIES})
+
+file(GLOB HTTPD_SOURCES src/httpd/*.cc)
+add_executable(httpd ${HTTPD_SOURCES})
+target_link_libraries(httpd explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${THRID_LIBRARIES})

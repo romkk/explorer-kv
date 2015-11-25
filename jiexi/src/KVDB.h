@@ -47,7 +47,6 @@
 
 class KVDB {
   rocksdb::Options options_;
-
   string kDBPath_;
 
 public:

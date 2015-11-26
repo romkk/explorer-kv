@@ -43,15 +43,59 @@ void KVDB::open() {
   }
 }
 
-bool KVDB::keyExist(const string &key) {}
-void KVDB::del(const string &key) {}
-void KVDB::get(const string &key, string &value) {}
-void KVDB::set(const string &key, const string &value) {}
-void KVDB::set(const string &key, const vector<uint8_t> &buffer) {}
-void KVDB::set(const string &key, const uint8_t *data, const size_t length) {}
+bool KVDB::keyExist(const string &key) {
+  string value;
+  // If the key definitely does not exist in the database, then this method
+  // returns false, else true.
+  if (db_->KeyMayExist(rocksdb::ReadOptions(), key, &value)) {
+    return true;
+  }
+  return false;
+}
 
-void KVDB::multiGet(const vector<string> &keys, vector<string> &bufferVec) {}
-void KVDB::multiSet(const vector<string> &keys, const vector<string> &bufferVec) {}
+void KVDB::del(const string &key) {
+  rocksdb::Status s = db_->Delete(rocksdb::WriteOptions(), key);
+  if (!s.ok()) {
+    THROW_EXCEPTION_DBEX("delelte key: %s fail", key.c_str());
+  }
+}
+
+void KVDB::get(const string &key, string &value) {
+  rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &value);
+  if (s.IsNotFound()) {
+    THROW_EXCEPTION_DBEX("not found key: %s", key.c_str());
+  }
+}
+
+void KVDB::getMayNotExist(const string &key, string &value) {
+  db_->Get(rocksdb::ReadOptions(), key, &value);
+}
+
+void KVDB::set(const string &key, const string &value) {
+  rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), key, value);
+  if (!s.ok()) {
+    THROW_EXCEPTION_DBEX("set key fail, key: %s", key.c_str());
+  }
+}
+
+void KVDB::set(const string &key, const uint8_t *data, const size_t length) {
+  rocksdb::Slice value((const char *)data, length);
+  rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), key, value);
+  if (!s.ok()) {
+    THROW_EXCEPTION_DBEX("set key fail, key: %s", key.c_str());
+  }
+}
+
+void KVDB::multiGet(const vector<string> &keys, vector<string> &values) {
+  values.clear();
+  std::vector<rocksdb::Slice> keysSlice;
+  for (const auto key : keys) {
+    keysSlice.push_back(key);
+  }
+
+  // (*values) will always be resized to be the same size as (keys).
+  db_->MultiGet(rocksdb::ReadOptions(), keysSlice, &values);
+}
 
 void KVDB::rangeGetGT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec) {}
 void KVDB::rangeGetLT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec) {}
@@ -76,8 +120,7 @@ void KVDB::getPrevTxOutputs(const CTransaction &tx,
       keys.push_back(rocksdb::Slice(std::end(keysStr)->data(), std::end(keysStr)->size()));
     }
   }
-  
-  prevTxsData.resize(keys.size());
+
   db_->MultiGet(rocksdb::ReadOptions(), keys, &prevTxsData);
 
   for (size_t i = 0; i < keys.size(); i++) {

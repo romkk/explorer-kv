@@ -121,3 +121,15 @@ TEST(Util, callBlockRelayParseUrl) {
   callBlockRelayParseUrl("0000000000000000070967a14e39d40734dbcf697d0eef915490d33acc93f0a3");
   sleep(1);
 }
+
+TEST(Util, UrlEncode) {
+  ASSERT_EQ(UrlEncode("foo @+%/"), "foo%20%40%2B%25%2F");
+  ASSERT_EQ(UrlEncode("sales and marketing/Miami"), "sales%20and%20marketing%2FMiami");
+}
+
+TEST(Util, UrlDecode) {
+  ASSERT_EQ(UrlDecode("foo%20%40%2B%25%2F"), "foo @+%/");
+  ASSERT_EQ(UrlDecode("sales%20and%20marketing%2FMiami"), "sales and marketing/Miami");
+}
+
+

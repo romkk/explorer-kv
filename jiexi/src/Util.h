@@ -55,4 +55,7 @@ string EncodeHexBlock(const CBlock &block);
 bool DecodeHexTx(CTransaction& tx, const std::string& strHexTx);
 bool DecodeHexBlk(CBlock& block, const std::string& strHexBlk);
 
+string UrlEncode(const char *str);
+string UrlDecode(const char *str);
+
 #endif

@@ -68,26 +68,30 @@ MANUALLY_ALIGNED_STRUCT(8) Address FLATBUFFERS_FINAL_CLASS {
 STRUCT_END(Address, 72);
 
 struct APIResponse FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
-  int32_t error_no() const { return GetField<int32_t>(4, 0); }
-  bool mutate_error_no(int32_t error_no) { return SetField(4, error_no); }
-  const flatbuffers::String *error_msg() const { return GetPointer<const flatbuffers::String *>(6); }
-  flatbuffers::String *mutable_error_msg() { return GetPointer<flatbuffers::String *>(6); }
-  const flatbuffers::Vector<int32_t> *offset_arr() const { return GetPointer<const flatbuffers::Vector<int32_t> *>(8); }
-  flatbuffers::Vector<int32_t> *mutable_offset_arr() { return GetPointer<flatbuffers::Vector<int32_t> *>(8); }
-  const flatbuffers::Vector<int32_t> *length_arr() const { return GetPointer<const flatbuffers::Vector<int32_t> *>(10); }
-  flatbuffers::Vector<int32_t> *mutable_length_arr() { return GetPointer<flatbuffers::Vector<int32_t> *>(10); }
-  const flatbuffers::Vector<uint8_t> *data() const { return GetPointer<const flatbuffers::Vector<uint8_t> *>(12); }
-  flatbuffers::Vector<uint8_t> *mutable_data() { return GetPointer<flatbuffers::Vector<uint8_t> *>(12); }
+  const flatbuffers::String *id() const { return GetPointer<const flatbuffers::String *>(4); }
+  flatbuffers::String *mutable_id() { return GetPointer<flatbuffers::String *>(4); }
+  int32_t error_no() const { return GetField<int32_t>(6, 0); }
+  bool mutate_error_no(int32_t error_no) { return SetField(6, error_no); }
+  const flatbuffers::String *error_msg() const { return GetPointer<const flatbuffers::String *>(8); }
+  flatbuffers::String *mutable_error_msg() { return GetPointer<flatbuffers::String *>(8); }
+  const flatbuffers::Vector<int32_t> *offset_arr() const { return GetPointer<const flatbuffers::Vector<int32_t> *>(10); }
+  flatbuffers::Vector<int32_t> *mutable_offset_arr() { return GetPointer<flatbuffers::Vector<int32_t> *>(10); }
+  const flatbuffers::Vector<int32_t> *length_arr() const { return GetPointer<const flatbuffers::Vector<int32_t> *>(12); }
+  flatbuffers::Vector<int32_t> *mutable_length_arr() { return GetPointer<flatbuffers::Vector<int32_t> *>(12); }
+  const flatbuffers::Vector<uint8_t> *data() const { return GetPointer<const flatbuffers::Vector<uint8_t> *>(14); }
+  flatbuffers::Vector<uint8_t> *mutable_data() { return GetPointer<flatbuffers::Vector<uint8_t> *>(14); }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
-           VerifyField<int32_t>(verifier, 4 /* error_no */) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 6 /* error_msg */) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 4 /* id */) &&
+           verifier.Verify(id()) &&
+           VerifyField<int32_t>(verifier, 6 /* error_no */) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 8 /* error_msg */) &&
            verifier.Verify(error_msg()) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 8 /* offset_arr */) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 10 /* offset_arr */) &&
            verifier.Verify(offset_arr()) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 10 /* length_arr */) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 12 /* length_arr */) &&
            verifier.Verify(length_arr()) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 12 /* data */) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 14 /* data */) &&
            verifier.Verify(data()) &&
            verifier.EndTable();
   }
@@ -96,20 +100,22 @@ struct APIResponse FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
 struct APIResponseBuilder {
   flatbuffers::FlatBufferBuilder &fbb_;
   flatbuffers::uoffset_t start_;
-  void add_error_no(int32_t error_no) { fbb_.AddElement<int32_t>(4, error_no, 0); }
-  void add_error_msg(flatbuffers::Offset<flatbuffers::String> error_msg) { fbb_.AddOffset(6, error_msg); }
-  void add_offset_arr(flatbuffers::Offset<flatbuffers::Vector<int32_t>> offset_arr) { fbb_.AddOffset(8, offset_arr); }
-  void add_length_arr(flatbuffers::Offset<flatbuffers::Vector<int32_t>> length_arr) { fbb_.AddOffset(10, length_arr); }
-  void add_data(flatbuffers::Offset<flatbuffers::Vector<uint8_t>> data) { fbb_.AddOffset(12, data); }
+  void add_id(flatbuffers::Offset<flatbuffers::String> id) { fbb_.AddOffset(4, id); }
+  void add_error_no(int32_t error_no) { fbb_.AddElement<int32_t>(6, error_no, 0); }
+  void add_error_msg(flatbuffers::Offset<flatbuffers::String> error_msg) { fbb_.AddOffset(8, error_msg); }
+  void add_offset_arr(flatbuffers::Offset<flatbuffers::Vector<int32_t>> offset_arr) { fbb_.AddOffset(10, offset_arr); }
+  void add_length_arr(flatbuffers::Offset<flatbuffers::Vector<int32_t>> length_arr) { fbb_.AddOffset(12, length_arr); }
+  void add_data(flatbuffers::Offset<flatbuffers::Vector<uint8_t>> data) { fbb_.AddOffset(14, data); }
   APIResponseBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
   APIResponseBuilder &operator=(const APIResponseBuilder &);
   flatbuffers::Offset<APIResponse> Finish() {
-    auto o = flatbuffers::Offset<APIResponse>(fbb_.EndTable(start_, 5));
+    auto o = flatbuffers::Offset<APIResponse>(fbb_.EndTable(start_, 6));
     return o;
   }
 };
 
 inline flatbuffers::Offset<APIResponse> CreateAPIResponse(flatbuffers::FlatBufferBuilder &_fbb,
+   flatbuffers::Offset<flatbuffers::String> id = 0,
    int32_t error_no = 0,
    flatbuffers::Offset<flatbuffers::String> error_msg = 0,
    flatbuffers::Offset<flatbuffers::Vector<int32_t>> offset_arr = 0,
@@ -121,6 +127,7 @@ inline flatbuffers::Offset<APIResponse> CreateAPIResponse(flatbuffers::FlatBuffe
   builder_.add_offset_arr(offset_arr);
   builder_.add_error_msg(error_msg);
   builder_.add_error_no(error_no);
+  builder_.add_id(id);
   return builder_.Finish();
 }
 

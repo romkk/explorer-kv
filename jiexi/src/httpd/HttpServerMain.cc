@@ -29,13 +29,16 @@
 
 #include "explorer_generated.h"
 
-//typedef void (*funcGet)(const string &key, int32_t *length, int32_t *offset, vector<uint8_t> *data);
+typedef void (*handleFunction)(evhtp_request_t *req, const vector<string> &params, const string &queryId);
 
-#define API_ERROR_EMPTY_KEYS    100
-#define API_ERROR_TOO_MANY_KEYS 200
+#define API_ERROR_EMPTY_PARAMS           100
+#define API_ERROR_TOO_MANY_PARAMS        101
+#define API_ERROR_EMPTY_METHOD           102
+#define API_ERROR_METHOD_NOT_REGISTERED  103
 
 // global vars
 KVDB *gDB = nullptr;
+std::unordered_map<string, handleFunction> gHandleFunctions;
 
 void dbGetKeys(const vector<string> &keys,
                vector<int32_t> &length, vector<int32_t> &offset, vector<uint8_t> &data) {
@@ -71,55 +74,115 @@ void cb_error(evhtp_request_t * req, const int32_t error_no, const char *error_m
 }
 
 void cb_root(evhtp_request_t * req, void *ptr) {
-  string s = Strings::Format("btc.com Explorer API server, %s", date("%F %T").c_str());
+  string s = Strings::Format("btc.com Explorer API server, %s (UTC+0)", date("%F %T").c_str());
   evbuffer_add_reference(req->buffer_out, s.c_str(), s.length(), NULL, NULL);
   evhtp_send_reply(req, EVHTP_RES_NOTFOUND);
 }
 
-void cb_get(evhtp_request_t *req, void *ptr) {
-  static const int32_t kMaxKeysCount = 1000;
-
-  const char *keysStr = evhtp_kv_find(req->uri->query, "keys");
-  if (keysStr == NULL) {
-    cb_error(req, API_ERROR_EMPTY_KEYS, "keys is empty");
-    return;
-  }
-  vector<string> keys = split(string(keysStr), ',');
-  if (keys.size() > kMaxKeysCount) {
-    cb_error(req, API_ERROR_TOO_MANY_KEYS,
-             Strings::Format("too many keys, max size: %d, curr: %llu",
-                             kMaxKeysCount, keys.size()).c_str());
-    return;
-  }
-
-  vector<uint8_t> data;
-  vector<int32_t> length;
-  vector<int32_t> offset;
-  dbGetKeys(keys, length, offset, data);
-
+void output(evhtp_request_t *req, const string &queryId,
+            const vector<uint8_t> &data, const vector<int32_t> &length, const vector<int32_t> &offset) {
   flatbuffers::FlatBufferBuilder fbb;
   auto fb_lengthArr = fbb.CreateVector(length);
   auto fb_offsetArr = fbb.CreateVector(offset);
   auto fb_data      = fbb.CreateVector(data);
+  auto fb_queryId   = fbb.CreateString(queryId);
   fbe::APIResponseBuilder apiResp(fbb);
+  apiResp.add_id(fb_queryId);
   apiResp.add_length_arr(fb_lengthArr);
   apiResp.add_offset_arr(fb_offsetArr);
   apiResp.add_data(fb_data);
   apiResp.Finish();
 
   evbuffer_add_reference(req->buffer_out, fbb.GetBufferPointer(), fbb.GetSize(), NULL, NULL);
+}
+
+void handle_get(evhtp_request_t *req, const vector<string> &params, const string &queryId) {
+  if (params.size() == 0) {
+    cb_error(req, API_ERROR_EMPTY_PARAMS, "params is empty");
+    return;
+  }
+
+  vector<uint8_t> data;
+  vector<int32_t> length, offset;
+  // params 即 keys
+  dbGetKeys(params, length, offset, data);
+
+  output(req, queryId, data, length, offset);
   evhtp_send_reply(req, EVHTP_RES_OK);
+}
+
+void handle_ping(evhtp_request_t *req, const vector<string> &params, const string &queryId) {
+  vector<uint8_t> data;
+  vector<int32_t> length, offset;
+  const string s = "pong";
+
+  data.insert(data.end(), s.begin(), s.end());
+  length.push_back((int32_t)s.size());
+  offset.push_back(0);
+
+  output(req, queryId, data, length, offset);
+  evhtp_send_reply(req, EVHTP_RES_OK);
+}
+
+void cb_kv(evhtp_request_t *req, void *ptr) {
+  static const int32_t kMaxParamsCount = 1000;
+
+  const char *queryMethod = evhtp_kv_find(req->uri->query, "method");
+  const char *queryParams = evhtp_kv_find(req->uri->query, "params");
+  string queryId;
+  if (evhtp_kv_find(req->uri->query, "id") == nullptr) {
+    queryId = Strings::Format("rocksdb-%lld", Time::CurrentTimeMill());
+  } else {
+    queryId = string(evhtp_kv_find(req->uri->query, "id"));
+  }
+
+  vector<string> params;
+  if (queryParams != nullptr) {
+    params = split(string(queryParams), ',', kMaxParamsCount + 1);
+    for (auto &param : params) {
+      param = UrlDecode(param.c_str());
+    }
+  }
+  if (params.size() > kMaxParamsCount) {
+    cb_error(req, API_ERROR_TOO_MANY_PARAMS,
+             Strings::Format("too many params, max: %d", kMaxParamsCount).c_str());
+    return;
+  }
+  if (queryMethod == nullptr) {
+    cb_error(req, API_ERROR_EMPTY_METHOD, "method is empty");
+    return;
+  }
+
+  const auto it = gHandleFunctions.find(string(queryMethod));
+  if (it != gHandleFunctions.end()) {
+    (*it->second)(req, params, queryId);;
+    return;
+  }
+
+  // method not found
+  cb_error(req, API_ERROR_METHOD_NOT_REGISTERED, "method is not registered");
 }
 
 
 int main(int argc, char ** argv) {
+  // 注册方法名称
+  gHandleFunctions["get"]  = handle_get;
+  gHandleFunctions["ping"] = handle_ping;
+
   gDB = new KVDB("./rocksdb");
+  gDB->open();
+  {
+    // for test
+    gDB->set("test01", Strings::Format("value%lld", Time::CurrentTimeMill()));
+    gDB->set("test02", Strings::Format("value%lld", Time::CurrentTimeMill()));
+    gDB->set("test03", Strings::Format("value%lld", Time::CurrentTimeMill()));
+  }
 
   evbase_t * evbase = event_base_new();
   evhtp_t  * htp    = evhtp_new(evbase, NULL);
 
-  evhtp_set_cb(htp, "/",          cb_root,     NULL);
-  evhtp_set_cb(htp, "/get",       cb_get,      NULL);
+  evhtp_set_cb(htp, "/",   cb_root, NULL);
+  evhtp_set_cb(htp, "/kv", cb_kv,  NULL);
 
   evhtp_bind_socket(htp, "0.0.0.0", 8081, 1024);
 

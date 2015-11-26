@@ -72,7 +72,8 @@ void KVDB::getMayNotExist(const string &key, string &value) {
 }
 
 void KVDB::set(const string &key, const string &value) {
-  rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), key, value);
+  rocksdb::Slice sliceValue(value.data(), value.size());
+  rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), key, sliceValue);
   if (!s.ok()) {
     THROW_EXCEPTION_DBEX("set key fail, key: %s", key.c_str());
   }

@@ -8,9 +8,15 @@
 //
 namespace fbe;  // flatbuffers explorer
 
+// for test
+table FooBar {
+  id: int;
+  name: string;
+}
+
 table APIResponse {
   id: string;  // 默认返回 rocksdb-{timestamp,micro seconds}, eg. rocksdb-1448512810564
-  error_no: int = 0;  // 非零表示错误，零为正常
+  error_no: int;  // 非零表示错误，零为正常
   error_msg: string;
   offset_arr: [int];  // -1表示数据不存在
   length_arr: [int];  // offset为-1的项，其length为0
@@ -55,8 +61,8 @@ table Tx {
 
 // 02_{tx_hash}
 table TxSpentBy {
-  tx_hash: string;
   position: int;
+  tx_hash: string;
 }
 
 // 11_{block_hash}
@@ -84,17 +90,15 @@ table BlockTxsHash {
 
 // 20_{address}
 struct Address {
-  tx_count: int;
   received: long;
   sent: long;
+	tx_count: int;
   unconfirmed_tx_count: int;
   unconfirmed_received: long;
   unconfirmed_sent: long;
   unspent_tx_count: int;
   unspent_tx_index: int;
   last_confirmed_tx_idx: int;
-  created_at: uint;
-  updated_at: uint;
 }
 
 // 21_{address}_{index}

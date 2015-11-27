@@ -8,12 +8,6 @@
 //
 namespace fbe;  // flatbuffers explorer
 
-// for test
-table FooBar {
-  id: int;
-  name: string;
-}
-
 table APIResponse {
   id: string;  // 默认返回 rocksdb-{timestamp,micro seconds}, eg. rocksdb-1448512810564
   error_no: int;  // 非零表示错误，零为正常

@@ -8,7 +8,6 @@
 
 namespace fbe {
 
-struct FooBar;
 struct APIResponse;
 struct TxInput;
 struct TxOutput;
@@ -59,42 +58,6 @@ MANUALLY_ALIGNED_STRUCT(8) Address FLATBUFFERS_FINAL_CLASS {
   void mutate_last_confirmed_tx_idx(int32_t last_confirmed_tx_idx) { flatbuffers::WriteScalar(&last_confirmed_tx_idx_, last_confirmed_tx_idx); }
 };
 STRUCT_END(Address, 56);
-
-struct FooBar FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
-  int32_t id() const { return GetField<int32_t>(4, 0); }
-  bool mutate_id(int32_t id) { return SetField(4, id); }
-  const flatbuffers::String *name() const { return GetPointer<const flatbuffers::String *>(6); }
-  flatbuffers::String *mutable_name() { return GetPointer<flatbuffers::String *>(6); }
-  bool Verify(flatbuffers::Verifier &verifier) const {
-    return VerifyTableStart(verifier) &&
-           VerifyField<int32_t>(verifier, 4 /* id */) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 6 /* name */) &&
-           verifier.Verify(name()) &&
-           verifier.EndTable();
-  }
-};
-
-struct FooBarBuilder {
-  flatbuffers::FlatBufferBuilder &fbb_;
-  flatbuffers::uoffset_t start_;
-  void add_id(int32_t id) { fbb_.AddElement<int32_t>(4, id, 0); }
-  void add_name(flatbuffers::Offset<flatbuffers::String> name) { fbb_.AddOffset(6, name); }
-  FooBarBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
-  FooBarBuilder &operator=(const FooBarBuilder &);
-  flatbuffers::Offset<FooBar> Finish() {
-    auto o = flatbuffers::Offset<FooBar>(fbb_.EndTable(start_, 2));
-    return o;
-  }
-};
-
-inline flatbuffers::Offset<FooBar> CreateFooBar(flatbuffers::FlatBufferBuilder &_fbb,
-   int32_t id = 0,
-   flatbuffers::Offset<flatbuffers::String> name = 0) {
-  FooBarBuilder builder_(_fbb);
-  builder_.add_name(name);
-  builder_.add_id(id);
-  return builder_.Finish();
-}
 
 struct APIResponse FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   const flatbuffers::String *id() const { return GetPointer<const flatbuffers::String *>(4); }

@@ -569,7 +569,6 @@ void _insertBlock(KVDB &kvdb, const CBlock &blk, const int32_t height, const int
   assert(rewardFees >= 0);
 
   {
-    auto fb_createdAt = fbb.CreateString(date("%F %T"));
     auto fb_mrklRoot = fbb.CreateString(header.hashMerkleRoot.ToString());
     // next hash需要"填零"，保持长度一致, 当下一个块来临时，直接对那块内存进行改写操作
     auto fb_nextBlkHash = fbb.CreateString(uint256().ToString());
@@ -577,7 +576,7 @@ void _insertBlock(KVDB &kvdb, const CBlock &blk, const int32_t height, const int
 
     fbe::BlockBuilder blockBuilder(fbb);
     blockBuilder.add_bits(header.nBits);
-    blockBuilder.add_created_at(fb_createdAt);
+    blockBuilder.add_created_at((uint32_t)time(nullptr));
     blockBuilder.add_difficulty(difficulty);
     blockBuilder.add_mrkl_root(fb_mrklRoot);
     blockBuilder.add_next_block_hash(fb_nextBlkHash);
@@ -1198,8 +1197,6 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   //
   // build tx object
   //
-  auto createdAt = fbb.CreateString(date("%F %T"));
-
   fbe::TxBuilder txBuilder(fbb);
   txBuilder.add_height(-1);
   txBuilder.add_position_in_block(-1);
@@ -1214,7 +1211,7 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   txBuilder.add_outputs(fb_txObjOutputs);
   txBuilder.add_outputs_count((int)tx.vout.size());
   txBuilder.add_outputs_value(valueOut);
-  txBuilder.add_created_at(createdAt);
+  txBuilder.add_created_at((uint32_t)time(nullptr));
   fbb.Finish(txBuilder.Finish());
   // insert tx object, 需要紧跟 txBuilder.Finish() 函数，否则 fbb 内存会破坏
   _acceptTx_insertTxObject(kvdb_, txLog2->txHash_, &fbb);

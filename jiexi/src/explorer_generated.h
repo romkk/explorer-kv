@@ -248,8 +248,8 @@ struct Tx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   bool mutate_outputs_count(int32_t outputs_count) { return SetField(26, outputs_count); }
   int64_t outputs_value() const { return GetField<int64_t>(28, 0); }
   bool mutate_outputs_value(int64_t outputs_value) { return SetField(28, outputs_value); }
-  const flatbuffers::String *created_at() const { return GetPointer<const flatbuffers::String *>(30); }
-  flatbuffers::String *mutable_created_at() { return GetPointer<flatbuffers::String *>(30); }
+  uint32_t created_at() const { return GetField<uint32_t>(30, 0); }
+  bool mutate_created_at(uint32_t created_at) { return SetField(30, created_at); }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<int32_t>(verifier, 4 /* height */) &&
@@ -269,8 +269,7 @@ struct Tx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
            verifier.VerifyVectorOfTables(outputs()) &&
            VerifyField<int32_t>(verifier, 26 /* outputs_count */) &&
            VerifyField<int64_t>(verifier, 28 /* outputs_value */) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 30 /* created_at */) &&
-           verifier.Verify(created_at()) &&
+           VerifyField<uint32_t>(verifier, 30 /* created_at */) &&
            verifier.EndTable();
   }
 };
@@ -291,7 +290,7 @@ struct TxBuilder {
   void add_outputs(flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<TxOutput>>> outputs) { fbb_.AddOffset(24, outputs); }
   void add_outputs_count(int32_t outputs_count) { fbb_.AddElement<int32_t>(26, outputs_count, 0); }
   void add_outputs_value(int64_t outputs_value) { fbb_.AddElement<int64_t>(28, outputs_value, 0); }
-  void add_created_at(flatbuffers::Offset<flatbuffers::String> created_at) { fbb_.AddOffset(30, created_at); }
+  void add_created_at(uint32_t created_at) { fbb_.AddElement<uint32_t>(30, created_at, 0); }
   TxBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
   TxBuilder &operator=(const TxBuilder &);
   flatbuffers::Offset<Tx> Finish() {
@@ -314,7 +313,7 @@ inline flatbuffers::Offset<Tx> CreateTx(flatbuffers::FlatBufferBuilder &_fbb,
    flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<TxOutput>>> outputs = 0,
    int32_t outputs_count = 0,
    int64_t outputs_value = 0,
-   flatbuffers::Offset<flatbuffers::String> created_at = 0) {
+   uint32_t created_at = 0) {
   TxBuilder builder_(_fbb);
   builder_.add_outputs_value(outputs_value);
   builder_.add_inputs_value(inputs_value);
@@ -396,8 +395,8 @@ struct Block FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   bool mutate_reward_block(int64_t reward_block) { return SetField(26, reward_block); }
   int64_t reward_fees() const { return GetField<int64_t>(28, 0); }
   bool mutate_reward_fees(int64_t reward_fees) { return SetField(28, reward_fees); }
-  const flatbuffers::String *created_at() const { return GetPointer<const flatbuffers::String *>(30); }
-  flatbuffers::String *mutable_created_at() { return GetPointer<flatbuffers::String *>(30); }
+  uint32_t created_at() const { return GetField<uint32_t>(30, 0); }
+  bool mutate_created_at(uint32_t created_at) { return SetField(30, created_at); }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<int32_t>(verifier, 4 /* version */) &&
@@ -416,8 +415,7 @@ struct Block FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
            VerifyField<uint32_t>(verifier, 24 /* tx_count */) &&
            VerifyField<int64_t>(verifier, 26 /* reward_block */) &&
            VerifyField<int64_t>(verifier, 28 /* reward_fees */) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 30 /* created_at */) &&
-           verifier.Verify(created_at()) &&
+           VerifyField<uint32_t>(verifier, 30 /* created_at */) &&
            verifier.EndTable();
   }
 };
@@ -438,7 +436,7 @@ struct BlockBuilder {
   void add_tx_count(uint32_t tx_count) { fbb_.AddElement<uint32_t>(24, tx_count, 0); }
   void add_reward_block(int64_t reward_block) { fbb_.AddElement<int64_t>(26, reward_block, 0); }
   void add_reward_fees(int64_t reward_fees) { fbb_.AddElement<int64_t>(28, reward_fees, 0); }
-  void add_created_at(flatbuffers::Offset<flatbuffers::String> created_at) { fbb_.AddOffset(30, created_at); }
+  void add_created_at(uint32_t created_at) { fbb_.AddElement<uint32_t>(30, created_at, 0); }
   BlockBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
   BlockBuilder &operator=(const BlockBuilder &);
   flatbuffers::Offset<Block> Finish() {
@@ -461,7 +459,7 @@ inline flatbuffers::Offset<Block> CreateBlock(flatbuffers::FlatBufferBuilder &_f
    uint32_t tx_count = 0,
    int64_t reward_block = 0,
    int64_t reward_fees = 0,
-   flatbuffers::Offset<flatbuffers::String> created_at = 0) {
+   uint32_t created_at = 0) {
   BlockBuilder builder_(_fbb);
   builder_.add_reward_fees(reward_fees);
   builder_.add_reward_block(reward_block);

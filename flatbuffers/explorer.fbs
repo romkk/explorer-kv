@@ -51,7 +51,7 @@ table Tx {
   outputs: [TxOutput];
   outputs_count: int;
   outputs_value: long;
-  created_at: string;
+  created_at: uint;
 }
 
 // 02_{tx_hash}_{position}
@@ -75,7 +75,7 @@ table Block {
   tx_count: uint;
   reward_block: long;
   reward_fees: long;
-  created_at: string;
+  created_at: uint;
 }
 
 // 12_{block_hash}_{n}

@@ -57,7 +57,7 @@ void dbGetKeys(const vector<string> &keys,
   assert(keys.size() != 0);
   length.resize(keys.size(),  0);
   offset.resize(keys.size(), -1);
-  types.resize(keys.size(), "unknown");
+  types.resize(keys.size(), "");
 
   vector<string> buffer(keys.size());
   gDB->multiGet(keys, buffer);

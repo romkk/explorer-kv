@@ -57,7 +57,6 @@ public:
   void open();
   void close();
 
-  bool keyExist(const string &key);
   void del(const string &key);
 
   void get(const string &key, string &value);

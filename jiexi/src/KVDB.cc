@@ -54,15 +54,15 @@ void KVDB::open() {
   }
 }
 
-bool KVDB::keyExist(const string &key) {
-  string value;
-  // If the key definitely does not exist in the database, then this method
-  // returns false, else true.
-  if (db_->KeyMayExist(rocksdb::ReadOptions(), key, &value)) {
-    return true;
-  }
-  return false;
-}
+//bool KVDB::keyExist(const string &key) {
+//  string value;
+//  // If the key definitely does not exist in the database, then this method
+//  // returns false, else true.
+//  if (db_->KeyMayExist(rocksdb::ReadOptions(), key, &value)) {
+//    return true;
+//  }
+//  return false;
+//}
 
 void KVDB::del(const string &key) {
   rocksdb::Status s = db_->Delete(rocksdb::WriteOptions(), key);
@@ -124,9 +124,7 @@ void KVDB::getPrevTxOutputs(const CTransaction &tx,
   if (tx.IsCoinBase()) { return; }
 
   std::map<string /*tx hash*/, const fbe::Tx *> prevTxs;
-
-  vector<rocksdb::Slice> keys;
-  vector<string> keysStr;
+  vector<string> keys;
 
   {
     std::set<uint256> prevTxHashSet;
@@ -136,21 +134,28 @@ void KVDB::getPrevTxOutputs(const CTransaction &tx,
       }
       prevTxHashSet.insert(input.prevout.hash);
 
-      keysStr.push_back(KVDB_PREFIX_TX_OBJECT + input.prevout.hash.ToString());
-      keys.push_back(rocksdb::Slice(std::end(keysStr)->data(), std::end(keysStr)->size()));
+      // 01_{tx_hash}
+      keys.push_back(Strings::Format("%s%s", KVDB_PREFIX_TX_OBJECT,
+                                     input.prevout.hash.ToString().c_str()));
     }
   }
-
-  db_->MultiGet(rocksdb::ReadOptions(), keys, &prevTxsData);
+  multiGet(keys, prevTxsData);
 
   for (size_t i = 0; i < keys.size(); i++) {
     const fbe::Tx *prevTx = flatbuffers::GetRoot<fbe::Tx>(prevTxsData[i].data());
-    prevTxs.insert(std::make_pair(keys[i].ToString(), prevTx));
+    // key有前缀，移除之，得到 tx_hash
+    prevTxs.insert(std::make_pair(keys[i].substr(3), prevTx));
   }
+//
+//  for (auto it : prevTxs) {
+//    std::cout << it.first << std::endl;
+//  }
 
   for (const auto &input : tx.vin) {
     const uint256 &phash = input.prevout.hash;
     const uint32_t &ppos = input.prevout.n;
+//    assert(prevTxs.find(phash.ToString()) != prevTxs.end());
+//    std::cout << ppos << ": " << phash.ToString() << std::endl;
     const auto output = prevTxs[phash.ToString()]->outputs()->operator[](ppos);
     prevTxOutputs.push_back(output);
   }

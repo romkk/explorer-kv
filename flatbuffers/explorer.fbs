@@ -84,7 +84,7 @@ table BlockTxsHash {
 }
 
 // 20_{address}
-struct Address {
+table Address {
   received: long;
   sent: long;
 	tx_count: int;

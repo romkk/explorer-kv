@@ -405,7 +405,7 @@ void Parser::run() {
       if (!dbExplorer_.execute("START TRANSACTION")) {
         goto error;
       }
-cout << txLog2.toString() << endl;
+
       if (txLog2.type_ == LOG2TYPE_TX_ACCEPT) {
         //
         // acceptTx() 时，当前向交易不存在，我们则删除掉当前 txlog2，并抛出异常。
@@ -590,7 +590,7 @@ void _insertBlock(KVDB &kvdb, const CBlock &blk, const int32_t height, const int
     blockBuilder.add_timestamp(header.nTime);
     blockBuilder.add_tx_count((uint32_t)blk.vtx.size());
     blockBuilder.add_version(header.nVersion);
-    blockBuilder.Finish();
+    fbb.Finish(blockBuilder.Finish());
 
     // 11_{block_hash}, 需紧接 blockBuilder.Finish()
     const string key11 = Strings::Format("%s%s", KVDB_PREFIX_BLOCK_OBJECT, blockHash.ToString().c_str());
@@ -775,7 +775,7 @@ void _accpetTx_insertAddressTxs(KVDB &kvdb, class TxLog2 *txLog2,
       addressTxBuilder.add_tx_hash(txhash);
       addressTxBuilder.add_tx_height(-1);
       addressTxBuilder.add_ymd(-1);
-      addressTxBuilder.Finish();
+      fbb.Finish(addressTxBuilder.Finish());
 
       // 21_{address}_{010index}
       const string key21 = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_TX,
@@ -873,24 +873,23 @@ void Parser::writeNotificationLogs(const map<int64_t, int64_t> &addressBalance,
 
 // 插入交易的raw hex
 static void _acceptTx_insertRawHex(KVDB &kvdb, const string &txHex, const uint256 &hash) {
-  const string key = KVDB_PREFIX_TX_RAW_HEX + hash.ToString();
-  if (kvdb.keyExist(key)) {
-    return;  // already exist
-  }
-
-  vector<char> buff;
-  Hex2Bin(txHex.c_str(), txHex.length(), buff);
-  kvdb.set(key, (uint8_t *)buff.data(), buff.size());
+//  const string key = KVDB_PREFIX_TX_RAW_HEX + hash.ToString();
+//  if (kvdb.keyExist(key)) {
+//    return;  // already exist
+//  }
+//
+//  vector<char> buff;
+//  Hex2Bin(txHex.c_str(), txHex.length(), buff);
+//  kvdb.set(key, (uint8_t *)buff.data(), buff.size());
 }
 
 // 插入交易object对象
 static void _acceptTx_insertTxObject(KVDB &kvdb, const uint256 &hash,
                                      flatbuffers::FlatBufferBuilder *fbb) {
   const string key = KVDB_PREFIX_TX_OBJECT + hash.ToString();
-  if (kvdb.keyExist(key)) {
-    return;  // already exist
-  }
-
+//  if (kvdb.keyExist(key)) {
+//    return;  // already exist
+//  }
   kvdb.set(key, fbb->GetBufferPointer(), fbb->GetSize());
 }
 
@@ -900,13 +899,13 @@ static void _acceptTx_removeUnspentOutputs(KVDB &kvdb, const uint256 &hash, CTra
   assert(prevTxOutputs.size() == tx.vin.size());
 
   string key;
-  int n = -1;  // postion
+  int n = -1;
 
   for (auto fb_txoutput : prevTxOutputs) {
     n++;
-
     auto addresses = fb_txoutput->addresses();
-    const uint256 &prevHash = tx.vin[n].prevout.hash;
+    const uint256 &prevHash   = tx.vin[n].prevout.hash;
+    const int32_t prevPostion = tx.vin[n].prevout.n;
 
     // 绝大部分只有一个地址，但存在多个地址可能，所以不得不采用循环
     for (flatbuffers::uoffset_t j = 0; j < addresses->size(); j++) {
@@ -918,7 +917,7 @@ static void _acceptTx_removeUnspentOutputs(KVDB &kvdb, const uint256 &hash, CTra
       // 某个地址的未花费index
       // 24_{address}_{tx_hash}_{position}
       key = Strings::Format("%s%s_%s_%d", KVDB_PREFIX_ADDR_UNSPENT_INDEX,
-                            address.c_str(), prevHash.ToString().c_str(), (int32_t)n);
+                            address.c_str(), prevHash.ToString().c_str(), (int32_t)prevPostion);
       string value;
       kvdb.get(key, value);
       auto unspentOutputIdx = flatbuffers::GetRoot<fbe::AddressUnspentIdx>(value.data());
@@ -950,7 +949,7 @@ static void _acceptTx_insertSpendTxs(KVDB &kvdb, const uint256 &hash, CTransacti
     fbe::TxSpentByBuilder txSpentByBuilder(fbb);
     txSpentByBuilder.add_position(n);
     txSpentByBuilder.add_tx_hash(fb_spentHash);
-    txSpentByBuilder.Finish();
+    fbb.Finish(txSpentByBuilder.Finish());
     kvdb.set(key, fbb.GetBufferPointer(), fbb.GetSize());
   }
 }
@@ -977,7 +976,7 @@ static void _acceptTx_insertAddressUnspent(KVDB &kvdb, const int64_t nValue,
                                          address.c_str(), hash.ToString().c_str(), position);
     fbe::AddressUnspentIdxBuilder addressUnspentIdxBuilder(fbb);
     addressUnspentIdxBuilder.add_index(addressUnspentIndex);
-    addressUnspentIdxBuilder.Finish();
+    fbb.Finish(addressUnspentIdxBuilder.Finish());
     kvdb.set(key24, fbb.GetBufferPointer(), fbb.GetSize());
   }
 
@@ -992,7 +991,7 @@ static void _acceptTx_insertAddressUnspent(KVDB &kvdb, const int64_t nValue,
     addressUnspentBuilder.add_position2(position2);
     addressUnspentBuilder.add_tx_hash(fb_spentHash);
     addressUnspentBuilder.add_value(nValue);
-    addressUnspentBuilder.Finish();
+    fbb.Finish(addressUnspentBuilder.Finish());
     kvdb.set(key23, fbb.GetBufferPointer(), fbb.GetSize());
   }
 }
@@ -1086,48 +1085,47 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
     for (const auto &in : tx.vin) {
       n++;
       auto fb_ScriptHex = fbb.CreateString(HexStr(in.scriptSig.begin(), in.scriptSig.end()));
+      vector<flatbuffers::Offset<flatbuffers::String> > fb_addressesVec;
+      flatbuffers::Offset<flatbuffers::String> fb_ScriptAsm;
+      flatbuffers::Offset<flatbuffers::String> fb_prevTxHash;
+      int64_t prevValue;
+      int32_t prevPostion;
 
       if (txLog2->tx_.IsCoinBase()) {
         // 插入当前交易的inputs, coinbase tx的 scriptSig 不做decode，可能含有非法字符
         // 通常无法解析成功, 不解析 scriptAsm
         // coinbase无法担心其长度，bitcoind对coinbase tx的coinbase字段长度做了限制
-
-        fbe::TxInputBuilder txInputBuilder(fbb);
-        txInputBuilder.add_prev_position(-1);
-        txInputBuilder.add_prev_value(0);
-        txInputBuilder.add_script_hex(fb_ScriptHex);
-        txInputBuilder.add_sequence(in.nSequence);
-        fb_txInputs.push_back(txInputBuilder.Finish());
+        fb_ScriptAsm     = fbb.CreateString("");
+        fb_prevTxHash    = fbb.CreateString(uint256().ToString());
+        prevValue = 0;
+        prevPostion = -1;
       }
       else
       {
-        auto addresses      = prevTxOutputs[n]->addresses();
-        const int64_t value = prevTxOutputs[n]->value();
+        prevValue = prevTxOutputs[n]->value();
+        valueIn += prevValue;
 
-        vector<flatbuffers::Offset<flatbuffers::String> > fb_addressesVec;
+        auto addresses = prevTxOutputs[n]->addresses();
         for (flatbuffers::uoffset_t j = 0; j < addresses->size(); j++) {
           const string address = addresses->operator[](j)->str();
-          addressBalance[address] += value * -1;
+          addressBalance[address] += prevValue * -1;
           fb_addressesVec.push_back(fbb.CreateString(address));
         }
-        valueIn += value;
-
-        {
-          auto fb_prevAddresses = fbb.CreateVector(fb_addressesVec);
-          auto fb_prevTxHash    = fbb.CreateString(in.prevout.hash.ToString());
-          auto fb_ScriptAsm     = fbb.CreateString(in.scriptSig.ToString());
-
-          fbe::TxInputBuilder txInputBuilder(fbb);
-          txInputBuilder.add_prev_addresses(fb_prevAddresses);
-          txInputBuilder.add_prev_position(in.prevout.n);
-          txInputBuilder.add_prev_tx_hash(fb_prevTxHash);
-          txInputBuilder.add_prev_value(value);
-          txInputBuilder.add_script_asm(fb_ScriptAsm);
-          txInputBuilder.add_script_hex(fb_ScriptHex);
-          txInputBuilder.add_sequence(in.nSequence);
-          fb_txInputs.push_back(txInputBuilder.Finish());
-        }
+        fb_prevTxHash    = fbb.CreateString(in.prevout.hash.ToString());
+        fb_ScriptAsm     = fbb.CreateString(in.scriptSig.ToString());
+        prevPostion = in.prevout.n;
       }
+
+      auto fb_prevAddresses = fbb.CreateVector(fb_addressesVec);
+      fbe::TxInputBuilder txInputBuilder(fbb);
+      txInputBuilder.add_script_asm(fb_ScriptAsm);
+      txInputBuilder.add_script_hex(fb_ScriptHex);
+      txInputBuilder.add_sequence(in.nSequence);
+      txInputBuilder.add_prev_tx_hash(fb_prevTxHash);
+      txInputBuilder.add_prev_position(prevPostion);
+      txInputBuilder.add_prev_value(prevValue);
+      txInputBuilder.add_prev_addresses(fb_prevAddresses);
+      fb_txInputs.push_back(txInputBuilder.Finish());
     }
   }
   auto fb_txObjInputs = fbb.CreateVector(fb_txInputs);
@@ -1217,7 +1215,7 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   txBuilder.add_outputs_count((int)tx.vout.size());
   txBuilder.add_outputs_value(valueOut);
   txBuilder.add_created_at(createdAt);
-  txBuilder.Finish();
+  fbb.Finish(txBuilder.Finish());
   // insert tx object, 需要紧跟 txBuilder.Finish() 函数，否则 fbb 内存会破坏
   _acceptTx_insertTxObject(kvdb_, txLog2->txHash_, &fbb);
 
@@ -1252,13 +1250,21 @@ void Parser::flushAddressInfo(const map<string, int64_t> &addressBalance) {
   for (const auto &it : addressBalance) {
     const string &address = it.first;
     AddressInfo *addr = _getAddressInfo(kvdb_, address);
-    fbe::Address fb_address(addr->received_, addr->sent_, addr->txCount_,
-                            addr->unconfirmedTxCount_,
-                            addr->unconfirmedReceived_, addr->unconfirmedSent_,
-                            addr->unspentTxCount_, addr->unspentTxIndex_,
-                            addr->lastConfirmedTxIdx_);
+
+    fbe::AddressBuilder addressBuilder(fbb);
+    addressBuilder.add_received(addr->received_);
+    addressBuilder.add_sent(addr->sent_);
+    addressBuilder.add_tx_count(addr->txCount_);
+    addressBuilder.add_unconfirmed_tx_count(addr->unconfirmedTxCount_);
+    addressBuilder.add_unconfirmed_received(addr->unconfirmedReceived_);
+    addressBuilder.add_unconfirmed_sent(addr->unconfirmedSent_);
+    addressBuilder.add_unspent_tx_count(addr->unspentTxCount_);
+    addressBuilder.add_unspent_tx_index(addr->unspentTxIndex_);
+    addressBuilder.add_last_confirmed_tx_idx(addr->lastConfirmedTxIdx_);
+    fbb.Finish(addressBuilder.Finish());
+
     const string key = Strings::Format("%s%s", KVDB_PREFIX_ADDR_OBJECT, address.c_str());
-    kvdb_.set(key, (const uint8_t *)&fb_address, sizeof(fbe::Address));
+    kvdb_.set(key, fbb.GetBufferPointer(), fbb.GetSize());
   }
 }
 

@@ -21,44 +21,6 @@ struct AddressUnspent;
 struct AddressUnspentIdx;
 struct DoubleSpending;
 
-MANUALLY_ALIGNED_STRUCT(8) Address FLATBUFFERS_FINAL_CLASS {
- private:
-  int64_t received_;
-  int64_t sent_;
-  int32_t tx_count_;
-  int32_t unconfirmed_tx_count_;
-  int64_t unconfirmed_received_;
-  int64_t unconfirmed_sent_;
-  int32_t unspent_tx_count_;
-  int32_t unspent_tx_index_;
-  int32_t last_confirmed_tx_idx_;
-  int32_t __padding0;
-
- public:
-  Address(int64_t received, int64_t sent, int32_t tx_count, int32_t unconfirmed_tx_count, int64_t unconfirmed_received, int64_t unconfirmed_sent, int32_t unspent_tx_count, int32_t unspent_tx_index, int32_t last_confirmed_tx_idx)
-    : received_(flatbuffers::EndianScalar(received)), sent_(flatbuffers::EndianScalar(sent)), tx_count_(flatbuffers::EndianScalar(tx_count)), unconfirmed_tx_count_(flatbuffers::EndianScalar(unconfirmed_tx_count)), unconfirmed_received_(flatbuffers::EndianScalar(unconfirmed_received)), unconfirmed_sent_(flatbuffers::EndianScalar(unconfirmed_sent)), unspent_tx_count_(flatbuffers::EndianScalar(unspent_tx_count)), unspent_tx_index_(flatbuffers::EndianScalar(unspent_tx_index)), last_confirmed_tx_idx_(flatbuffers::EndianScalar(last_confirmed_tx_idx)), __padding0(0) { (void)__padding0; }
-
-  int64_t received() const { return flatbuffers::EndianScalar(received_); }
-  void mutate_received(int64_t received) { flatbuffers::WriteScalar(&received_, received); }
-  int64_t sent() const { return flatbuffers::EndianScalar(sent_); }
-  void mutate_sent(int64_t sent) { flatbuffers::WriteScalar(&sent_, sent); }
-  int32_t tx_count() const { return flatbuffers::EndianScalar(tx_count_); }
-  void mutate_tx_count(int32_t tx_count) { flatbuffers::WriteScalar(&tx_count_, tx_count); }
-  int32_t unconfirmed_tx_count() const { return flatbuffers::EndianScalar(unconfirmed_tx_count_); }
-  void mutate_unconfirmed_tx_count(int32_t unconfirmed_tx_count) { flatbuffers::WriteScalar(&unconfirmed_tx_count_, unconfirmed_tx_count); }
-  int64_t unconfirmed_received() const { return flatbuffers::EndianScalar(unconfirmed_received_); }
-  void mutate_unconfirmed_received(int64_t unconfirmed_received) { flatbuffers::WriteScalar(&unconfirmed_received_, unconfirmed_received); }
-  int64_t unconfirmed_sent() const { return flatbuffers::EndianScalar(unconfirmed_sent_); }
-  void mutate_unconfirmed_sent(int64_t unconfirmed_sent) { flatbuffers::WriteScalar(&unconfirmed_sent_, unconfirmed_sent); }
-  int32_t unspent_tx_count() const { return flatbuffers::EndianScalar(unspent_tx_count_); }
-  void mutate_unspent_tx_count(int32_t unspent_tx_count) { flatbuffers::WriteScalar(&unspent_tx_count_, unspent_tx_count); }
-  int32_t unspent_tx_index() const { return flatbuffers::EndianScalar(unspent_tx_index_); }
-  void mutate_unspent_tx_index(int32_t unspent_tx_index) { flatbuffers::WriteScalar(&unspent_tx_index_, unspent_tx_index); }
-  int32_t last_confirmed_tx_idx() const { return flatbuffers::EndianScalar(last_confirmed_tx_idx_); }
-  void mutate_last_confirmed_tx_idx(int32_t last_confirmed_tx_idx) { flatbuffers::WriteScalar(&last_confirmed_tx_idx_, last_confirmed_tx_idx); }
-};
-STRUCT_END(Address, 56);
-
 struct APIResponse FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   const flatbuffers::String *id() const { return GetPointer<const flatbuffers::String *>(4); }
   flatbuffers::String *mutable_id() { return GetPointer<flatbuffers::String *>(4); }
@@ -545,6 +507,83 @@ inline flatbuffers::Offset<BlockTxsHash> CreateBlockTxsHash(flatbuffers::FlatBuf
    flatbuffers::Offset<flatbuffers::String> hash_str = 0) {
   BlockTxsHashBuilder builder_(_fbb);
   builder_.add_hash_str(hash_str);
+  return builder_.Finish();
+}
+
+struct Address FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
+  int64_t received() const { return GetField<int64_t>(4, 0); }
+  bool mutate_received(int64_t received) { return SetField(4, received); }
+  int64_t sent() const { return GetField<int64_t>(6, 0); }
+  bool mutate_sent(int64_t sent) { return SetField(6, sent); }
+  int32_t tx_count() const { return GetField<int32_t>(8, 0); }
+  bool mutate_tx_count(int32_t tx_count) { return SetField(8, tx_count); }
+  int32_t unconfirmed_tx_count() const { return GetField<int32_t>(10, 0); }
+  bool mutate_unconfirmed_tx_count(int32_t unconfirmed_tx_count) { return SetField(10, unconfirmed_tx_count); }
+  int64_t unconfirmed_received() const { return GetField<int64_t>(12, 0); }
+  bool mutate_unconfirmed_received(int64_t unconfirmed_received) { return SetField(12, unconfirmed_received); }
+  int64_t unconfirmed_sent() const { return GetField<int64_t>(14, 0); }
+  bool mutate_unconfirmed_sent(int64_t unconfirmed_sent) { return SetField(14, unconfirmed_sent); }
+  int32_t unspent_tx_count() const { return GetField<int32_t>(16, 0); }
+  bool mutate_unspent_tx_count(int32_t unspent_tx_count) { return SetField(16, unspent_tx_count); }
+  int32_t unspent_tx_index() const { return GetField<int32_t>(18, 0); }
+  bool mutate_unspent_tx_index(int32_t unspent_tx_index) { return SetField(18, unspent_tx_index); }
+  int32_t last_confirmed_tx_idx() const { return GetField<int32_t>(20, 0); }
+  bool mutate_last_confirmed_tx_idx(int32_t last_confirmed_tx_idx) { return SetField(20, last_confirmed_tx_idx); }
+  bool Verify(flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<int64_t>(verifier, 4 /* received */) &&
+           VerifyField<int64_t>(verifier, 6 /* sent */) &&
+           VerifyField<int32_t>(verifier, 8 /* tx_count */) &&
+           VerifyField<int32_t>(verifier, 10 /* unconfirmed_tx_count */) &&
+           VerifyField<int64_t>(verifier, 12 /* unconfirmed_received */) &&
+           VerifyField<int64_t>(verifier, 14 /* unconfirmed_sent */) &&
+           VerifyField<int32_t>(verifier, 16 /* unspent_tx_count */) &&
+           VerifyField<int32_t>(verifier, 18 /* unspent_tx_index */) &&
+           VerifyField<int32_t>(verifier, 20 /* last_confirmed_tx_idx */) &&
+           verifier.EndTable();
+  }
+};
+
+struct AddressBuilder {
+  flatbuffers::FlatBufferBuilder &fbb_;
+  flatbuffers::uoffset_t start_;
+  void add_received(int64_t received) { fbb_.AddElement<int64_t>(4, received, 0); }
+  void add_sent(int64_t sent) { fbb_.AddElement<int64_t>(6, sent, 0); }
+  void add_tx_count(int32_t tx_count) { fbb_.AddElement<int32_t>(8, tx_count, 0); }
+  void add_unconfirmed_tx_count(int32_t unconfirmed_tx_count) { fbb_.AddElement<int32_t>(10, unconfirmed_tx_count, 0); }
+  void add_unconfirmed_received(int64_t unconfirmed_received) { fbb_.AddElement<int64_t>(12, unconfirmed_received, 0); }
+  void add_unconfirmed_sent(int64_t unconfirmed_sent) { fbb_.AddElement<int64_t>(14, unconfirmed_sent, 0); }
+  void add_unspent_tx_count(int32_t unspent_tx_count) { fbb_.AddElement<int32_t>(16, unspent_tx_count, 0); }
+  void add_unspent_tx_index(int32_t unspent_tx_index) { fbb_.AddElement<int32_t>(18, unspent_tx_index, 0); }
+  void add_last_confirmed_tx_idx(int32_t last_confirmed_tx_idx) { fbb_.AddElement<int32_t>(20, last_confirmed_tx_idx, 0); }
+  AddressBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
+  AddressBuilder &operator=(const AddressBuilder &);
+  flatbuffers::Offset<Address> Finish() {
+    auto o = flatbuffers::Offset<Address>(fbb_.EndTable(start_, 9));
+    return o;
+  }
+};
+
+inline flatbuffers::Offset<Address> CreateAddress(flatbuffers::FlatBufferBuilder &_fbb,
+   int64_t received = 0,
+   int64_t sent = 0,
+   int32_t tx_count = 0,
+   int32_t unconfirmed_tx_count = 0,
+   int64_t unconfirmed_received = 0,
+   int64_t unconfirmed_sent = 0,
+   int32_t unspent_tx_count = 0,
+   int32_t unspent_tx_index = 0,
+   int32_t last_confirmed_tx_idx = 0) {
+  AddressBuilder builder_(_fbb);
+  builder_.add_unconfirmed_sent(unconfirmed_sent);
+  builder_.add_unconfirmed_received(unconfirmed_received);
+  builder_.add_sent(sent);
+  builder_.add_received(received);
+  builder_.add_last_confirmed_tx_idx(last_confirmed_tx_idx);
+  builder_.add_unspent_tx_index(unspent_tx_index);
+  builder_.add_unspent_tx_count(unspent_tx_count);
+  builder_.add_unconfirmed_tx_count(unconfirmed_tx_count);
+  builder_.add_tx_count(tx_count);
   return builder_.Finish();
 }
 

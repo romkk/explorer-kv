@@ -40,9 +40,11 @@ typedef void (*handleFunction)(evhtp_request_t *req, const vector<string> &param
 // global vars
 KVDB *gDB = nullptr;
 std::unordered_map<string, handleFunction> gHandleFunctions;
+std::vector<const char *> gKeyTypes;  // 键对应的类型
 
 void output(evhtp_request_t *req, const string &queryId,
-            const vector<uint8_t> &data, const vector<int32_t> &length, const vector<int32_t> &offset,
+            const vector<uint8_t> &data, const vector<int32_t> &length,
+            const vector<int32_t> &offset, const vector<string> &types,
             const int32_t error_no = API_ERROR_SUCCESS, const char *error_msg = nullptr);
 
 
@@ -50,15 +52,25 @@ void output(evhtp_request_t *req, const string &queryId,
 
 
 void dbGetKeys(const vector<string> &keys,
-               vector<int32_t> &length, vector<int32_t> &offset, vector<uint8_t> &data) {
+               vector<int32_t> &length, vector<int32_t> &offset,
+               vector<string> &types, vector<uint8_t> &data) {
+  assert(keys.size() != 0);
   length.resize(keys.size(),  0);
   offset.resize(keys.size(), -1);
+  types.resize(keys.size(), "unknown");
 
   vector<string> buffer(keys.size());
   gDB->multiGet(keys, buffer);
   assert(buffer.size() == keys.size());
 
   for (size_t i = 0; i < keys.size(); i++) {
+    // 设置type
+    const int32_t keyPrefixInt = atoi(keys[i].substr(0, 2).c_str());
+    if (keyPrefixInt >= 0 && keyPrefixInt < gKeyTypes.size() && gKeyTypes[keyPrefixInt] != nullptr) {
+      types[i] = string(gKeyTypes[keyPrefixInt]);
+    }
+
+    // 设置data
     if (buffer[i].size() == 0) {
       continue;
     }
@@ -72,8 +84,9 @@ void dbGetKeys(const vector<string> &keys,
 void output_error(evhtp_request_t * req, const int32_t error_no, const char *error_msg) {
   vector<uint8_t> data;
   vector<int32_t> length, offset;
+  vector<string> types;
   output(req, Strings::Format("rocksdb-%lld", Time::CurrentTimeMill()),
-         data, length, offset, error_no, error_msg);
+         data, length, offset, types, error_no, error_msg);
   evhtp_send_reply(req, EVHTP_RES_400);
 }
 
@@ -84,21 +97,30 @@ void cb_root(evhtp_request_t * req, void *ptr) {
 }
 
 void output(evhtp_request_t *req, const string &queryId,
-            const vector<uint8_t> &data, const vector<int32_t> &length, const vector<int32_t> &offset,
+            const vector<uint8_t> &data, const vector<int32_t> &length,
+            const vector<int32_t> &offset, const vector<string> &types,
             const int32_t error_no, const char *error_msg) {
   flatbuffers::FlatBufferBuilder fbb;
   fbb.ForceDefaults(true);
+
+  vector<flatbuffers::Offset<flatbuffers::String> > fb_typesVec;
+  for (const auto &type : types) {
+    fb_typesVec.push_back(fbb.CreateString(type));
+  }
   auto fb_lengthArr = fbb.CreateVector(length);
   auto fb_offsetArr = fbb.CreateVector(offset);
+  auto fb_types     = fbb.CreateVector(fb_typesVec);
   auto fb_data      = fbb.CreateVector(data);
   auto fb_queryId   = fbb.CreateString(queryId);
   auto fb_errorMsg  = fbb.CreateString(error_msg != nullptr ? error_msg : "");
+
   fbe::APIResponseBuilder apiResp(fbb);
   apiResp.add_error_no(error_no);
   apiResp.add_error_msg(fb_errorMsg);
   apiResp.add_id(fb_queryId);
   apiResp.add_length_arr(fb_lengthArr);
   apiResp.add_offset_arr(fb_offsetArr);
+  apiResp.add_type_arr(fb_types);
   apiResp.add_data(fb_data);
   fbb.Finish(apiResp.Finish());
 
@@ -113,23 +135,26 @@ void handle_get(evhtp_request_t *req, const vector<string> &params, const string
 
   vector<uint8_t> data;
   vector<int32_t> length, offset;
+  vector<string> types;
   // params 即 keys
-  dbGetKeys(params, length, offset, data);
+  dbGetKeys(params, length, offset, types, data);
 
-  output(req, queryId, data, length, offset);
+  output(req, queryId, data, length, offset, types);
   evhtp_send_reply(req, EVHTP_RES_OK);
 }
 
 void handle_ping(evhtp_request_t *req, const vector<string> &params, const string &queryId) {
   vector<uint8_t> data;
   vector<int32_t> length, offset;
+  vector<string> types;
   const string s = "pong";
 
   data.insert(data.end(), s.begin(), s.end());
   length.push_back((int32_t)s.size());
   offset.push_back(0);
+  types.push_back("string");
 
-  output(req, queryId, data, length, offset);
+  output(req, queryId, data, length, offset, types);
   evhtp_send_reply(req, EVHTP_RES_OK);
 }
 
@@ -177,6 +202,21 @@ int main(int argc, char ** argv) {
   // 注册方法名称
   gHandleFunctions["get"]  = handle_get;
   gHandleFunctions["ping"] = handle_ping;
+
+  // 注册键值对应名称
+  gKeyTypes.resize(100, nullptr);
+  gKeyTypes[01] = "Tx";
+  gKeyTypes[02] = "TxSpentBy";
+  gKeyTypes[10] = "string";
+  gKeyTypes[11] = "Block";
+  gKeyTypes[12] = "string";
+  gKeyTypes[20] = "Address";
+  gKeyTypes[21] = "AddressTx";
+  gKeyTypes[22] = "string";
+  gKeyTypes[23] = "AddressUnspent";
+  gKeyTypes[24] = "AddressUnspentIdx";
+  gKeyTypes[30] = "DoubleSpending";
+  gKeyTypes[90] = "string";
 
   gDB = new KVDB("./rocksdb");
   gDB->open();

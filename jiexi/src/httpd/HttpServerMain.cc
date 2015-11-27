@@ -220,11 +220,23 @@ int main(int argc, char ** argv) {
 
   gDB = new KVDB("./rocksdb");
   gDB->open();
+
   {
     // for test
     gDB->set("test01", Strings::Format("value%lld", Time::CurrentTimeMill()));
     gDB->set("test02", Strings::Format("value%lld", Time::CurrentTimeMill()));
     gDB->set("test03", Strings::Format("value%lld", Time::CurrentTimeMill()));
+    gDB->set("10_0000385412", "00000000000000000e54946ab0461c08933fbdd9c930f3cf3339b0bc5ff778ac");
+
+    flatbuffers::FlatBufferBuilder fbb;
+    fbb.ForceDefaults(true);
+    auto hash = fbb.CreateString("205bfa48089a606d7c744d797bdb99cc07dd2e96949b6e1616d080a2ac2b5442");
+    fbe::TxSpentByBuilder txSpentByBuilder(fbb);
+    txSpentByBuilder.add_position(0);
+    txSpentByBuilder.add_tx_hash(hash);
+    fbb.Finish(txSpentByBuilder.Finish());
+    gDB->set("02_e752e1f1d03f66381e8df72573cc740c84055c000bb4be507835d6d4c5265a70_0",
+             fbb.GetBufferPointer(), fbb.GetSize());
   }
 
   evbase_t * evbase = event_base_new();

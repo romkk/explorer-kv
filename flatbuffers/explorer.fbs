@@ -54,7 +54,7 @@ table Tx {
   created_at: string;
 }
 
-// 02_{tx_hash}
+// 02_{tx_hash}_{position}
 table TxSpentBy {
   position: int;
   tx_hash: string;

@@ -102,10 +102,10 @@ public:
 
   AddressInfo(const int64_t lastUseIdx);
   AddressInfo(const int32_t txCount, const int64_t received, const int64_t sent,
-                     const int32_t unconfirmedTxCount, const int64_t unconfirmedReceived, const int64_t unconfirmedSent,
-                     const int32_t unspentTxCount, const int32_t unspentTxIndex,
-                     const int32_t lastConfirmedTxIdx,
-                     const int64_t lastUseIdx);
+              const int32_t unconfirmedTxCount, const int64_t unconfirmedReceived, const int64_t unconfirmedSent,
+              const int32_t unspentTxCount, const int32_t unspentTxIndex,
+              const int32_t lastConfirmedTxIdx,
+              const int64_t lastUseIdx);
   AddressInfo(const AddressInfo &a);
 };
 
@@ -241,6 +241,9 @@ private:
   void confirmTx  (class TxLog2 *txLog2);
   void unconfirmTx(class TxLog2 *txLog2);
   void rejectTx   (class TxLog2 *txLog2);
+
+  // flush address info
+  void flushAddressInfo(const map<string, int64_t> &addressBalance);
 
   bool hasAccepted(class TxLog2 *txLog2);
 

@@ -59,13 +59,13 @@ AddressInfo::AddressInfo(const int64_t lastUseIdx) {
   lastUseIdx_ = lastUseIdx;
 }
 AddressInfo::AddressInfo(const int32_t txCount,
-                                       const int64_t received, const int64_t sent,
-                                       const int32_t unconfirmedTxCount,
-                                       const int64_t unconfirmedReceived,
-                                       const int64_t unconfirmedSent,
-                                       const int32_t unspentTxCount, const int32_t unspentTxIndex,
-                                       const int32_t lastConfirmedTxIdx,
-                                       const int64_t lastUseIdx) {
+                         const int64_t received, const int64_t sent,
+                         const int32_t unconfirmedTxCount,
+                         const int64_t unconfirmedReceived,
+                         const int64_t unconfirmedSent,
+                         const int32_t unspentTxCount, const int32_t unspentTxIndex,
+                         const int32_t lastConfirmedTxIdx,
+                         const int64_t lastUseIdx) {
   txCount_  = txCount;
   received_ = received;
   sent_     = sent;
@@ -313,6 +313,8 @@ bool Parser::init() {
     return false;
   }
 
+  kvdb_.open();
+
   //
   // 90_tparser_unconfirmed_txs_count, 90_tparser_unconfirmed_txs_size
   //
@@ -322,13 +324,13 @@ bool Parser::init() {
 
     // unconfirmedTxsCount_
     key = "90_tparser_unconfirmed_txs_count";
-    kvdb_.get(key, value);
+    kvdb_.getMayNotExist(key, value);
     if (value.size() != 0) {
       unconfirmedTxsCount_ = atoi(value.c_str());
     }
 
     key = "90_tparser_unconfirmed_txs_size";
-    kvdb_.get(key, value);
+    kvdb_.getMayNotExist(key, value);
     if (value.size() != 0) {
       unconfirmedTxsSize_ = atoi64(value.c_str());
     }
@@ -380,8 +382,8 @@ void Parser::run() {
   string blockHash;  // 目前仅用在URL回调上
   int64_t lastTxLog2Id = 0;
 
-  // 检测 address_txs_<YYYYMM> 是否存在:  UNCONFIRM_TX_TIMESTAMP(2030-01-01)
-  checkTableAddressTxs(UNCONFIRM_TX_TIMESTAMP);
+//  // 检测 address_txs_<YYYYMM> 是否存在:  UNCONFIRM_TX_TIMESTAMP(2030-01-01)
+//  checkTableAddressTxs(UNCONFIRM_TX_TIMESTAMP);
 
   while (running_) {
     try {
@@ -394,8 +396,8 @@ void Parser::run() {
         continue;
       }
 
-      // 检测 address_txs_<YYYYMM> 是否存在
-      checkTableAddressTxs(txLog2.maxBlkTimestamp_);
+//      // 检测 address_txs_<YYYYMM> 是否存在
+//      checkTableAddressTxs(txLog2.maxBlkTimestamp_);
 
       //
       // DB START TRANSACTION
@@ -403,7 +405,7 @@ void Parser::run() {
       if (!dbExplorer_.execute("START TRANSACTION")) {
         goto error;
       }
-
+cout << txLog2.toString() << endl;
       if (txLog2.type_ == LOG2TYPE_TX_ACCEPT) {
         //
         // acceptTx() 时，当前向交易不存在，我们则删除掉当前 txlog2，并抛出异常。
@@ -415,29 +417,29 @@ void Parser::run() {
         if (txLog2.tx_.IsCoinBase()) {
           acceptBlock(&txLog2, blockHash);
         }
-        //
-        // 有可能因为前向交易不存在，导致该tx没有被accept，但log2producer认为accept过了
-        // 所以，这里检测一下，若没有accept，则执行accept操作
-        //
-        const int32_t blockHeight = txLog2.blkHeight_;
-        const int64_t blockId     = txLog2.blkId_;
-        const int32_t ymd         = txLog2.ymd_;
-        const int32_t maxBlkTs    = txLog2.maxBlkTimestamp_;
-        if (!hasAccepted(&txLog2)) {
-          txLog2.type_ = LOG2TYPE_TX_ACCEPT;
-          txLog2.blkHeight_ = -1;
-          txLog2.blkId_     = -1;
-          txLog2.ymd_       = UNCONFIRM_TX_YMD;
-          txLog2.maxBlkTimestamp_ = UNCONFIRM_TX_TIMESTAMP;
-
-          acceptTx(&txLog2);
-
-          txLog2.type_ = LOG2TYPE_TX_CONFIRM;
-          txLog2.blkHeight_ = blockHeight;
-          txLog2.blkId_     = blockId;
-          txLog2.ymd_       = ymd;
-          txLog2.maxBlkTimestamp_ = maxBlkTs;
-        }
+//        //
+//        // 有可能因为前向交易不存在，导致该tx没有被accept，但log2producer认为accept过了
+//        // 所以，这里检测一下，若没有accept，则执行accept操作
+//        //
+//        const int32_t blockHeight = txLog2.blkHeight_;
+//        const int64_t blockId     = txLog2.blkId_;
+//        const int32_t ymd         = txLog2.ymd_;
+//        const int32_t maxBlkTs    = txLog2.maxBlkTimestamp_;
+//        if (!hasAccepted(&txLog2)) {
+//          txLog2.type_ = LOG2TYPE_TX_ACCEPT;
+//          txLog2.blkHeight_ = -1;
+//          txLog2.blkId_     = -1;
+//          txLog2.ymd_       = UNCONFIRM_TX_YMD;
+//          txLog2.maxBlkTimestamp_ = UNCONFIRM_TX_TIMESTAMP;
+//
+//          acceptTx(&txLog2);
+//
+//          txLog2.type_ = LOG2TYPE_TX_CONFIRM;
+//          txLog2.blkHeight_ = blockHeight;
+//          txLog2.blkId_     = blockId;
+//          txLog2.ymd_       = ymd;
+//          txLog2.maxBlkTimestamp_ = maxBlkTs;
+//        }
         confirmTx(&txLog2);
       }
       else if (txLog2.type_ == LOG2TYPE_TX_UNCONFIRM) {
@@ -556,6 +558,7 @@ void _insertBlock(KVDB &kvdb, const CBlock &blk, const int32_t height, const int
   const string blockHashStr  = blockHash.ToString();
   const string prevBlockHash = header.hashPrevBlock.ToString();
   flatbuffers::FlatBufferBuilder fbb;
+  fbb.ForceDefaults(true);
 
   double difficulty = 0;
   BitsToDifficulty(header.nBits, difficulty);
@@ -704,22 +707,22 @@ static AddressInfo *_getAddressInfo(KVDB &kvdb, const string &address) {
     string value;
     AddressInfo *addressPtr;
 
-    kvdb.get(key, value);
+    kvdb.getMayNotExist(key, value);
     if (value.size() == 0) {
       // 未找到则新建一个
       addressPtr = new AddressInfo(lastUseIdx++);
     } else {
       auto fbAddress = flatbuffers::GetRoot<fbe::Address>(value.data());
       addressPtr = new AddressInfo(fbAddress->tx_count(),
-                                          fbAddress->received(),
-                                          fbAddress->sent(),
-                                          fbAddress->unconfirmed_tx_count(),
-                                          fbAddress->unconfirmed_received(),
-                                          fbAddress->unconfirmed_sent(),
-                                          fbAddress->unspent_tx_count(),
-                                          fbAddress->unspent_tx_index(),
-                                          fbAddress->last_confirmed_tx_idx(),
-                                          lastUseIdx++);
+                                   fbAddress->received(),
+                                   fbAddress->sent(),
+                                   fbAddress->unconfirmed_tx_count(),
+                                   fbAddress->unconfirmed_received(),
+                                   fbAddress->unconfirmed_sent(),
+                                   fbAddress->unspent_tx_count(),
+                                   fbAddress->unspent_tx_index(),
+                                   fbAddress->last_confirmed_tx_idx(),
+                                   lastUseIdx++);
     }
     _addrTxCache[address] = addressPtr;
 
@@ -751,6 +754,7 @@ void _accpetTx_insertAddressTxs(KVDB &kvdb, class TxLog2 *txLog2,
   // accept: 加入交易链尾，不涉及调整交易链
   //
   flatbuffers::FlatBufferBuilder fbb;
+  fbb.ForceDefaults(true);
   auto txhash = fbb.CreateString(txLog2->txHash_.ToString());
 
   for (auto &it : addressBalance) {
@@ -813,14 +817,14 @@ void Parser::addUnconfirmedTxPool(class TxLog2 *txLog2) {
   {
     const string key = "90_tparser_unconfirmed_txs_count";
     const string value = Strings::Format("%d", unconfirmedTxsCount_);
-    kvdb_.set(key, (const uint8_t *)value.data(), value.size());
+    kvdb_.set(key, value);
   }
 
   // unconfirmedTxsSize_
   {
     const string key = "90_tparser_unconfirmed_txs_size";
     const string value = Strings::Format("%lld", unconfirmedTxsSize_);
-    kvdb_.set(key, (const uint8_t *)value.data(), value.size());
+    kvdb_.set(key, value);
   }
 }
 
@@ -832,14 +836,14 @@ void Parser::removeUnconfirmedTxPool(class TxLog2 *txLog2) {
   {
     const string key = "90_tparser_unconfirmed_txs_count";
     const string value = Strings::Format("%d", unconfirmedTxsCount_);
-    kvdb_.set(key, (const uint8_t *)value.data(), value.size());
+    kvdb_.set(key, value);
   }
 
   // unconfirmedTxsSize_
   {
     const string key = "90_tparser_unconfirmed_txs_size";
     const string value = Strings::Format("%lld", unconfirmedTxsSize_);
-    kvdb_.set(key, (const uint8_t *)value.data(), value.size());
+    kvdb_.set(key, value);
   }
 }
 
@@ -931,6 +935,7 @@ static void _acceptTx_removeUnspentOutputs(KVDB &kvdb, const uint256 &hash, CTra
 // 生成被消费记录
 static void _acceptTx_insertSpendTxs(KVDB &kvdb, const uint256 &hash, CTransaction &tx) {
   flatbuffers::FlatBufferBuilder fbb;
+  fbb.ForceDefaults(true);
   string key;
   auto fb_spentHash = fbb.CreateString(hash.ToString());
 
@@ -955,6 +960,7 @@ static void _acceptTx_insertAddressUnspent(KVDB &kvdb, const int64_t nValue,
                                            const string &address, const uint256 &hash,
                                            const int32_t position, const int32_t position2) {
   flatbuffers::FlatBufferBuilder fbb;
+  fbb.ForceDefaults(true);
   auto fb_spentHash = fbb.CreateString(hash.ToString());
   AddressInfo *addr = _getAddressInfo(kvdb, address);
 
@@ -1063,11 +1069,14 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   map<string/* address */, int64_t/* balance_diff */> addressBalance;
 
   flatbuffers::FlatBufferBuilder fbb;
+  fbb.ForceDefaults(true);
   vector<flatbuffers::Offset<fbe::TxInput > > fb_txInputs;
   vector<flatbuffers::Offset<fbe::TxOutput> > fb_txOutputs;
 
   // 读取前向交易的输出
-  kvdb_.getPrevTxOutputs(tx, prevTxsData, prevTxOutputs);
+  if (!txLog2->tx_.IsCoinBase()) {
+    kvdb_.getPrevTxOutputs(tx, prevTxsData, prevTxOutputs);
+  }
 
   //
   // inputs
@@ -1194,6 +1203,8 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   auto createdAt = fbb.CreateString(date("%F %T"));
 
   fbe::TxBuilder txBuilder(fbb);
+  txBuilder.add_height(-1);
+  txBuilder.add_position_in_block(-1);
   txBuilder.add_is_coinbase(tx.IsCoinBase());
   txBuilder.add_version(tx.nVersion);
   txBuilder.add_lock_time(tx.nLockTime);
@@ -1217,10 +1228,15 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   _acceptTx_removeUnspentOutputs(kvdb_, txLog2->txHash_, tx, prevTxOutputs);
 
   // insert spent txs, 插入前向交易的花费记录
-  _acceptTx_insertSpendTxs(kvdb_, txLog2->txHash_, tx);
+  if (!txLog2->tx_.IsCoinBase()) {
+    _acceptTx_insertSpendTxs(kvdb_, txLog2->txHash_, tx);
+  }
 
   // 处理地址交易
   _accpetTx_insertAddressTxs(kvdb_, txLog2, addressBalance);
+
+  // 刷入地址变更信息
+  flushAddressInfo(addressBalance);
 
   // 处理未确认计数器和记录
   addUnconfirmedTxPool(txLog2);
@@ -1229,6 +1245,22 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
 //  writeNotificationLogs(addressBalance, txLog2);
 }
 
+void Parser::flushAddressInfo(const map<string, int64_t> &addressBalance) {
+  flatbuffers::FlatBufferBuilder fbb;
+  fbb.ForceDefaults(true);
+
+  for (const auto &it : addressBalance) {
+    const string &address = it.first;
+    AddressInfo *addr = _getAddressInfo(kvdb_, address);
+    fbe::Address fb_address(addr->received_, addr->sent_, addr->txCount_,
+                            addr->unconfirmedTxCount_,
+                            addr->unconfirmedReceived_, addr->unconfirmedSent_,
+                            addr->unspentTxCount_, addr->unspentTxIndex_,
+                            addr->lastConfirmedTxIdx_);
+    const string key = Strings::Format("%s%s", KVDB_PREFIX_ADDR_OBJECT, address.c_str());
+    kvdb_.set(key, (const uint8_t *)&fb_address, sizeof(fbe::Address));
+  }
+}
 
 int32_t prevYmd(const int32_t ymd) {
   if (ymd == UNCONFIRM_TX_YMD) {
@@ -1372,6 +1404,9 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
 
     kvdb_.set(key, value);
   }
+
+  // 刷入地址变更信息
+  flushAddressInfo(addressBalance);
 
   // 处理未确认计数器和记录
   removeUnconfirmedTxPool(txLog2);

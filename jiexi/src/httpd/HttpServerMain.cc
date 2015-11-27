@@ -31,6 +31,7 @@
 
 typedef void (*handleFunction)(evhtp_request_t *req, const vector<string> &params, const string &queryId);
 
+#define API_ERROR_SUCCESS                0
 #define API_ERROR_EMPTY_PARAMS           100
 #define API_ERROR_TOO_MANY_PARAMS        101
 #define API_ERROR_EMPTY_METHOD           102
@@ -39,6 +40,14 @@ typedef void (*handleFunction)(evhtp_request_t *req, const vector<string> &param
 // global vars
 KVDB *gDB = nullptr;
 std::unordered_map<string, handleFunction> gHandleFunctions;
+
+void output(evhtp_request_t *req, const string &queryId,
+            const vector<uint8_t> &data, const vector<int32_t> &length, const vector<int32_t> &offset,
+            const int32_t error_no = API_ERROR_SUCCESS, const char *error_msg = nullptr);
+
+
+////////////////////////////////////////////////////////////////////////////////
+
 
 void dbGetKeys(const vector<string> &keys,
                vector<int32_t> &length, vector<int32_t> &offset, vector<uint8_t> &data) {
@@ -60,45 +69,45 @@ void dbGetKeys(const vector<string> &keys,
   }
 }
 
-void cb_error(evhtp_request_t * req, const int32_t error_no, const char *error_msg) {
-  flatbuffers::FlatBufferBuilder fbb;
-  auto fb_errorMsg = fbb.CreateString(error_msg);
-
-  fbe::APIResponseBuilder apiResponseBuilder(fbb);
-  apiResponseBuilder.add_error_no(error_no);
-  apiResponseBuilder.add_error_msg(fb_errorMsg);
-  apiResponseBuilder.Finish();
-
-  evbuffer_add_reference(req->buffer_out, fbb.GetBufferPointer(), fbb.GetSize(), NULL, NULL);
+void output_error(evhtp_request_t * req, const int32_t error_no, const char *error_msg) {
+  vector<uint8_t> data;
+  vector<int32_t> length, offset;
+  output(req, Strings::Format("rocksdb-%lld", Time::CurrentTimeMill()),
+         data, length, offset, error_no, error_msg);
   evhtp_send_reply(req, EVHTP_RES_400);
 }
 
 void cb_root(evhtp_request_t * req, void *ptr) {
   string s = Strings::Format("btc.com Explorer API server, %s (UTC+0)", date("%F %T").c_str());
   evbuffer_add_reference(req->buffer_out, s.c_str(), s.length(), NULL, NULL);
-  evhtp_send_reply(req, EVHTP_RES_NOTFOUND);
+  evhtp_send_reply(req, EVHTP_RES_OK);
 }
 
 void output(evhtp_request_t *req, const string &queryId,
-            const vector<uint8_t> &data, const vector<int32_t> &length, const vector<int32_t> &offset) {
+            const vector<uint8_t> &data, const vector<int32_t> &length, const vector<int32_t> &offset,
+            const int32_t error_no, const char *error_msg) {
   flatbuffers::FlatBufferBuilder fbb;
+  fbb.ForceDefaults(true);
   auto fb_lengthArr = fbb.CreateVector(length);
   auto fb_offsetArr = fbb.CreateVector(offset);
   auto fb_data      = fbb.CreateVector(data);
   auto fb_queryId   = fbb.CreateString(queryId);
+  auto fb_errorMsg  = fbb.CreateString(error_msg != nullptr ? error_msg : "");
   fbe::APIResponseBuilder apiResp(fbb);
+  apiResp.add_error_no(error_no);
+  apiResp.add_error_msg(fb_errorMsg);
   apiResp.add_id(fb_queryId);
   apiResp.add_length_arr(fb_lengthArr);
   apiResp.add_offset_arr(fb_offsetArr);
   apiResp.add_data(fb_data);
-  apiResp.Finish();
+  fbb.Finish(apiResp.Finish());
 
   evbuffer_add_reference(req->buffer_out, fbb.GetBufferPointer(), fbb.GetSize(), NULL, NULL);
 }
 
 void handle_get(evhtp_request_t *req, const vector<string> &params, const string &queryId) {
   if (params.size() == 0) {
-    cb_error(req, API_ERROR_EMPTY_PARAMS, "params is empty");
+    output_error(req, API_ERROR_EMPTY_PARAMS, "params is empty");
     return;
   }
 
@@ -144,12 +153,12 @@ void cb_kv(evhtp_request_t *req, void *ptr) {
     }
   }
   if (params.size() > kMaxParamsCount) {
-    cb_error(req, API_ERROR_TOO_MANY_PARAMS,
+    output_error(req, API_ERROR_TOO_MANY_PARAMS,
              Strings::Format("too many params, max: %d", kMaxParamsCount).c_str());
     return;
   }
   if (queryMethod == nullptr) {
-    cb_error(req, API_ERROR_EMPTY_METHOD, "method is empty");
+    output_error(req, API_ERROR_EMPTY_METHOD, "method is empty");
     return;
   }
 
@@ -160,7 +169,7 @@ void cb_kv(evhtp_request_t *req, void *ptr) {
   }
 
   // method not found
-  cb_error(req, API_ERROR_METHOD_NOT_REGISTERED, "method is not registered");
+  output_error(req, API_ERROR_METHOD_NOT_REGISTERED, "method is not registered");
 }
 
 
@@ -184,6 +193,7 @@ int main(int argc, char ** argv) {
   evhtp_set_cb(htp, "/",   cb_root, NULL);
   evhtp_set_cb(htp, "/kv", cb_kv,  NULL);
 
+//  evhtp_use_threads(htp, NULL, 8, NULL);
   evhtp_bind_socket(htp, "0.0.0.0", 8081, 1024);
 
   event_base_loop(evbase, 0);  // while(1)

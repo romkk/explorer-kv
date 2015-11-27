@@ -35,6 +35,17 @@ KVDB::KVDB(const string &dbPath): db_(nullptr), kDBPath_(dbPath) {
   options_.create_if_missing = true;
 }
 
+KVDB::~KVDB() {
+  close();
+}
+
+void KVDB::close() {
+  if (db_ != nullptr) {
+    delete db_;
+    db_ = nullptr;
+  }
+}
+
 void KVDB::open() {
   // open DB
   rocksdb::Status s = rocksdb::DB::Open(options_, kDBPath_, &db_);
@@ -61,17 +72,22 @@ void KVDB::del(const string &key) {
 }
 
 void KVDB::get(const string &key, string &value) {
+  value.clear();
   rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &value);
   if (s.IsNotFound()) {
     THROW_EXCEPTION_DBEX("not found key: %s", key.c_str());
   }
+  LOG_DEBUG("[KVDB::get] key: %s, value size: %llu", key.c_str(), value.size());
 }
 
 void KVDB::getMayNotExist(const string &key, string &value) {
+  value.clear();
   db_->Get(rocksdb::ReadOptions(), key, &value);
+  LOG_DEBUG("[KVDB::getMayNotExist] key: %s, value size: %llu", key.c_str(), value.size());
 }
 
 void KVDB::set(const string &key, const string &value) {
+  LOG_DEBUG("[KVDB::set] key: %s, value size: %llu", key.c_str(), value.size());
   rocksdb::Slice sliceValue(value.data(), value.size());
   rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), key, sliceValue);
   if (!s.ok()) {
@@ -80,6 +96,7 @@ void KVDB::set(const string &key, const string &value) {
 }
 
 void KVDB::set(const string &key, const uint8_t *data, const size_t length) {
+  LOG_DEBUG("[KVDB::set] key: %s, value size: %llu", key.c_str(), length);
   rocksdb::Slice value((const char *)data, length);
   rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), key, value);
   if (!s.ok()) {
@@ -104,6 +121,8 @@ void KVDB::rangeGetLT(const string &key, const size_t limit, vector<vector<uint8
 void KVDB::getPrevTxOutputs(const CTransaction &tx,
                             vector<string> &prevTxsData,
                             vector<const fbe::TxOutput *> &prevTxOutputs) {
+  if (tx.IsCoinBase()) { return; }
+
   std::map<string /*tx hash*/, const fbe::Tx *> prevTxs;
 
   vector<rocksdb::Slice> keys;

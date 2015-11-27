@@ -52,9 +52,10 @@ class KVDB {
 
 public:
   KVDB(const string &dbPath);
-  ~KVDB() {}
+  ~KVDB();
 
   void open();
+  void close();
 
   bool keyExist(const string &key);
   void del(const string &key);

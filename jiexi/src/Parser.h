@@ -259,7 +259,7 @@ private:
 
   // 确认交易节点 & 反确认
   void _confirmAddressTxNode  (const string &address, AddressTxNode *node, AddressInfo *addr);
-  void _unconfirmAddressTxNode(AddressTxNode *node, AddressInfo *addr);
+  void _unconfirmAddressTxNode(const string &address, AddressTxNode *node, AddressInfo *addr);
 
   // 未确认交易池
   void addUnconfirmedTxPool   (class TxLog2 *txLog2);

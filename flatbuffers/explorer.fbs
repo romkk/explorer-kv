@@ -38,8 +38,8 @@ table TxOutput {
 
 // 01_{tx_hash}
 table Tx {
-  height: int;
-  position_in_block: int;
+  height: int;              // 未确认时为 -1
+  position_in_block: int;   // 未确认时为 -1
   is_coinbase: bool;
   version: int;
   lock_time: uint;
@@ -99,8 +99,8 @@ table Address {
 // 21_{address}_{index}
 table AddressTx {
   tx_hash: string;
-  tx_height: int;
-  ymd: int;
+  tx_height: int;  // 未确认为 -1
+  ymd: int;        // 未确认为 -1
   balance_diff: long;
 }
 

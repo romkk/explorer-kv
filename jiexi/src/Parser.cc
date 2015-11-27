@@ -1416,85 +1416,75 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
 }
 
 // unconfirm tx (address node)
-void Parser::_unconfirmAddressTxNode(AddressTxNode *node, AddressInfo *addr) {
-//  string sql;
-//
-//  //
-//  // 更新 address_txs_<yyyymm>.tx_height
-//  //
-//  sql = Strings::Format("UPDATE `address_txs_%d` SET `tx_height`=0,"
-//                        " `total_received`=0,`balance_final`=0,`updated_at`='%s' "
-//                        " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-//                        tableIdx_AddrTxs(node->ymd_), date("%F %T").c_str(),
-//                        node->addressId_, node->txId_);
-//  dbExplorer_.updateOrThrowEx(sql, 1);
-//
-//  //
-//  // 变更地址未确认额度等信息
-//  //
-//  const int64_t received = (node->balanceDiff_ > 0 ? node->balanceDiff_ : 0);
-//  const int64_t sent     = (node->balanceDiff_ < 0 ? node->balanceDiff_ * -1 : 0);
-//
-//  AddressTxNode prevNode;
-//  if (node->prevTxId_) {
-//    _getAddressTxNode(node->prevTxId_, addr, &prevNode);
-//  }
-//
-//  sql = Strings::Format("UPDATE `addresses_%04d` SET "
-//                        " `unconfirmed_received` = `unconfirmed_received` + %lld,"
-//                        " `unconfirmed_sent`     = `unconfirmed_sent`     + %lld,"
-//                        " `unconfirmed_tx_count` = `unconfirmed_tx_count` + 1,  "
-//                        " `last_confirmed_tx_ymd`=%d, `last_confirmed_tx_id`=%lld, "
-//                        " `updated_at`='%s' WHERE `id`=%lld ",
-//                        tableIdx_Addr(addr->addrId_),
-//                        received, sent,
-//                        (node->prevTxId_ ? prevNode.ymd_  : 0),
-//                        (node->prevTxId_ ? prevNode.txId_ : 0),
-//                        date("%F %T").c_str(), addr->addrId_);
-//  dbExplorer_.updateOrThrowEx(sql, 1);
-//
-//  addr->unconfirmedReceived_ += received;
-//  addr->unconfirmedSent_     += sent;
-//  addr->unconfirmedTxCount_++;
-//  addr->lastConfirmedTxId_  = (node->prevTxId_ ? prevNode.txId_ : 0);
-//  addr->lastConfirmedTxYmd_ = (node->prevTxId_ ? prevNode.ymd_  : 0);
+void Parser::_unconfirmAddressTxNode(const string &address, AddressTxNode *node, AddressInfo *addr) {
+  //
+  // 变更地址未确认额度等信息
+  //
+  {
+    const int64_t received = (node->balanceDiff_ > 0 ? node->balanceDiff_ : 0);
+    const int64_t sent     = (node->balanceDiff_ < 0 ? node->balanceDiff_ * -1 : 0);
+
+    addr->unconfirmedReceived_ += received;
+    addr->unconfirmedSent_     += sent;
+    addr->unconfirmedTxCount_++;
+    addr->lastConfirmedTxIdx_   = node->idx_ - 1;  // 全部未确认则为 -1
+    assert(addr->lastConfirmedTxIdx_ >= -1);
+  }
+
+  // update AddressTxNode
+  {
+    const string key = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_TX, address.c_str(), node->idx_);
+    string value;
+    kvdb_.get(key, value);
+    auto addressTx = flatbuffers::GetMutableRoot<fbe::AddressTx>((void *)value.data());
+    addressTx->mutate_ymd(-1);
+    addressTx->mutate_tx_height(-1);
+    kvdb_.set(key, value);
+
+    node->ymd_      = -1;
+    node->txHeight_ = -1;
+  }
 }
 
 // 取消交易的确认
 void Parser::unconfirmTx(class TxLog2 *txLog2) {
-//  //
-//  // unconfirm: 解除最后一个已确认的交易（重置块高度零等），必然是最近确认交易，不涉及调整交易链
-//  //
-//  string sql;
-//
-//  // 拿到关联地址的余额变更记录，可能需要调整交易链
-//  auto addressBalance = _getTxAddressBalance(txLog2->txHash_, txLog2->tx_);
-//
-//  for (auto &it : *addressBalance) {
-//    const int64_t addrID       = it.first;
-//    AddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
-//    AddressTxNode currNode;
-//    _getAddressTxNode(txLog2->txId_, addr, &currNode);
-//
-//    // 移动数据节点，从当前的至 UNCONFIRM_TX_YMD
-//    _updateTxNodeYmd(addr, &currNode, UNCONFIRM_TX_YMD);
-//    _getAddressTxNode(txLog2->txId_, addr, &currNode);
-//    assert(currNode.ymd_ == UNCONFIRM_TX_YMD);
-//
-//    // 反确认
-//    _unconfirmAddressTxNode(&currNode, addr);
-//  } /* /for */
-//
-//  // table.txs_xxxx，重置高度，不涉及变更YMD
-//  sql = Strings::Format("UPDATE `txs_%04d` SET `height`=0 WHERE `tx_id`=%lld ",
-//                        tableIdx_Tx(txLog2->txId_), txLog2->txId_);
-//  dbExplorer_.updateOrThrowEx(sql, 1);
-//
-//  // 处理未确认计数器和记录
-//  addUnconfirmedTxPool(txLog2);
-//
+  //
+  // unconfirm: 解除最后一个已确认的交易（重置块高度零等），必然是最近确认交易，不涉及调整交易链
+  //
+
+  auto addressBalance = getTxAddressBalance(txLog2->tx_);
+  for (auto &it : addressBalance) {
+    const string address      = it.first;
+
+    AddressInfo *addrInfo = _getAddressInfo(kvdb_, address);
+    AddressTxNode currNode;  // 当前节点
+    _getAddressTxNode(address, txLog2->txHash_, &currNode);
+
+    // 反确认
+    _unconfirmAddressTxNode(address, &currNode, addrInfo);
+  }
+
+  //
+  // update tx object
+  //
+  {
+    const string key = Strings::Format("%s%s", KVDB_PREFIX_TX_OBJECT, txLog2->txHash_.ToString().c_str());
+    string value;
+    kvdb_.get(key, value);
+    auto txObject = flatbuffers::GetMutableRoot<fbe::Tx>((void *)value.data());
+    txObject->mutate_position_in_block(-1);
+    txObject->mutate_height(-1);
+    kvdb_.set(key, value);
+  }
+
+  // 刷入地址变更信息
+  flushAddressInfo(addressBalance);
+
+  // 处理未确认计数器和记录
+  addUnconfirmedTxPool(txLog2);
+
 //  // notification logs
-////  writeNotificationLogs(*addressBalance, txLog2);
+//  writeNotificationLogs(*addressBalance, txLog2);
 }
 
 // 回滚一个块操作

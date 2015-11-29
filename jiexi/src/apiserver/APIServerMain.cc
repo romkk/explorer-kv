@@ -77,6 +77,10 @@ int main(int argc, char **argv) {
   writePid2FileOrExit(pidFile.c_str());
   // 防止程序开启两次
   boost::interprocess::file_lock pidFileLock(pidFile.c_str());
+  if (pidFileLock.try_lock() == false) {
+    LOG_FATAL("lock pid file fail");
+    return 1;
+  }
   
   fdLog = fopen(optLog, "a");
   if (!fdLog) {

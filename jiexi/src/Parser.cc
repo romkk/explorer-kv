@@ -1590,7 +1590,7 @@ void _rejectTxInputs(KVDB &kvdb,
     kvdb.del(key);
 
     // 重新插入 address_unspent_outputs_xxxx 相关记录
-    _unremoveUnspentOutputs(db, blockHeight, prevTxId, prevPos, ymd, addressBalance);
+//    _unremoveUnspentOutputs(db, blockHeight, prevTxId, prevPos, ymd, addressBalance);
   } /* /for */
 //
 //  // 删除 table.tx_inputs_xxxx 记录， coinbase tx 也有 tx_inputs_xxxx 记录
@@ -1782,7 +1782,7 @@ int32_t _getTxYmd(MySQLConnection &db, const int64_t txId) {
 void Parser::rejectTx(class TxLog2 *txLog2) {
   auto addressBalance = getTxAddressBalance(txLog2->tx_);
 
-  _rejectTxInputs  (dbExplorer_, txLog2, ymd, addressBalance);
+//  _rejectTxInputs  (dbExplorer_, txLog2, ymd, addressBalance);
 //  _rejectTxOutputs (dbExplorer_, txLog2, ymd, addressBalance);
 //  _rejectAddressTxs(txLog2, addressBalance);
 //  _rejectTx        (dbExplorer_, txLog2);

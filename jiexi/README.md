@@ -1,5 +1,11 @@
 # Explorer - 解析器
 
+## 依赖
+
+* FlatBuffers v1.2.0
+* RapidJSON   v1.0.2
+* RocksDB     版本见 CMakeLists.txt
+
 ## Install Guide
 ### ubuntu 12.04 / 14.04
 

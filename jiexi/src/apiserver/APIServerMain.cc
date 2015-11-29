@@ -1,4 +1,4 @@
-/**                                                                                                                                                               
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -30,19 +30,20 @@
 #include "../bitcoin/chainparams.h"
 
 #include "Common.h"
-#include "Parser.h"
+#include "HttpAPI.h"
+#include "KVDB.h"
 
-Parser *gParser = nullptr;
+APIServer *gAPIServer = nullptr;
 
 void handler(int sig) {
-  if (gParser) {
-    gParser->stop();
+  if (gAPIServer) {
+    gAPIServer->stop();
   }
 }
 
 void usage() {
   string u = "Usage:\n\n";
-  u += "\ttparser -c \"tparser.conf\" -l \"tparser.log\"\n";
+  u += "\tapiserver -c \"apiserver.conf\" -l \"apiserver.log\"\n";
   fprintf(stderr, "%s", u.c_str());
 }
 
@@ -51,7 +52,7 @@ int main(int argc, char **argv) {
   char *optConf = NULL;
   FILE *fdLog   = NULL;
   int c;
-
+  
   if (argc <= 1) {
     usage();
     return 1;
@@ -70,28 +71,28 @@ int main(int argc, char **argv) {
         exit(0);
     }
   }
-
+  
   // write pid to file
-  const string pidFile = "tparser.pid";
+  const string pidFile = "apiserver.pid";
   writePid2FileOrExit(pidFile.c_str());
   // 防止程序开启两次
   boost::interprocess::file_lock pidFileLock(pidFile.c_str());
-
+  
   fdLog = fopen(optLog, "a");
   if (!fdLog) {
     fprintf(stderr, "can't open file: %s\n", optLog);
     exit(1);
   }
   Log::SetDevice(fdLog);
-
+  
   LOG_INFO("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
-  LOG_INFO("---------------------- tparser start ----------------------");
+  LOG_INFO("---------------------- apiserver start ----------------------");
   if (!boost::filesystem::is_regular_file(optConf)) {
     LOG_FATAL("can't find config file: %s", optConf);
     exit(1);
   }
   Config::GConfig.parseConfig(optConf);
-
+  
   // check testnet
   if (Config::GConfig.getBool("testnet", false)) {
     SelectParams(CChainParams::TESTNET);
@@ -99,41 +100,34 @@ int main(int argc, char **argv) {
   } else {
     SelectParams(CChainParams::MAIN);
   }
-
+  
   // set log level
   if (IsDebug()) {
     Log::SetLevel(LOG_LEVEL_DEBUG);
   } else {
     Log::SetLevel((LogLevel)Config::GConfig.getInt("log.level", LOG_LEVEL_INFO));
   }
-
-//  // 打印bitcoin network防止配置错误。N秒钟的倒计时显示
-//  for (int i = 4; i >= 0; i--) {
-//    string s = Strings::Format("\rbitcoin network: %s, %02d...",
-//                               Config::GConfig.getBool("testnet", false) ? "testnet3" : "main",
-//                               i);
-//    fprintf(stdout, "%s", s.c_str());
-//    fflush(stdout);
-//    sleep(1);
-//  }
-
+  
   signal(SIGTERM, handler);
   signal(SIGINT,  handler);
 
+  gAPIServer = new APIServer();
+  
+  // open kv db
+  KVDB *kvdb = new KVDB(Config::GConfig.get("rocksdb.dir"));
+  kvdb->open();
+  
   try {
-    gParser = new Parser();
-
-    if (!gParser->init()) {
-      LOG_FATAL("Parser init failed");
-      exit(1);
-    }
-
-    gParser->run();
-
-    delete gParser;
-    gParser = nullptr;
-  } catch (std::exception & e) {
-    LOG_FATAL("tparser exception: %s", e.what());
+    gAPIServer->setKVDB(kvdb);
+    gAPIServer->init();
+    
+    gAPIServer->run();
+    
+    delete gAPIServer;
+    gAPIServer = nullptr;
+  }
+  catch (std::exception & e) {
+    LOG_FATAL("apiserver exception: %s", e.what());
     return 1;
   }
   return 0;

@@ -33,6 +33,9 @@ KVDB::KVDB(const string &dbPath): db_(nullptr), kDBPath_(dbPath) {
 
   // create the DB if it's not already present
   options_.create_if_missing = true;
+  
+  // 采用 range 方式获取数据最多为 N
+  kRangeMaxSize_ = 10000;
 }
 
 KVDB::~KVDB() {
@@ -115,8 +118,54 @@ void KVDB::multiGet(const vector<string> &keys, vector<string> &values) {
   db_->MultiGet(rocksdb::ReadOptions(), keysSlice, &values);
 }
 
-void KVDB::rangeGetGT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec) {}
-void KVDB::rangeGetLT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec) {}
+// [start, end]
+void KVDB::range(const string &start, const string &end, const int32_t limit,
+                 vector<string> &keys, vector<string> &values) {
+  keys.clear();
+  values.clear();
+  
+  if (strcmp(start.c_str(), end.c_str()) <= 0) {
+    rangeGT(start, end, limit > 0 ? limit : kRangeMaxSize_, keys, values);
+  } else {
+    rangeLT(start, end, limit > 0 ? limit : kRangeMaxSize_, keys, values);
+  }
+}
+
+// [start, end]: start < end
+void KVDB::rangeGT(const string &start, const string &end, const int32_t limit,
+                   vector<string> &keys, vector<string> &values) {
+  assert(strcmp(start.c_str(), end.c_str()) <= 0);
+  LOG_DEBUG("rangeGT, start: %s, end: %s, limit: %d", start.c_str(), end.c_str(), limit);
+  
+  auto it = db_->NewIterator(rocksdb::ReadOptions());
+  for (it->Seek(start);
+       it->Valid() && strcmp(it->key().ToString().c_str(), end.c_str()) <= 0;
+       it->Next()) {
+    keys.push_back(it->key().ToString());
+    values.push_back(std::string(it->value().data(), it->value().size()));
+    
+    // 检测数量
+    if (keys.size() >= limit || keys.size() > kRangeMaxSize_ /* MAX */) { break; }
+  }
+}
+
+// [start, end]: start > end
+void KVDB::rangeLT(const string &start, const string &end, const int32_t limit,
+                   vector<string> &keys, vector<string> &values) {
+  assert(strcmp(start.c_str(), end.c_str()) >= 0);
+  LOG_DEBUG("rangeLT, start: %s, end: %s, limit: %d", start.c_str(), end.c_str(), limit);
+  
+  auto it = db_->NewIterator(rocksdb::ReadOptions());
+  for (it->Seek(start);
+       it->Valid() && strcmp(it->key().ToString().c_str(), end.c_str()) >= 0;
+       it->Prev()) {
+    keys.push_back(it->key().ToString());
+    values.push_back(std::string(it->value().data(), it->value().size()));
+    
+    // 检测数量
+    if (keys.size() >= limit || keys.size() > kRangeMaxSize_ /* MAX */) { break; }
+  }
+}
 
 void KVDB::getPrevTxOutputs(const CTransaction &tx,
                             vector<string> &prevTxsData,

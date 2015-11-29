@@ -38,10 +38,26 @@
 #define API_ERROR_EMPTY_METHOD           102
 #define API_ERROR_METHOD_NOT_REGISTERED  103
 
+#define API_ERROR_INVALID_PARAMS   201
+
 class APIResponse {
 public:
 	vector<uint8_t> data_;
 	vector<int32_t> length_, offset_;
+};
+
+class APIInOut {
+public:
+  int32_t verbose_;
+  int32_t pageNo_;
+  int32_t pageSize_;
+  
+  int32_t errorNo_;
+  string  errorMsg_;
+  
+  string  data_;
+  
+  APIInOut(int32_t verbose, int32_t pageNo, int32_t pageSize);
 };
 
 class APIServer {
@@ -63,6 +79,15 @@ public:
   void init();
   void run();
   void stop();
+};
+
+class APIHandler {
+  KVDB *kvdb_;
+  
+public:
+  APIHandler(KVDB *kvdb);
+  
+  void address(APIInOut &resp, evhtp_request_t *req);
 };
 
 #endif

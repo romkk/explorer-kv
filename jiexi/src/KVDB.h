@@ -48,8 +48,13 @@
 class KVDB {
   rocksdb::DB *db_;
   rocksdb::Options options_;
-  string kDBPath_;
+  string  kDBPath_;
+  int32_t kRangeMaxSize_;
 
+  void rangeGT(const string &start, const string &end, const int32_t limit,
+               vector<string> &keys, vector<string> &values);
+  void rangeLT(const string &start, const string &end, const int32_t limit,
+               vector<string> &keys, vector<string> &values);
 public:
   KVDB(const string &dbPath);
   ~KVDB();
@@ -65,11 +70,11 @@ public:
   void set(const string &key, const string &value);
   void set(const string &key, const uint8_t *data, const size_t length);
 
-  void multiGet(const vector<string> &keys, vector<string> &bufferVec);
+  void multiGet(const vector<string> &keys, vector<string> &values);
 
-  void rangeGetGT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec);
-  void rangeGetLT(const string &key, const size_t limit, vector<vector<uint8_t> > &bufferVec);
-
+  void range(const string &start, const string &end, const int32_t limit,
+             vector<string> &keys, vector<string> &values);
+  
   void getPrevTxOutputs(const CTransaction &tx,
                         vector<string> &prevTxsData,
                         vector<const fbe::TxOutput *> &prevTxOutputs);

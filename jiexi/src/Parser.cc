@@ -1529,6 +1529,7 @@ void _unremoveUnspentOutputs(MySQLConnection &db,
                              const int64_t txId, const int32_t position,
                              const int32_t ymd,
                              map<int64_t, int64_t> &addressBalance) {
+  
 //  MySQLResult res;
 //  string sql;
 //  string tableName;
@@ -1568,34 +1569,29 @@ void _unremoveUnspentOutputs(MySQLConnection &db,
 
 // 回滚交易 inputs
 static
-void _rejectTxInputs(MySQLConnection &db,
+void _rejectTxInputs(KVDB &kvdb,
                      class TxLog2 *txLog2,
-                     const int32_t ymd,
                      map<int64_t, int64_t> &addressBalance) {
-//  const CTransaction &tx = txLog2->tx_;
-//  const int32_t blockHeight = txLog2->blkHeight_;
-//  const int64_t txId = txLog2->txId_;
-//
-//  string sql;
-//  for (auto &in : tx.vin) {
-//    // 非 coinbase 无需处理前向交易
-//    if (tx.IsCoinBase()) { continue; }
-//
-//    uint256 prevHash = in.prevout.hash;
-//    int64_t prevTxId = txHash2Id(db, prevHash);
-//    int32_t prevPos  = (int32_t)in.prevout.n;
-//
-//    // 将前向交易标记为未花费
-//    sql = Strings::Format("UPDATE `tx_outputs_%04d` SET "
-//                          " `spent_tx_id`=0, `spent_position`=-1"
-//                          " WHERE `tx_id`=%lld AND `position`=%d "
-//                          " AND `spent_tx_id`<>0 AND `spent_position`<>-1 ",
-//                          prevTxId % 100, prevTxId, prevPos);
-//    db.updateOrThrowEx(sql, 1);
-//
-//    // 重新插入 address_unspent_outputs_xxxx 相关记录
-//    _unremoveUnspentOutputs(db, blockHeight, prevTxId, prevPos, ymd, addressBalance);
-//  } /* /for */
+  const CTransaction &tx = txLog2->tx_;
+  const int32_t blockHeight = txLog2->blkHeight_;
+  string key;
+
+  for (auto &in : tx.vin) {
+    // 非 coinbase 无需处理前向交易
+    if (tx.IsCoinBase()) { continue; }
+
+    const uint256 prevHash = in.prevout.hash;
+    const int32_t prevPos  = (int32_t)in.prevout.n;
+
+    // 将前向交易的花费记录删除
+    // 02_{tx_hash}_{position}
+    key = Strings::Format("%s%s_%d", KVDB_PREFIX_TX_SPEND,
+                          prevHash.ToString().c_str(), (int32_t)prevPos);
+    kvdb.del(key);
+
+    // 重新插入 address_unspent_outputs_xxxx 相关记录
+    _unremoveUnspentOutputs(db, blockHeight, prevTxId, prevPos, ymd, addressBalance);
+  } /* /for */
 //
 //  // 删除 table.tx_inputs_xxxx 记录， coinbase tx 也有 tx_inputs_xxxx 记录
 //  sql = Strings::Format("DELETE FROM `tx_inputs_%04d` WHERE `tx_id`=%lld ",
@@ -1784,10 +1780,9 @@ int32_t _getTxYmd(MySQLConnection &db, const int64_t txId) {
 
 // 回滚一个交易, reject 的交易都是未确认的交易
 void Parser::rejectTx(class TxLog2 *txLog2) {
-//  map<int64_t, int64_t> addressBalance;
-//  const int32_t ymd = _getTxYmd(dbExplorer_, txLog2->txId_);
-//
-//  _rejectTxInputs  (dbExplorer_, txLog2, ymd, addressBalance);
+  auto addressBalance = getTxAddressBalance(txLog2->tx_);
+
+  _rejectTxInputs  (dbExplorer_, txLog2, ymd, addressBalance);
 //  _rejectTxOutputs (dbExplorer_, txLog2, ymd, addressBalance);
 //  _rejectAddressTxs(txLog2, addressBalance);
 //  _rejectTx        (dbExplorer_, txLog2);

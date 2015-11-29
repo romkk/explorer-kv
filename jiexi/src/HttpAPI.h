@@ -88,6 +88,13 @@ public:
   APIHandler(KVDB *kvdb);
   
   void address(APIInOut &resp, evhtp_request_t *req);
+  void getTx(const string &txHash, string &buf, int32_t verbose);
+  
+  inline void removeLastComma(string &buf) {
+    if (buf.size() > 0 && buf.back() == ',') {
+      buf.resize(buf.size() - 1);
+    }
+  }
 };
 
 #endif

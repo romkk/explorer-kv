@@ -307,15 +307,90 @@ void APIHandler::address(APIInOut &resp, evhtp_request_t *req) {
       buf.append(Strings::Format("\"hash\":\"%s\",", fbAddressTx->tx_hash()->c_str()));
       buf.append(Strings::Format("\"height\":%d,",   fbAddressTx->tx_height()));
       buf.append(Strings::Format("\"ymd\":%d,",      fbAddressTx->ymd()));
-      buf.append(Strings::Format("\"balance_diff\":%lld", fbAddressTx->balance_diff()));
+      buf.append(Strings::Format("\"balance_diff\":%lld,", fbAddressTx->balance_diff()));
+      getTx(fbAddressTx->tx_hash()->str(), buf, resp.verbose_);
       buf.append("},");
     }
-    buf.resize(buf.size() - 1);  // remove last ','
+    removeLastComma(buf);
   }
   buf.append("]");  // /txs
   buf.append("}");
 }
 
+void APIHandler::getTx(const string &txHash, string &buf, int32_t verbose) {
+  string kvKey = Strings::Format("%s%s", KVDB_PREFIX_TX_OBJECT, txHash.c_str());
+  string kvValue;
+  
+  kvdb_->get(kvKey, kvValue);
+  auto fbTx = flatbuffers::GetRoot<fbe::Tx>(kvValue.data());
+  buf.append(Strings::Format("\"hash\":\"%s\",", txHash.c_str()));
+  buf.append(Strings::Format("\"block_height\":%d,", fbTx->height()));
+  buf.append(Strings::Format("\"is_coinbase\":%s,",  fbTx->is_coinbase() ? "true" : "false"));
+  buf.append(Strings::Format("\"version\":%d,",      fbTx->version()));
+  buf.append(Strings::Format("\"lock_time\":%u,",    fbTx->lock_time()));
+  buf.append(Strings::Format("\"size\":%d,",         fbTx->size()));
+  buf.append(Strings::Format("\"fee\":%lld,",        fbTx->fee()));
+  buf.append(Strings::Format("\"inputs_count\":%d,",    fbTx->inputs_count()));
+  buf.append(Strings::Format("\"inputs_value\":%lld,",  fbTx->inputs_value()));
+  buf.append(Strings::Format("\"outputs_count\":%d,",   fbTx->outputs_count()));
+  buf.append(Strings::Format("\"outputs_value\":%lld,", fbTx->outputs_value()));
+  
+  //
+  // inputs
+  //
+  buf.append("\"inputs\":[");
+  for (auto input : *fbTx->inputs()) {
+    buf.append("{");
+    buf.append(Strings::Format("\"script_asm\":\"%s\",", input->script_asm()->c_str()));
+    buf.append(Strings::Format("\"script_hex\":\"%s\",", input->script_hex()->c_str()));
+    buf.append(Strings::Format("\"sequence\":%u,", (uint32_t)input->sequence()));
+    
+    if (!fbTx->is_coinbase()) {
+      buf.append(Strings::Format("\"prev_hash\":\"%s\",", input->prev_tx_hash()->c_str()));
+      buf.append(Strings::Format("\"prev_position\":%d,", input->prev_position()));
+      buf.append(Strings::Format("\"prev_value\":%lld,",  input->prev_value()));
+      buf.append("\"prev_addr\":[");
+      if (input->prev_addresses()->size()) {
+        for (auto addr : *input->prev_addresses()) {
+          buf.append(Strings::Format("\"%s\"", addr->c_str()));
+        }
+      }
+      removeLastComma(buf);
+      buf.append("]");
+    }
+    removeLastComma(buf);
+    buf.append("},");
+  }
+  removeLastComma(buf);
+  buf.append("],");  // /inputs
+  
+  //
+  // outputs
+  //
+  buf.append("\"outputs\":[");
+  for (auto output : *fbTx->outputs()) {
+    buf.append("{");
+    // address
+    buf.append("\"address\":[");
+    if (output->addresses()->size()) {
+      for (auto addr : *output->addresses()) {
+        buf.append(Strings::Format("\"%s\"", addr->c_str()));
+      }
+    }
+    removeLastComma(buf);
+    buf.append("],");
+    
+    buf.append(Strings::Format("\"value\":%lld,",         output->value()));
+    buf.append(Strings::Format("\"script_asm\":\"%s\",",  output->script_asm()->c_str()));
+    buf.append(Strings::Format("\"script_hex\":\"%s\",",  output->script_hex()->c_str()));
+    buf.append(Strings::Format("\"script_type\":\"%s\",", output->script_type()->c_str()));
+    
+    removeLastComma(buf);
+    buf.append("},");
+  }
+  removeLastComma(buf);
+  buf.append("]");  // /outputs
+}
 
 /////////////////////////////////// APIServer //////////////////////////////////
 

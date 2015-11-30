@@ -15,7 +15,7 @@ table APIResponse {
   offset_arr: [int];     // -1表示数据不存在
   length_arr: [int];     // offset为-1的项，其length为0
   type_arr  : [string];  // key对应的类型，未知为空字符串""
-  key_arr  :  [string];  // key值，range操作时放入返回的key
+  key_arr  :  [string];  // 查询的keys
   data: [ubyte]; 
 }
 

@@ -242,7 +242,7 @@ void cb_api(evhtp_request_t *req, void *ptr) {
 }
 
 void cb_kv(evhtp_request_t *req, void *ptr) {
-  static const int32_t kMaxParamsCount = 1000;
+  static const int32_t kMaxParamsCount = 2000;
   
   const char *queryMethod = evhtp_kv_find(req->uri->query, "method");
   const char *queryParams = evhtp_kv_find(req->uri->query, "params");

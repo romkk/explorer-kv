@@ -37,8 +37,7 @@
 #include "bitcoin/base58.h"
 #include "bitcoin/util.h"
 
-static void _getRawTxFromDisk(const uint256 &hash, const int32_t height,
-                              string *hex, int64_t *txId);
+
 static void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo,
                         FILE *f, FileWriter *fwriter);
 static void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f, FileWriter *fwriter);
@@ -162,7 +161,7 @@ void getRawBlockFromDisk(const int32_t height, string *rawHex,
     for (auto &it2 : blkCache) {
       delete it2.second;
     }
-    map<int32_t, RawBlock*>().swap(blkCache);  // clear
+    blkCache.clear();  // clear
 
     // 载入数据
     LOG_INFO("try load raw block data from disk...");
@@ -198,10 +197,7 @@ AddrHandler::AddrHandler(const size_t addrCount, const string &filePreAddr,
     if (i > addrCount_) {
       THROW_EXCEPTION_DBEX("pre address count not match, i: %lld, addrCount_: %lld", i, addrCount_);
     }
-    vector<string> arr = split(line, ',');
-
-    addrInfo_[i].addrId_ = atoi64(arr[1]);
-    strncpy(addrInfo_[i].addrStr_, arr[0].c_str(), arr[0].length());
+    strncpy(addrInfo_[i].addrStr_, line.c_str(), line.length());
   }
   // sort for binary search
   std::sort(addrInfo_.begin(), addrInfo_.end());
@@ -209,7 +205,7 @@ AddrHandler::AddrHandler(const size_t addrCount, const string &filePreAddr,
 
 vector<struct AddrInfo>::iterator AddrHandler::find(const string &address) {
   AddrInfo needle;
-  strncpy(needle.addrStr_, address.c_str(), 35);
+  strncpy(needle.addrStr_, address.c_str(), 35);  // 地址最长35字符
   vector<struct AddrInfo>::iterator it;
 
   //
@@ -220,14 +216,13 @@ vector<struct AddrInfo>::iterator AddrHandler::find(const string &address) {
     THROW_EXCEPTION_DBEX("AddrHandler can't find AddrInfo by address: %s", address.c_str());
   }
   it--;
-  if (strncmp(it->addrStr_, address.c_str(), 36) != 0) {
-    THROW_EXCEPTION_DBEX("AddrHandler can't find AddrInfo by address: %s", address.c_str());
-  }
-  return it;
-}
 
-int64_t AddrHandler::getAddressId(const string &address) {
-  return find(address)->addrId_;
+//  // assert test
+//  if (strncmp(it->addrStr_, address.c_str(), 36) != 0) {
+//    THROW_EXCEPTION_DBEX("AddrHandler can't find AddrInfo by address: %s", address.c_str());
+//  }
+
+  return it;
 }
 
 void AddrHandler::dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs,
@@ -236,21 +231,21 @@ void AddrHandler::dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs,
   string s;
 
   for (auto it = addrInfo_.begin(); it != addrInfo_.end(); it++) {
-    // address tx
-    _saveAddrTx(it, fAddrTxs[tableIdx_AddrTxs(it->addrTx_.ymd_)], fwriter_);
-
-    // table.addresses_0000
-    //  `id`, `address`, `tx_count`, `total_received`, `total_sent`,
-    //  `unconfirmed_received`, `unconfirmed_sent`,`unconfirmed_tx_count`, `begin_tx_id`, `begin_tx_ymd`,
-    //  `end_tx_id`, `end_tx_ymd`, `last_confirmed_tx_id`,
-    //  `last_confirmed_tx_ymd`, `created_at`, `updated_at`
-    s = Strings::Format("%lld,%s,%lld,%lld,%lld,"
-                        "0,0,0,%lld,%d,%lld,%d,%lld,%d,%s,%s",
-                        it->addrId_, it->addrStr_, it->idx_, it->totalReceived_,
-                        it->totalSent_, it->beginTxId_, it->beginTxYmd_,
-                        it->endTxId_, it->endTxYmd_, it->endTxId_, it->endTxYmd_,
-                        now.c_str(), now.c_str());
-    fwriter_->append(s, fAddrs_[tableIdx_Addr(it->addrId_)]);
+//    // address tx
+//    _saveAddrTx(it, fAddrTxs[tableIdx_AddrTxs(it->addrTx_.ymd_)], fwriter_);
+//
+//    // table.addresses_0000
+//    //  `id`, `address`, `tx_count`, `total_received`, `total_sent`,
+//    //  `unconfirmed_received`, `unconfirmed_sent`,`unconfirmed_tx_count`, `begin_tx_id`, `begin_tx_ymd`,
+//    //  `end_tx_id`, `end_tx_ymd`, `last_confirmed_tx_id`,
+//    //  `last_confirmed_tx_ymd`, `created_at`, `updated_at`
+//    s = Strings::Format("%lld,%s,%lld,%lld,%lld,"
+//                        "0,0,0,%lld,%d,%lld,%d,%lld,%d,%s,%s",
+//                        it->addrId_, it->addrStr_, it->idx_, it->totalReceived_,
+//                        it->totalSent_, it->beginTxId_, it->beginTxYmd_,
+//                        it->endTxId_, it->endTxYmd_, it->endTxId_, it->endTxYmd_,
+//                        now.c_str(), now.c_str());
+//    fwriter_->append(s, fAddrs_[tableIdx_Addr(it->addrId_)]);
   }
 }
 
@@ -270,10 +265,7 @@ TxHandler::TxHandler(const size_t txCount, const string &file,
     if (i > txCount_) {
       THROW_EXCEPTION_DBEX("pre tx count not match, i: %lld, txCount_: %lld", i, txCount_);
     }
-    vector<string> arr = split(line, ',');
-
-    txInfo_[i].hash256_ = uint256(arr[0]);
-    txInfo_[i].txId_    = atoi64(arr[1].c_str());
+    txInfo_[i].hash256_ = uint256(line);
     // blockHeight_ 尚未设置，后面设置output时会补上
   }
   // sort for binary search
@@ -350,8 +342,6 @@ void TxHandler::addOutputs(const CTransaction &tx,
       i++;
       const string s = CBitcoinAddress(addr).ToString();
       ptr->address_.push_back(s);
-      ptr->addressIds_.push_back(addrHandler->getAddressId(s));
-
       // 增加每个地址的余额
       addressBalance[s] += out.nValue;
     }
@@ -408,80 +398,76 @@ class TxOutput *TxHandler::getOutput(const uint256 &hash, const int32_t n) {
 }
 
 void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f, FileWriter *fwriter) {
-  // table.tx_outputs_xxxx
-  //   `tx_id`,`position`,`address`,`address_ids`,`value`,`output_script_asm`,
-  //   `output_script_hex`,`output_script_type`,
-  //   `spent_tx_id`,`spent_position`,`created_at`,`updated_at`
-  string s;
-  const string now = date("%F %T");
-  TxOutput *poutput = *(txInfo.outputs_ + n);
-
-  // 处理地址
-  string addressStr, addressIdsStr;
-  for (int i = 0; i < poutput->address_.size(); i++) {
-    const string addrStr = poutput->address_[i];
-    addressStr    += Strings::Format("%s|", addrStr.c_str());
-    addressIdsStr += Strings::Format("%lld|", poutput->addressIds_[i]);
-  }
-  if (addressStr.length()) {  // 移除最后一个|
-    addressStr.resize(addressStr.length() - 1);
-    addressIdsStr.resize(addressIdsStr.length() - 1);
-  }
-
-  s = Strings::Format("%lld,%d,%s,%s,%lld,%s,%s,%s,%lld,%d,%s,%s",
-                      txInfo.txId_, n, addressStr.c_str(), addressIdsStr.c_str(),
-                      poutput->value_,
-                      poutput->scriptAsm_.c_str(), poutput->scriptHex_.c_str(),
-                      poutput->typeStr_.c_str(),
-                      poutput->spentTxId_, poutput->spentPosition_,
-                      now.c_str(), now.c_str());
-  fwriter->append(s, f);
+//  // table.tx_outputs_xxxx
+//  //   `tx_id`,`position`,`address`,`address_ids`,`value`,`output_script_asm`,
+//  //   `output_script_hex`,`output_script_type`,
+//  //   `spent_tx_id`,`spent_position`,`created_at`,`updated_at`
+//  string s;
+//  const string now = date("%F %T");
+//  TxOutput *poutput = *(txInfo.outputs_ + n);
+//
+//  // 处理地址
+//  string addressStr, addressIdsStr;
+//  for (int i = 0; i < poutput->address_.size(); i++) {
+//    const string addrStr = poutput->address_[i];
+//    addressStr    += Strings::Format("%s|", addrStr.c_str());
+//    addressIdsStr += Strings::Format("%lld|", poutput->addressIds_[i]);
+//  }
+//  if (addressStr.length()) {  // 移除最后一个|
+//    addressStr.resize(addressStr.length() - 1);
+//    addressIdsStr.resize(addressIdsStr.length() - 1);
+//  }
+//
+//  s = Strings::Format("%lld,%d,%s,%s,%lld,%s,%s,%s,%lld,%d,%s,%s",
+//                      txInfo.txId_, n, addressStr.c_str(), addressIdsStr.c_str(),
+//                      poutput->value_,
+//                      poutput->scriptAsm_.c_str(), poutput->scriptHex_.c_str(),
+//                      poutput->typeStr_.c_str(),
+//                      poutput->spentTxId_, poutput->spentPosition_,
+//                      now.c_str(), now.c_str());
+//  fwriter->append(s, f);
 }
 
 void _saveUnspentOutput(TxInfo &txInfo, int32_t n,
                         vector<FILE *> &fUnspentOutputs,
                         FILE *fTxoutput, FileWriter *fwriter) {
-  string s;
-  const string now = date("%F %T");
-  TxOutput *out = *(txInfo.outputs_ + n);
-  assert(out != nullptr);
-
-  // 遍历处理，可能含有多个地址
-  for (size_t i = 0; i < out->address_.size(); i++) {
-    // table.address_unspent_outputs_xxxx
-    // `address_id`, `tx_id`, `position`, `position2`, `block_height`,
-    // `value`, `output_script_type`, `created_at`
-    s = Strings::Format("%lld,%lld,%d,%d,%d,%lld,%s,%s",
-                        out->addressIds_[i], txInfo.txId_, n, i,
-                        txInfo.blockHeight_, out->value_,
-                        out->typeStr_.c_str(), now.c_str());
-    fwriter->append(s, fUnspentOutputs[tableIdx_AddrUnspentOutput(out->addressIds_[i])]);
-  }
-
-  // 也需要将未花费的，存入至table.tx_outputs_xxxx
-  _saveTxOutput(txInfo, n, fTxoutput, fwriter);
+//  string s;
+//  const string now = date("%F %T");
+//  TxOutput *out = *(txInfo.outputs_ + n);
+//  assert(out != nullptr);
+//
+//  // 遍历处理，可能含有多个地址
+//  for (size_t i = 0; i < out->address_.size(); i++) {
+//    // table.address_unspent_outputs_xxxx
+//    // `address_id`, `tx_id`, `position`, `position2`, `block_height`,
+//    // `value`, `output_script_type`, `created_at`
+//    s = Strings::Format("%lld,%lld,%d,%d,%d,%lld,%s,%s",
+//                        out->addressIds_[i], txInfo.txId_, n, i,
+//                        txInfo.blockHeight_, out->value_,
+//                        out->typeStr_.c_str(), now.c_str());
+//    fwriter->append(s, fUnspentOutputs[tableIdx_AddrUnspentOutput(out->addressIds_[i])]);
+//  }
+//
+//  // 也需要将未花费的，存入至table.tx_outputs_xxxx
+//  _saveTxOutput(txInfo, n, fTxoutput, fwriter);
 }
 
 void TxHandler::dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs,
                                         vector<FILE *> &fTxOutputs) {
-  // 遍历整个tx区，将未花费的数据写入文件
-  for (auto &it : txInfo_) {
-    if (it.outputs_ == nullptr) {
-      continue;
-    }
-    for (int32_t i = 0; i < it.outputsCount_; i++) {
-      if (*(it.outputs_ + i) == nullptr) {
-        continue;
-      }
-      _saveUnspentOutput(it, i, fUnspentOutputs,
-                         fTxOutputs[tableIdx_TxOutput(it.txId_)], fwriter_);
-    }
-    delOutputAll(it);
-  }
-}
-
-int64_t TxHandler::getTxId(const uint256 &hash) {
-  return find(hash)->txId_;
+//  // 遍历整个tx区，将未花费的数据写入文件
+//  for (auto &it : txInfo_) {
+//    if (it.outputs_ == nullptr) {
+//      continue;
+//    }
+//    for (int32_t i = 0; i < it.outputsCount_; i++) {
+//      if (*(it.outputs_ + i) == nullptr) {
+//        continue;
+//      }
+//      _saveUnspentOutput(it, i, fUnspentOutputs,
+//                         fTxOutputs[tableIdx_TxOutput(it.txId_)], fwriter_);
+//    }
+//    delOutputAll(it);
+//  }
 }
 
 
@@ -793,90 +779,90 @@ void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
     _saveBlock(blockInfo_, fBlocks_, fwriter_);
   }
 
-  // 保存当前块对应的交易
-  // table.block_txs_xxxx: block_id, position, tx_id, created_at
-  int i = 0;
-  const string now = date("%F %T");
-  for (auto & it : blk.vtx) {
-    string s = Strings::Format("%lld,%d,%lld,%s", blockId, i++,
-                               txHandler_->getTxId(it.GetHash()), now.c_str());
-    fwriter_->append(s, fBlockTxs_[tableIdx_BlockTxs(blockId)]);
-  }
+//  // 保存当前块对应的交易
+//  // table.block_txs_xxxx: block_id, position, tx_id, created_at
+//  int i = 0;
+//  const string now = date("%F %T");
+//  for (auto & it : blk.vtx) {
+//    string s = Strings::Format("%lld,%d,%lld,%s", blockId, i++,
+//                               txHandler_->getTxId(it.GetHash()), now.c_str());
+//    fwriter_->append(s, fBlockTxs_[tableIdx_BlockTxs(blockId)]);
+//  }
 }
 
 void PreParser::parseTxInputs(const CTransaction &tx, const int64_t txId,
                               int64_t &valueIn,
                               map<string, int64_t> &addressBalance) {
-  int n;
-  vector<string> values;
-  const string now = date("%F %T");
-
-  n = -1;
-  for (auto &in : tx.vin) {
-    n++;
-
-    if (tx.IsCoinBase()) {
-      // 插入当前交易的inputs, coinbase tx的 scriptSig 不做decode，可能含有非法字符
-      // 通常无法解析成功。 coinbase无需担心其长度，bitcoind对coinbase tx的coinbase
-      // 字段长度做了限制
-      values.push_back(Strings::Format("%lld,%d,,%s,%u,"
-                                       "0,-1,0,,,%s",
-                                       txId, n,
-                                       HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
-                                       in.nSequence, now.c_str()));
-    } else
-    {
-      uint256 prevHash = in.prevout.hash;
-      int64_t prevTxId = txHandler_->getTxId(prevHash);
-      int32_t prevPos  = (int32_t)in.prevout.n;
-
-      // 将前向交易标记为已花费
-      auto pTxInfo = txHandler_->find(prevHash);
-      TxOutput *poutput = *(pTxInfo->outputs_ + prevPos);
-      assert(poutput->spentTxId_ == 0);
-      assert(poutput->spentPosition_ == -1);
-      poutput->spentTxId_     = txId;
-      poutput->spentPosition_ = n;
-
-      // 保存前向交易output，一旦花掉，将不会再次使用
-      _saveTxOutput(*pTxInfo, prevPos,
-                    fTxOutputs_[tableIdx_TxOutput(pTxInfo->txId_)], fwriter_);
-
-      // 处理地址
-      string addressStr, addressIdsStr;
-      for (int i = 0; i < poutput->address_.size(); i++) {
-        const string addrStr = poutput->address_[i];
-        addressStr    += Strings::Format("%s|", addrStr.c_str());
-        addressIdsStr += Strings::Format("%lld|", poutput->addressIds_[i]);
-        // 减扣该地址额度
-        addressBalance[addrStr] += -1 * poutput->value_;
-      }
-      if (addressStr.length()) {  // 移除最后一个|
-        addressStr.resize(addressStr.length() - 1);
-        addressIdsStr.resize(addressIdsStr.length() - 1);
-      }
-
-      // 插入当前交易的inputs
-      values.push_back(Strings::Format("%lld,%d,%s,%s,%u,%lld,%d,"
-                                       "%lld,%s,%s,%s",
-                                       txId, n,
-                                       in.scriptSig.ToString().c_str(),
-                                       HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
-                                       in.nSequence, prevTxId, prevPos,
-                                       poutput->value_,
-                                       addressStr.c_str(), addressIdsStr.c_str(),
-                                       now.c_str()));
-      valueIn += poutput->value_;
-
-      // 可以删除前向输入了，因每个前向输入只会使用一次
-      txHandler_->delOutput(prevHash, prevPos);
-    }
-  } /* /for */
-
-  // 保存inputs
-  for (auto &it : values) {
-    fwriter_->append(it, fTxInputs_[tableIdx_TxInput(txId)]);
-  }
+//  int n;
+//  vector<string> values;
+//  const string now = date("%F %T");
+//
+//  n = -1;
+//  for (auto &in : tx.vin) {
+//    n++;
+//
+//    if (tx.IsCoinBase()) {
+//      // 插入当前交易的inputs, coinbase tx的 scriptSig 不做decode，可能含有非法字符
+//      // 通常无法解析成功。 coinbase无需担心其长度，bitcoind对coinbase tx的coinbase
+//      // 字段长度做了限制
+//      values.push_back(Strings::Format("%lld,%d,,%s,%u,"
+//                                       "0,-1,0,,,%s",
+//                                       txId, n,
+//                                       HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
+//                                       in.nSequence, now.c_str()));
+//    } else
+//    {
+//      uint256 prevHash = in.prevout.hash;
+//      int64_t prevTxId = txHandler_->getTxId(prevHash);
+//      int32_t prevPos  = (int32_t)in.prevout.n;
+//
+//      // 将前向交易标记为已花费
+//      auto pTxInfo = txHandler_->find(prevHash);
+//      TxOutput *poutput = *(pTxInfo->outputs_ + prevPos);
+//      assert(poutput->spentTxId_ == 0);
+//      assert(poutput->spentPosition_ == -1);
+//      poutput->spentTxId_     = txId;
+//      poutput->spentPosition_ = n;
+//
+//      // 保存前向交易output，一旦花掉，将不会再次使用
+//      _saveTxOutput(*pTxInfo, prevPos,
+//                    fTxOutputs_[tableIdx_TxOutput(pTxInfo->txId_)], fwriter_);
+//
+//      // 处理地址
+//      string addressStr, addressIdsStr;
+//      for (int i = 0; i < poutput->address_.size(); i++) {
+//        const string addrStr = poutput->address_[i];
+//        addressStr    += Strings::Format("%s|", addrStr.c_str());
+//        addressIdsStr += Strings::Format("%lld|", poutput->addressIds_[i]);
+//        // 减扣该地址额度
+//        addressBalance[addrStr] += -1 * poutput->value_;
+//      }
+//      if (addressStr.length()) {  // 移除最后一个|
+//        addressStr.resize(addressStr.length() - 1);
+//        addressIdsStr.resize(addressIdsStr.length() - 1);
+//      }
+//
+//      // 插入当前交易的inputs
+//      values.push_back(Strings::Format("%lld,%d,%s,%s,%u,%lld,%d,"
+//                                       "%lld,%s,%s,%s",
+//                                       txId, n,
+//                                       in.scriptSig.ToString().c_str(),
+//                                       HexStr(in.scriptSig.begin(), in.scriptSig.end()).c_str(),
+//                                       in.nSequence, prevTxId, prevPos,
+//                                       poutput->value_,
+//                                       addressStr.c_str(), addressIdsStr.c_str(),
+//                                       now.c_str()));
+//      valueIn += poutput->value_;
+//
+//      // 可以删除前向输入了，因每个前向输入只会使用一次
+//      txHandler_->delOutput(prevHash, prevPos);
+//    }
+//  } /* /for */
+//
+//  // 保存inputs
+//  for (auto &it : values) {
+//    fwriter_->append(it, fTxInputs_[tableIdx_TxInput(txId)]);
+//  }
 }
 
 void PreParser::parseTxSelf(const int32_t height, const int64_t txId, const uint256 &txHash,
@@ -896,16 +882,18 @@ void PreParser::parseTxSelf(const int32_t height, const int64_t txId, const uint
   ssTx << tx;
   const string txHex = HexStr(ssTx.begin(), ssTx.end());
 
-  // table.txs_xxxx
-  // `tx_id`, `hash`, `height`, `ymd`,`is_coinbase`,
-  // `version`, `lock_time`, `size`, `fee`, `total_in_value`,
-  // `total_out_value`, `inputs_count`, `outputs_count`, `created_at`
-  s = Strings::Format("%lld,%s,%d,%d,%d,%d,%u,%d,%lld,%lld,%lld,%d,%d,%s",
-                      txId, txHash.ToString().c_str(), height, ymd,
-                      tx.IsCoinBase() ? 1 : 0, tx.nVersion, tx.nLockTime,
-                      txHex.length()/2, fee, valueIn, valueOut,
-                      tx.vin.size(), tx.vout.size(),
-                      date("%F %T").c_str());
+//  // table.txs_xxxx
+//  // `tx_id`, `hash`, `height`, `ymd`,`is_coinbase`,
+//  // `version`, `lock_time`, `size`, `fee`, `total_in_value`,
+//  // `total_out_value`, `inputs_count`, `outputs_count`, `created_at`
+//  s = Strings::Format("%lld,%s,%d,%d,%d,%d,%u,%d,%lld,%lld,%lld,%d,%d,%s",
+//                      txId, txHash.ToString().c_str(), height, ymd,
+//                      tx.IsCoinBase() ? 1 : 0, tx.nVersion, tx.nLockTime,
+//                      txHex.length()/2, fee, valueIn, valueOut,
+//                      tx.vin.size(), tx.vout.size(),
+//                      date("%F %T").c_str());
+
+
 
   // 写入s至磁盘
   fwriter_->append(s, fTxs_[tableIdx_Tx(txId)]);
@@ -913,23 +901,23 @@ void PreParser::parseTxSelf(const int32_t height, const int64_t txId, const uint
 
 void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo,
                  FILE *f, FileWriter *fwriter) {
-  string line;
-  AddrTx &t = addrInfo->addrTx_;
-
-  const string nowStr = date("%F %T");
-
-  // table.address_txs_<yyyymm>
-  // `address_id`, `tx_id`, `tx_height`, `total_received`, `balance_diff`,
-  // `balance_final`, `idx`, `ymd`, `prev_ymd`, `prev_tx_id`, `next_ymd`,
-  // `next_tx_id`, `created_at`, `updated_at`
-  line = Strings::Format("%lld,%lld,%d,%lld,%lld,%lld,%lld,"
-                         "%d,%d,%lld,%d,%lld,%s,%s",
-                         addrInfo->addrId_, t.txId_, t.txHeight_,
-                         addrInfo->totalReceived_, t.balanceDiff_, t.balanceFinal_,
-                         addrInfo->idx_, t.ymd_, t.prevYmd_, t.prevTxId_,
-                         t.nextYmd_, t.nextTxId_,
-                         nowStr.c_str(), nowStr.c_str());
-  fwriter->append(line, f);
+//  string line;
+//  AddrTx &t = addrInfo->addrTx_;
+//
+//  const string nowStr = date("%F %T");
+//
+//  // table.address_txs_<yyyymm>
+//  // `address_id`, `tx_id`, `tx_height`, `total_received`, `balance_diff`,
+//  // `balance_final`, `idx`, `ymd`, `prev_ymd`, `prev_tx_id`, `next_ymd`,
+//  // `next_tx_id`, `created_at`, `updated_at`
+//  line = Strings::Format("%lld,%lld,%d,%lld,%lld,%lld,%lld,"
+//                         "%d,%d,%lld,%d,%lld,%s,%s",
+//                         addrInfo->addrId_, t.txId_, t.txHeight_,
+//                         addrInfo->totalReceived_, t.balanceDiff_, t.balanceFinal_,
+//                         addrInfo->idx_, t.ymd_, t.prevYmd_, t.prevTxId_,
+//                         t.nextYmd_, t.nextTxId_,
+//                         nowStr.c_str(), nowStr.c_str());
+//  fwriter->append(line, f);
 }
 
 void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,
@@ -983,44 +971,44 @@ void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,
 
 void PreParser::parseTx(const int32_t height, const CTransaction &tx,
                         const uint32_t nTime) {
-  const uint256 txHash = tx.GetHash();
-  LOG_DEBUG("parse tx, height: %d, hash: %s", height, txHash.ToString().c_str());
-
-  // 硬编码特殊交易处理
-  //
-  // 1. tx hash: d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599
-  // 该交易在两个不同的高度块(91812, 91842)中出现过
-  // 91842块中有且仅有这一个交易
-  //
-  // 2. tx hash: e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468
-  // 该交易在两个不同的高度块(91722, 91880)中出现过
-  if ((height == 91842 &&
-       txHash == uint256("d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599")) ||
-      (height == 91880 &&
-       txHash == uint256("e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468"))) {
-    LOG_WARN("ignore tx, height: %d, hash: %s",
-             height, txHash.ToString().c_str());
-    return;
-  }
-
-  const int64_t txId = txHandler_->getTxId(txHash);
-  int64_t valueIn = 0;
-  map<string, int64_t> addressBalance;
-
-  // inputs
-  parseTxInputs(tx, txId, valueIn, addressBalance);
-
-  // ouputs
-  txHandler_->addOutputs(tx, addrHandler_, height, addressBalance);
-
-  // 根据修正时间存储
-  const int32_t ymd = atoi(date("%Y%m%d", blkTs_.getMaxTimestamp()).c_str());
-
-  // tx self
-  parseTxSelf(height, txId, txHash, tx, valueIn, ymd);
-
-  // 处理地址变更
-  handleAddressTxs(addressBalance, txId, ymd, height);
+//  const uint256 txHash = tx.GetHash();
+//  LOG_DEBUG("parse tx, height: %d, hash: %s", height, txHash.ToString().c_str());
+//
+//  // 硬编码特殊交易处理
+//  //
+//  // 1. tx hash: d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599
+//  // 该交易在两个不同的高度块(91812, 91842)中出现过
+//  // 91842块中有且仅有这一个交易
+//  //
+//  // 2. tx hash: e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468
+//  // 该交易在两个不同的高度块(91722, 91880)中出现过
+//  if ((height == 91842 &&
+//       txHash == uint256("d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599")) ||
+//      (height == 91880 &&
+//       txHash == uint256("e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468"))) {
+//    LOG_WARN("ignore tx, height: %d, hash: %s",
+//             height, txHash.ToString().c_str());
+//    return;
+//  }
+//
+//  const int64_t txId = txHandler_->getTxId(txHash);
+//  int64_t valueIn = 0;
+//  map<string, int64_t> addressBalance;
+//
+//  // inputs
+//  parseTxInputs(tx, txId, valueIn, addressBalance);
+//
+//  // ouputs
+//  txHandler_->addOutputs(tx, addrHandler_, height, addressBalance);
+//
+//  // 根据修正时间存储
+//  const int32_t ymd = atoi(date("%Y%m%d", blkTs_.getMaxTimestamp()).c_str());
+//
+//  // tx self
+//  parseTxSelf(height, txId, txHash, tx, valueIn, ymd);
+//
+//  // 处理地址变更
+//  handleAddressTxs(addressBalance, txId, ymd, height);
 }
 
 void PreParser::run() {

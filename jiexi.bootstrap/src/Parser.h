@@ -84,7 +84,6 @@ struct AddrTx {
 
 struct AddrInfo {
   char addrStr_[36];
-  int64_t addrId_;
   int64_t idx_;
   int32_t beginTxYmd_;
   int32_t endTxYmd_;
@@ -110,37 +109,34 @@ struct AddrInfo {
 class TxOutput {
 public:
   vector<string> address_;
-  vector<int64_t> addressIds_;
   int64_t value_;
   string  scriptHex_;
   string  scriptAsm_;
   string  typeStr_;
-  int64_t spentTxId_;
+  uint256 spentTxHash_;
   int32_t spentPosition_;
 
 public:
-  TxOutput(): value_(0), spentTxId_(0), spentPosition_(-1) {}
+  TxOutput(): value_(0), spentTxHash_(), spentPosition_(-1) {}
   void operator=(const TxOutput &val) {
     address_    = val.address_;
-    addressIds_ = val.addressIds_;
     value_      = val.value_;
     scriptHex_  = val.scriptHex_;
     scriptAsm_  = val.scriptAsm_;
     typeStr_    = val.typeStr_;
-    spentTxId_  = val.spentTxId_;
+    spentTxHash_    = val.spentTxHash_;
     spentPosition_  = val.spentPosition_;
   }
 };
 
 struct TxInfo {
   uint256 hash256_;
-  int64_t txId_;
 
   int32_t blockHeight_;
   int32_t outputsCount_;
   TxOutput **outputs_;
 
-  TxInfo(): hash256_(), txId_(0), blockHeight_(-1), outputsCount_(0), outputs_(nullptr) {
+  TxInfo(): hash256_(), blockHeight_(-1), outputsCount_(0), outputs_(nullptr) {
   }
   bool operator<(const TxInfo &val) const {
     return hash256_ < val.hash256_;
@@ -176,7 +172,6 @@ class AddrHandler {
 public:
   AddrHandler(const size_t addrCount, const string &file, FileWriter *fwriter);
   vector<struct AddrInfo>::iterator find(const string &address);
-  int64_t getAddressId(const string &address);
   void dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs, vector<FILE *> &fAddrs_);
 };
 
@@ -189,8 +184,6 @@ public:
   TxHandler(const size_t txCount, const string &file, FileWriter *fwriter);
   vector<struct TxInfo>::iterator find(const uint256 &hash);
   vector<struct TxInfo>::iterator find(const string &hashStr);
-
-  int64_t getTxId(const uint256 &hash);
 
   void addOutputs(const CTransaction &tx,
                   AddrHandler *addrHandler, const int32_t height,

@@ -37,14 +37,13 @@
 #define API_ERROR_TOO_MANY_PARAMS        101
 #define API_ERROR_EMPTY_METHOD           102
 #define API_ERROR_METHOD_NOT_REGISTERED  103
-
-#define API_ERROR_INVALID_PARAMS   201
+#define API_ERROR_INVALID_PARAMS         201
 
 class APIResponse {
 public:
 	vector<uint8_t> data_;
 	vector<int32_t> length_, offset_;
-  vector<string> types_;
+  vector<string> types_, keys_;
 };
 
 class APIInOut {

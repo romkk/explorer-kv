@@ -36,8 +36,9 @@ std::vector<const char *> gKeyTypes;  // 键对应的类型
 void cb_root(evhtp_request_t * req, void *ptr);
 void cb_kv(evhtp_request_t *req, void *ptr);
 
-void kv_handle_ping(evhtp_request_t *req, const vector<string> &params, const string &queryId);
-void kv_handle_get(evhtp_request_t *req, const vector<string> &params, const string &queryId);
+void kv_handle_ping (evhtp_request_t *req, const vector<string> &params, const string &queryId);
+void kv_handle_get  (evhtp_request_t *req, const vector<string> &params, const string &queryId);
+void kv_handle_range(evhtp_request_t *req, const vector<string> &params, const string &queryId);
 
 void dbGetKeys(const vector<string> &keys, APIResponse &resp);
 void kv_output(evhtp_request_t *req, const string &queryId, const APIResponse &resp,
@@ -49,34 +50,44 @@ void api_output(evhtp_request_t * req, const string &data,
 
 ///////////////////////////////// data functions ///////////////////////////////
 
-void dbGetKeys(const vector<string> &keys, APIResponse &resp) {
-  assert(keys.size() != 0);
+void dbPut2Resp(const vector<string> &keys, const vector<string> &values, APIResponse &resp) {
   resp.length_.resize(keys.size(),  0);
   resp.offset_.resize(keys.size(), -1);
   resp.types_.resize(keys.size(),  "");
-  
-  vector<string> buffer(keys.size());
-  gDB->multiGet(keys, buffer);
-  assert(buffer.size() == keys.size());
-  
+  resp.keys_ = keys;
+  resp.data_.reserve(8192);
+
   for (size_t i = 0; i < keys.size(); i++) {
     // type
     const int32_t keyPrefixInt = atoi(keys[i].substr(0, 2).c_str());
     if (keyPrefixInt >= 0 && keyPrefixInt < gKeyTypes.size() && gKeyTypes[keyPrefixInt] != nullptr) {
       resp.types_[i] = string(gKeyTypes[keyPrefixInt]);
     }
+    assert(values[i].size() != 0);
 
-    // 设置data
-    if (buffer[i].size() == 0) {
-      continue;
-    }
     resp.offset_[i] = (int32_t)resp.data_.size();
-    resp.length_[i] = (int32_t)buffer[i].size();
-    resp.data_.reserve(resp.data_.size() + buffer[i].size());
-    resp.data_.insert(resp.data_.end(), buffer[i].begin(), buffer[i].end());
+    resp.length_[i] = (int32_t)values[i].size();
+    resp.data_.insert(resp.data_.end(), values[i].begin(), values[i].end());
   }
 }
 
+void dbGetKeys(const vector<string> &keys, APIResponse &resp) {
+  assert(keys.size() != 0);
+  vector<string> values;
+  gDB->multiGet(keys, values);
+  dbPut2Resp(keys, values, resp);
+}
+
+void dbRangeKeys(const string &start, const string &end,
+                 const int32_t limit, APIResponse &resp) {
+  vector<string> keys;
+  vector<string> values;
+  gDB->range(start, end, limit, keys, values);
+  if (keys.size() == 0) {
+    return;
+  }
+  dbPut2Resp(keys, values, resp);
+}
 
 ////////////////////////////////// kv functions ///////////////////////////////////
 
@@ -124,6 +135,23 @@ void kv_handle_get(evhtp_request_t *req, const vector<string> &params, const str
   }
   APIResponse resp;
   dbGetKeys(params, resp);  // params 即 keys
+  kv_output(req, queryId, resp);
+  evhtp_send_reply(req, EVHTP_RES_OK);
+}
+
+void kv_handle_range(evhtp_request_t *req, const vector<string> &params, const string &queryId) {
+  if (params.size() != 3) {
+    kv_output_error(req, API_ERROR_INVALID_PARAMS, "params should be: {start_key, end_key, limit}");
+    return;
+  }
+  int32_t limit = atoi(params[2].c_str());
+  if (limit <= 0 || limit > 10000 /* 目前kvdb最多返回10000条 */) {
+    kv_output_error(req, API_ERROR_INVALID_PARAMS, "invalid limit");
+    return;
+  }
+
+  APIResponse resp;
+  dbRangeKeys(params[0], params[1], limit, resp);
   kv_output(req, queryId, resp);
   evhtp_send_reply(req, EVHTP_RES_OK);
 }
@@ -420,8 +448,9 @@ APIServer::APIServer() {
   nThreads_   = (int32_t)Config::GConfig.getInt("apiserver.nthreads", 1);
 
   // 注册方法名称
-  gHandleFunctions["get"]  = kv_handle_get;
-  gHandleFunctions["ping"] = kv_handle_ping;
+  gHandleFunctions["ping"]   = kv_handle_ping;
+  gHandleFunctions["get"]    = kv_handle_get;
+  gHandleFunctions["range"]  = kv_handle_range;
 
   // 注册键值对应名称
   gKeyTypes.resize(100, nullptr);
@@ -457,7 +486,7 @@ void APIServer::init() {
   htp_    = evhtp_new(evbase_, NULL);
   
   int rc;
-  evhtp_set_cb(htp_, "/",   cb_root, NULL);
+  evhtp_set_cb(htp_, "/",     cb_root, NULL);
   evhtp_set_cb(htp_, "/kv",   cb_kv,   NULL);
   evhtp_set_cb(htp_, "/kv/",  cb_kv,   NULL);
   evhtp_set_cb(htp_, "/api",  cb_api,  NULL);

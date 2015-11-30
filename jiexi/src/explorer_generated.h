@@ -34,8 +34,10 @@ struct APIResponse FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   flatbuffers::Vector<int32_t> *mutable_length_arr() { return GetPointer<flatbuffers::Vector<int32_t> *>(12); }
   const flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *type_arr() const { return GetPointer<const flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *>(14); }
   flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *mutable_type_arr() { return GetPointer<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *>(14); }
-  const flatbuffers::Vector<uint8_t> *data() const { return GetPointer<const flatbuffers::Vector<uint8_t> *>(16); }
-  flatbuffers::Vector<uint8_t> *mutable_data() { return GetPointer<flatbuffers::Vector<uint8_t> *>(16); }
+  const flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *key_arr() const { return GetPointer<const flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *>(16); }
+  flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *mutable_key_arr() { return GetPointer<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>> *>(16); }
+  const flatbuffers::Vector<uint8_t> *data() const { return GetPointer<const flatbuffers::Vector<uint8_t> *>(18); }
+  flatbuffers::Vector<uint8_t> *mutable_data() { return GetPointer<flatbuffers::Vector<uint8_t> *>(18); }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<flatbuffers::uoffset_t>(verifier, 4 /* id */) &&
@@ -50,7 +52,10 @@ struct APIResponse FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
            VerifyField<flatbuffers::uoffset_t>(verifier, 14 /* type_arr */) &&
            verifier.Verify(type_arr()) &&
            verifier.VerifyVectorOfStrings(type_arr()) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 16 /* data */) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 16 /* key_arr */) &&
+           verifier.Verify(key_arr()) &&
+           verifier.VerifyVectorOfStrings(key_arr()) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 18 /* data */) &&
            verifier.Verify(data()) &&
            verifier.EndTable();
   }
@@ -65,11 +70,12 @@ struct APIResponseBuilder {
   void add_offset_arr(flatbuffers::Offset<flatbuffers::Vector<int32_t>> offset_arr) { fbb_.AddOffset(10, offset_arr); }
   void add_length_arr(flatbuffers::Offset<flatbuffers::Vector<int32_t>> length_arr) { fbb_.AddOffset(12, length_arr); }
   void add_type_arr(flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> type_arr) { fbb_.AddOffset(14, type_arr); }
-  void add_data(flatbuffers::Offset<flatbuffers::Vector<uint8_t>> data) { fbb_.AddOffset(16, data); }
+  void add_key_arr(flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> key_arr) { fbb_.AddOffset(16, key_arr); }
+  void add_data(flatbuffers::Offset<flatbuffers::Vector<uint8_t>> data) { fbb_.AddOffset(18, data); }
   APIResponseBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
   APIResponseBuilder &operator=(const APIResponseBuilder &);
   flatbuffers::Offset<APIResponse> Finish() {
-    auto o = flatbuffers::Offset<APIResponse>(fbb_.EndTable(start_, 7));
+    auto o = flatbuffers::Offset<APIResponse>(fbb_.EndTable(start_, 8));
     return o;
   }
 };
@@ -81,9 +87,11 @@ inline flatbuffers::Offset<APIResponse> CreateAPIResponse(flatbuffers::FlatBuffe
    flatbuffers::Offset<flatbuffers::Vector<int32_t>> offset_arr = 0,
    flatbuffers::Offset<flatbuffers::Vector<int32_t>> length_arr = 0,
    flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> type_arr = 0,
+   flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>> key_arr = 0,
    flatbuffers::Offset<flatbuffers::Vector<uint8_t>> data = 0) {
   APIResponseBuilder builder_(_fbb);
   builder_.add_data(data);
+  builder_.add_key_arr(key_arr);
   builder_.add_type_arr(type_arr);
   builder_.add_length_arr(length_arr);
   builder_.add_offset_arr(offset_arr);

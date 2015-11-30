@@ -418,19 +418,7 @@ APIServer::APIServer() {
   listenHost_ = Config::GConfig.get("apiserver.listen.host", "0.0.0.0");
   listenPort_ = (int32_t)Config::GConfig.getInt("apiserver.listen.port", 8080);
   nThreads_   = (int32_t)Config::GConfig.getInt("apiserver.nthreads", 1);
-}
 
-APIServer::~APIServer() {
-  stop();
-}
-
-void APIServer::setKVDB(KVDB *kvdb) {
-  gDB = kvdb_ = kvdb;
-}
-
-void APIServer::init() {
-  assert(kvdb_ != nullptr);
-  
   // 注册方法名称
   gHandleFunctions["get"]  = kv_handle_get;
   gHandleFunctions["ping"] = kv_handle_ping;
@@ -449,7 +437,19 @@ void APIServer::init() {
   gKeyTypes[24] = "AddressUnspentIdx";
   gKeyTypes[30] = "DoubleSpending";
   gKeyTypes[90] = "string";
-  
+}
+
+APIServer::~APIServer() {
+  stop();
+}
+
+void APIServer::setKVDB(KVDB *kvdb) {
+  gDB = kvdb_ = kvdb;
+}
+
+void APIServer::init() {
+  assert(kvdb_ != nullptr);
+
   // 设置
   gAPIHandler = new APIHandler(kvdb_);
 

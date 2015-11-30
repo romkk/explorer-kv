@@ -36,42 +36,18 @@ PreTx::PreTx(): f_(nullptr) {
     THROW_EXCEPTION_DBEX("open file failure: %s", file.c_str());
   }
 
-  // address 分表为64张
-  txIds_.resize(64);
-  for (int i = 0; i < 64; i++) {
-    txIds_[i] = (int64_t)i * BILLION;
-  }
-
   running_ = true;
   height_ = 0;
   runningProduceThreads_ = 0;
   runningConsumeThreads_ = 0;
 
   txBuf_.reserve(50*10000);
-
-  //
-  // KVDB
-  //
-  // Optimize RocksDB. This is the easiest way to get RocksDB to perform well
-  kvOptions_.IncreaseParallelism();
-  kvOptions_.OptimizeLevelStyleCompaction();
-  // create the DB if it's not already present
-  kvOptions_.create_if_missing = true;
-
-  // open DB
-  const string kDBPath = "./rocksdb";
-  rocksdb::Status s = rocksdb::DB::Open(kvOptions_, kDBPath, &kvdb_);
-  if (!s.ok()) {
-    THROW_EXCEPTION_DBEX("open rocks db fail");
-  }
 }
 
 PreTx::~PreTx() {
   fclose(f_);
   stop();
   LOG_INFO("PreTx stopped");
-
-  delete kvdb_;
 }
 
 void PreTx::stop() {
@@ -126,18 +102,11 @@ void PreTx::threadConsumeAddr() {
 
     for (const auto &tx : buf) {
       const string txhash = tx.ToString();
-      string line;
-
       //
       // 理论上不会出现重复txhash。（但正式网确实存在两对tx的hash一样）
       // 即使出现一样的，也无关紧要，因为 pre_parser TxHandler采用upper_bound()方法查找ID
       //
-
-      const int32_t tableIdx = HexToDecLast2Bytes(txhash) % 64;
-      txIds_[tableIdx]++;
-      line = Strings::Format("%s,%lld", txhash.c_str(), txIds_[tableIdx]);
-
-      fprintf(f_, "%s\n", line.c_str());
+      fprintf(f_, "%s\n", txhash.c_str());
       cnt++;
 
       if (cnt % 10000 == 0) {
@@ -224,15 +193,6 @@ void PreTx::threadProcessBlock(const int32_t idx) {
         continue;
       }
       buf.push_back(hash);
-
-      // kvdb
-      {
-        const string key = Strings::Format("01_%s", tx.GetHash().ToString().c_str());
-        CDataStream ssTx(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
-        ssTx << tx;
-        rocksdb::Slice value(&(*ssTx.begin()), ssTx.size());
-        kvdb_->Put(rocksdb::WriteOptions(), key, value);
-      }
     }
 
     string logStr;

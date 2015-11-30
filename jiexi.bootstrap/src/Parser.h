@@ -22,8 +22,29 @@
 
 #include "Common.h"
 #include "Util.h"
+
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
+
+#include "rocksdb/db.h"
+#include "rocksdb/slice.h"
+#include "rocksdb/options.h"
+
+
+#define KVDB_PREFIX_TX_RAW_HEX   "00_"
+#define KVDB_PREFIX_TX_OBJECT    "01_"
+#define KVDB_PREFIX_TX_SPEND     "02_"
+
+#define KVDB_PREFIX_BLOCK_HEIGHT     "10_"
+#define KVDB_PREFIX_BLOCK_OBJECT     "11_"
+#define KVDB_PREFIX_BLOCK_TXS_STR    "12_"
+
+#define KVDB_PREFIX_ADDR_OBJECT     "20_"
+#define KVDB_PREFIX_ADDR_TX         "21_"
+#define KVDB_PREFIX_ADDR_TX_INDEX   "22_"
+#define KVDB_PREFIX_ADDR_UNSPENT    "23_"
+#define KVDB_PREFIX_ADDR_UNSPENT_INDEX  "24_"
+
 
 void getRawBlockFromDisk(const int32_t height, string *rawHex,
                          int32_t *chainId, int64_t *blockId);
@@ -50,8 +71,6 @@ inline int32_t tableIdx_AddrTxs(const int32_t ymd) {
 inline int32_t tableIdx_BlockTxs(const int64_t blockId) {
   return (int32_t)(blockId % 100);
 }
-
-class FileWriter;
 
 class RawBlock {
 public:
@@ -144,33 +163,27 @@ struct TxInfo {
 };
 
 struct BlockInfo {
-  int64_t blockId_;
+  int32_t height_;  // 初始化 memset 使用了该字段
   uint256 blockHash_;
   CBlockHeader header_;
-  int32_t height_;
-  int64_t currMaxTimestamp_;
-  int64_t prevBlockId_;
-  int64_t nextBlockId_;
   uint256 nextBlockHash_;
-  int32_t chainId_;
   int32_t size_;
-  uint64_t diff_;
+  double  diff_;
   int32_t txCount_;
   int64_t rewardBlock_;
   int64_t rewardFee_;
 
   BlockInfo() {
-    memset((char *)&blockId_, 0, sizeof(struct BlockInfo));
+    memset((char *)&height_, 0, sizeof(struct BlockInfo));
   }
 };
 
 class AddrHandler {
   vector<struct AddrInfo> addrInfo_;
   size_t addrCount_;
-  FileWriter *fwriter_;
 
 public:
-  AddrHandler(const size_t addrCount, const string &file, FileWriter *fwriter);
+  AddrHandler(const size_t addrCount, const string &file);
   vector<struct AddrInfo>::iterator find(const string &address);
   void dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs, vector<FILE *> &fAddrs_);
 };
@@ -178,10 +191,9 @@ public:
 class TxHandler {
   vector<struct TxInfo> txInfo_;
   size_t txCount_;
-  FileWriter *fwriter_;
 
 public:
-  TxHandler(const size_t txCount, const string &file, FileWriter *fwriter);
+  TxHandler(const size_t txCount, const string &file);
   vector<struct TxInfo>::iterator find(const uint256 &hash);
   vector<struct TxInfo>::iterator find(const string &hashStr);
 
@@ -195,23 +207,6 @@ public:
 
   void dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs,
                                vector<FILE *> &fTxOutputs);
-};
-
-class FileWriter {
-  atomic<bool> running_;
-  atomic<bool> runningConsume_;
-  vector<std::pair<FILE *, string> > buffer_;
-  mutex lock_;
-
-  void threadConsume();
-
-public:
-  FileWriter();
-  ~FileWriter();
-
-  void stop();
-
-  void append(const string &s, FILE *f);
 };
 
 ///////////////////////////////  BlockTimestamp  /////////////////////////////////
@@ -239,16 +234,9 @@ class PreParser {
   AddrHandler *addrHandler_;
   TxHandler   *txHandler_;
 
-  FileWriter *fwriter_;
-
-  FILE *fBlocks_;
-  vector<FILE *>       fBlockTxs_;
-  vector<FILE *>       fTxs_;
-  vector<FILE *>       fTxInputs_;
-  vector<FILE *>       fTxOutputs_;
-  vector<FILE *>       fUnspentOutputs_;
-  vector<FILE *>       fAddrs_;
-  map<int32_t, FILE *> fAddrTxs_;   // <YMD, FILE*>
+  // rocksdb
+  rocksdb::DB *db_;
+  rocksdb::Options options_;
 
   string filePreTx_;
   string filePreAddr_;
@@ -262,8 +250,7 @@ class PreParser {
 
   // parse block
   void parseBlock(const CBlock &blk, const int64_t blockId,
-                  const int32_t height, const int32_t blockBytes,
-                  const int32_t chainId);
+                  const int32_t height, const int32_t blockBytes);
 
   // parse TX
   void parseTx(const int32_t height, const CTransaction &tx, const uint32_t nTime);
@@ -275,8 +262,13 @@ class PreParser {
   void handleAddressTxs(const map<string, int64_t> &addressBalance,
                         const int64_t txId, const int32_t ymd, const int32_t height);
 
-  void openFiles();
-  void closeFiles();
+  //
+  void kvSet(const string &key, const string &value);
+  void kvSet(const string &key, const uint8_t *data, const size_t length);
+
+  // help functions
+  void _saveBlock(const BlockInfo &b);
+  void _insertBlockTxs(const CBlock &blk);
 
 public:
   PreParser();

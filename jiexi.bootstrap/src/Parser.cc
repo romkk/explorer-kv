@@ -37,52 +37,10 @@
 #include "bitcoin/base58.h"
 #include "bitcoin/util.h"
 
+#include "explorer_generated.h"
 
-static void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo,
-                        FILE *f, FileWriter *fwriter);
-static void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f, FileWriter *fwriter);
-
-static FILE *openCSV(const char *fmt, ...) {
-  // Strings::Format(const char * fmt, ...)
-  char tmp[512];
-  string dest;
-  va_list al;
-  va_start(al, fmt);
-  int len = vsnprintf(tmp, 512, fmt, al);
-  va_end(al);
-  if (len>511) {
-    char * destbuff = new char[len+1];
-    va_start(al, fmt);
-    len = vsnprintf(destbuff, len+1, fmt, al);
-    va_end(al);
-    dest.append(destbuff, len);
-    delete destbuff;
-  } else {
-    dest.append(tmp, len);
-  }
-
-  const string dir = Config::GConfig.get("csv.data.dir");
-  {
-    // 目录不存在，尝试创建目录
-    boost::filesystem::path datadir(dir.c_str());
-    boost::filesystem::file_status s = boost::filesystem::status(datadir);
-    if (!boost::filesystem::is_directory(s)) {
-      LOG_INFO("mdkir: %s", dir.c_str());
-      if (!boost::filesystem::create_directory(datadir)) {
-        LOG_FATAL("mkdir failure: %s", dir.c_str());
-      }
-    }
-  }
-
-  string path = Strings::Format("%s/%s", dir.c_str(), dest.c_str());
-
-  FILE *f = fopen(path.c_str(), "w");
-  LOG_DEBUG("open file: %s", path.c_str());
-  if (f == nullptr) {
-    THROW_EXCEPTION_DBEX("open file failure: %s", dest.c_str());
-  }
-  return f;
-}
+static void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo);
+static void _saveTxOutput(TxInfo &txInfo, int32_t n);
 
 RawBlock::RawBlock(const int64_t blockId, const int32_t height, const int32_t chainId,
                    const uint256 hash, const char *hex) {
@@ -185,8 +143,7 @@ void getRawBlockFromDisk(const int32_t height, string *rawHex,
 ////////////////////////////////////////////////////////////////////////////////
 //-------------------------------- AddrHandler ---------------------------------
 ////////////////////////////////////////////////////////////////////////////////
-AddrHandler::AddrHandler(const size_t addrCount, const string &filePreAddr,
-                         FileWriter *fwriter) {
+AddrHandler::AddrHandler(const size_t addrCount, const string &filePreAddr) {
   addrInfo_.resize(addrCount);
   addrCount_ = addrCount;
   fwriter_ = fwriter;
@@ -253,11 +210,9 @@ void AddrHandler::dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs,
 ////////////////////////////////////////////////////////////////////////////////
 //--------------------------------- TxHandler ----------------------------------
 ////////////////////////////////////////////////////////////////////////////////
-TxHandler::TxHandler(const size_t txCount, const string &file,
-                     FileWriter *fwriter) {
+TxHandler::TxHandler(const size_t txCount, const string &file) {
   txInfo_.resize(txCount);
   txCount_ = txCount;
-  fwriter_ = fwriter;
 
   std::ifstream f(file);
   std::string line;
@@ -397,7 +352,7 @@ class TxOutput *TxHandler::getOutput(const uint256 &hash, const int32_t n) {
   return *(it->outputs_ + n);
 }
 
-void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f, FileWriter *fwriter) {
+void _saveTxOutput(TxInfo &txInfo, int32_t n) {
 //  // table.tx_outputs_xxxx
 //  //   `tx_id`,`position`,`address`,`address_ids`,`value`,`output_script_asm`,
 //  //   `output_script_hex`,`output_script_type`,
@@ -430,7 +385,7 @@ void _saveTxOutput(TxInfo &txInfo, int32_t n, FILE *f, FileWriter *fwriter) {
 
 void _saveUnspentOutput(TxInfo &txInfo, int32_t n,
                         vector<FILE *> &fUnspentOutputs,
-                        FILE *fTxoutput, FileWriter *fwriter) {
+                        FILE *fTxoutput) {
 //  string s;
 //  const string now = date("%F %T");
 //  TxOutput *out = *(txInfo.outputs_ + n);
@@ -468,86 +423,6 @@ void TxHandler::dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs,
 //    }
 //    delOutputAll(it);
 //  }
-}
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-//--------------------------------- FileWriter ---------------------------------
-////////////////////////////////////////////////////////////////////////////////
-FileWriter::FileWriter() {
-  running_ = true;
-  boost::thread t(boost::bind(&FileWriter::threadConsume, this));
-}
-
-FileWriter::~FileWriter() {
-  while (1) {
-    lock_.lock();
-    if (buffer_.size() > 0) {
-      lock_.unlock();
-      LOG_WARN("FileWriter::threadConsume is not finished yet, waiting...");
-      sleep(3);
-      continue;
-    }
-    lock_.unlock();
-    break;
-  }
-
-  stop();
-  while (runningConsume_ == true) {
-    sleepMs(10);
-  }
-}
-
-void FileWriter::stop() {
-  if (running_) {
-    running_ = false;
-    LOG_INFO("stop FileWriter...");
-  }
-}
-
-void FileWriter::append(const string &s, FILE *f) {
-  // 使用循环提交，务必写入到 buffer_ 里
-  // buffer大小有限制，防止占用过大内存
-  while (1) {
-    lock_.lock();
-    if (buffer_.size() < 100 * 10000) {
-      buffer_.push_back(make_pair(f, s));
-      lock_.unlock();
-      break;
-    }
-    lock_.unlock();
-    sleepMs(100);
-  }
-}
-
-void FileWriter::threadConsume() {
-  LogScope ls("FileWriter::threadConsume");
-  runningConsume_ = true;
-  while (1) {
-    vector<std::pair<FILE *, string> > cache;
-    {
-      ScopeLock sl(lock_);
-      while (buffer_.size() > 0) {
-        cache.push_back(*buffer_.rbegin());
-        buffer_.pop_back();
-      }
-    }
-
-    if (cache.size() == 0) {
-      if (running_ == false) {
-        // FileWriter::append()由主线程调用，会阻塞直至写入 buffer_
-        // 如果buffer_为空，则表明消费掉全部数据了，且running_为FALSE的话，则退出
-        break;
-      }
-      sleepMs(50);
-      continue;
-    }
-    for (auto &it : cache) {
-      fprintf(it.first, "%s\n", it.second.c_str());
-    }
-  } /* /while */
-  runningConsume_ = false;
 }
 
 
@@ -603,89 +478,34 @@ PreParser::PreParser(): blkTs_(2016) {
   curHeight_  = 0;
   running_ = true;
 
-  fwriter_ = new FileWriter();
-
   memset(&blockInfo_, 0, sizeof(blockInfo_));
+
+  //
+  // open Rocks DB
+  //
+  // Optimize RocksDB. This is the easiest way to get RocksDB to perform well
+  options_.IncreaseParallelism();
+  options_.OptimizeLevelStyleCompaction();
+  // create the DB if it's not already present
+  options_.create_if_missing = true;
+
+  const string kvpath = Strings::Format("./rocksdb_bootstrap_%d",
+                                        (int32_t)Config::GConfig.getInt("raw.max.block.height", -1));
+  rocksdb::Status s = rocksdb::DB::Open(options_, kvpath, &db_);
+  if (!s.ok()) {
+    THROW_EXCEPTION_DBEX("open rocks db fail");
+  }
 }
 
 PreParser::~PreParser() {
   stop();
-  delete fwriter_;
-  closeFiles();
+  delete db_;  // close kv db
 }
 
 void PreParser::stop() {
   if (running_) {
     running_ = false;
     LOG_INFO("stop PreParser...");
-  }
-  fwriter_->stop();
-}
-
-void PreParser::openFiles() {
-  fBlocks_ = openCSV("0_blocks.csv");
-
-  // table.block_txs_xxxx
-  for (int i = 0; i < 100; i++) {
-    fBlockTxs_.push_back(openCSV("block_txs_%04d.csv", i));
-  }
-
-  // table.txs_xxxx
-  for (int i = 0; i < 64; i++) {
-    fTxs_.push_back(openCSV("txs_%04d.csv", i));
-  }
-
-  // table.tx_inputs_xxxx
-  for (int i = 0; i < 100; i++) {
-    fTxInputs_.push_back(openCSV("tx_inputs_%04d.csv", i));
-  }
-
-  // table.tx_outputs_xxxx
-  for (int i = 0; i < 100; i++) {
-    fTxOutputs_.push_back(openCSV("tx_outputs_%04d.csv", i));
-  }
-
-  // table.address_unspent_outputs_xxxx
-  for (int i = 0; i < 10; i++) {
-    fUnspentOutputs_.push_back(openCSV("address_unspent_outputs_%04d.csv", i));
-  }
-
-  // table.addresses_xxxx
-  for (int i = 0; i < 64; i++) {
-    fAddrs_.push_back(openCSV("addresses_%04d.csv", i));
-  }
-
-  // table.address_txs_xxxx
-  const uint32_t startTs = 1230963305u;  // block 0: 2009-01-03 18:15:05
-  const uint32_t endTs   = (uint32_t)time(nullptr) + 86400;  // 防止临界错误
-  for (uint32_t ts = startTs; ts <= endTs; ts += 86400) {
-    const int32_t ymd = atoi(date("%Y%m", ts));
-    if (fAddrTxs_.find(ymd) != fAddrTxs_.end()) {
-      continue;
-    }
-    fAddrTxs_.insert(std::make_pair(ymd, openCSV("address_txs_%06d.csv", ymd)));
-  }
-}
-
-void PreParser::closeFiles() {
-  fclose(fBlocks_);
-  for (auto &it : fBlockTxs_) {
-    fclose(it);
-  }
-  for (auto &it : fTxs_) {
-    fclose(it);
-  }
-  for (auto &it : fTxInputs_) {
-    fclose(it);
-  }
-  for (auto &it : fTxOutputs_) {
-    fclose(it);
-  }
-  for (auto &it : fUnspentOutputs_) {
-    fclose(it);
-  }
-  for (auto &it : fAddrTxs_) {
-    fclose(it.second);
   }
 }
 
@@ -702,92 +522,111 @@ void PreParser::init() {
   // init
   {
     LogScope ls("init address Handler");
-    addrHandler_ = new AddrHandler(addrCount_, filePreAddr_, fwriter_);
+    addrHandler_ = new AddrHandler(addrCount_, filePreAddr_);
   }
   {
     LogScope ls("init txs Handler");
-    txHandler_   = new TxHandler(txCount_, filePreTx_, fwriter_);
+    txHandler_   = new TxHandler(txCount_, filePreTx_);
   }
-
-  // 初始化各类文件句柄
-  openFiles();
 }
 
-void _saveBlock(BlockInfo &b, FILE *f, FileWriter *fwriter) {
-  string line;
-  // 保存当前Block, table.0_blocks, 字段顺序严格按照表顺序
-  // `block_id`, `height`, `hash`, `version`, `mrkl_root`, `timestamp`, `curr_max_timestamp`,
-  // `bits`, `nonce`, `prev_block_id`, `prev_block_hash`,
-  // `next_block_id`, `next_block_hash`, `chain_id`, `size`, `pool_difficulty`,
-  // `difficulty`, `difficulty_double`,`tx_count`,
-  // `reward_block`, `reward_fees`, `relayed_by`, `bip_vote`, `created_at`
-  double diffDobule = 0.0;
-  BitsToDifficulty(b.header_.nBits, diffDobule);
+void PreParser::_saveBlock(const BlockInfo &b) {
+  flatbuffers::FlatBufferBuilder fbb;
+  fbb.ForceDefaults(true);
+
   const uint64_t pdiff = TargetToPdiff(b.blockHash_);
-  
-  line = Strings::Format("%lld,%d,%s,%d,%s,%u,%lld,%u,%u,"
-                         "%lld,%s,%lld,%s,"
-                         "%d,%d,%llu,%llu,%f,%d,%lld,%lld,0,\"0\",%s",
-                         b.blockId_, b.height_, b.blockHash_.ToString().c_str(),
-                         b.header_.nVersion, b.header_.hashMerkleRoot.ToString().c_str(),
-                         (uint32_t)b.header_.nTime, b.currMaxTimestamp_, b.header_.nBits, b.header_.nNonce,
-                         b.prevBlockId_, b.header_.hashPrevBlock.ToString().c_str(),
-                         b.nextBlockId_, b.nextBlockHash_.ToString().c_str(),
-                         b.chainId_, b.size_, pdiff, b.diff_, diffDobule,
-                         b.txCount_, b.rewardBlock_,
-                         b.rewardFee_, date("%F %T").c_str());
-  fwriter->append(line, f);
+  auto fb_mrklRoot    = fbb.CreateString(b.header_.hashMerkleRoot.ToString());
+  auto fb_nextBlkHash = fbb.CreateString(b.nextBlockHash_.ToString());
+  auto fb_prevBlkHash = fbb.CreateString(b.header_.hashPrevBlock.ToString());
+
+  fbe::BlockBuilder blkBuilder(fbb);
+  blkBuilder.add_bits(b.header_.nBits);
+  blkBuilder.add_created_at((uint32_t)time(nullptr));
+  blkBuilder.add_difficulty(b.diff_);
+  blkBuilder.add_height(b.height_);
+  blkBuilder.add_mrkl_root(fb_mrklRoot);
+  blkBuilder.add_next_block_hash(fb_nextBlkHash);
+  blkBuilder.add_nonce(b.header_.nNonce);
+  blkBuilder.add_pool_difficulty(pdiff);
+  blkBuilder.add_prev_block_hash(fb_prevBlkHash);
+  blkBuilder.add_reward_block(b.rewardBlock_);
+  blkBuilder.add_reward_fees(b.rewardFee_);
+  blkBuilder.add_size(b.size_);
+  blkBuilder.add_timestamp(b.header_.nTime);
+  blkBuilder.add_tx_count(b.txCount_);
+  blkBuilder.add_version(b.header_.nVersion);
+  fbb.Finish(blkBuilder.Finish());
+
+  // 11_{block_hash}, 需紧接 blockBuilder.Finish()
+  const string key11 = Strings::Format("%s%s", KVDB_PREFIX_BLOCK_OBJECT,
+                                       b.blockHash_.ToString().c_str());
+  kvSet(key11, fbb.GetBufferPointer(), fbb.GetSize());
+
+  // 10_{block_height}
+  const string key10 = Strings::Format("%s%010d", KVDB_PREFIX_BLOCK_HEIGHT, b.height_);
+  kvSet(key10, b.blockHash_.ToString());
 }
 
 void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
-                           const int32_t height, const int32_t blockBytes,
-                           const int32_t chainId) {
+                           const int32_t height, const int32_t blockBytes) {
   CBlockHeader header = blk.GetBlockHeader();  // alias
 
   blkTs_.pushBlock(height, header.GetBlockTime());
 
   BlockInfo cur;
-  cur.blockId_   = blockId;
   cur.blockHash_ = blk.GetHash();
-  cur.chainId_   = chainId;
   BitsToDifficulty(header.nBits, cur.diff_);
   cur.header_    = header;
   cur.height_    = height;
-  cur.currMaxTimestamp_ = blkTs_.getMaxTimestamp();
   cur.nextBlockHash_ = uint256();
-  cur.nextBlockId_   = 0;
-  cur.prevBlockId_   = 0;
   cur.size_  = blockBytes;
   cur.rewardBlock_ = GetBlockValue(height, 0);
   cur.rewardFee_   = blk.vtx[0].GetValueOut() - cur.rewardBlock_;
   cur.txCount_ = (int32_t)blk.vtx.size();
 
   if (height > 0) {
-    blockInfo_.nextBlockId_   = cur.blockId_;
     blockInfo_.nextBlockHash_ = cur.blockHash_;
-    cur.prevBlockId_ = blockInfo_.blockId_;
   }
 
   // 保存
   if (height > 0) {
-    _saveBlock(blockInfo_, fBlocks_, fwriter_);
+    _saveBlock(blockInfo_);
   }
   memcpy(&blockInfo_, &cur, sizeof(BlockInfo));
 
   // 保存最后一个
   if (height == stopHeight_) {
-    _saveBlock(blockInfo_, fBlocks_, fwriter_);
+    _saveBlock(blockInfo_);
   }
 
-//  // 保存当前块对应的交易
-//  // table.block_txs_xxxx: block_id, position, tx_id, created_at
-//  int i = 0;
-//  const string now = date("%F %T");
-//  for (auto & it : blk.vtx) {
-//    string s = Strings::Format("%lld,%d,%lld,%s", blockId, i++,
-//                               txHandler_->getTxId(it.GetHash()), now.c_str());
-//    fwriter_->append(s, fBlockTxs_[tableIdx_BlockTxs(blockId)]);
-//  }
+  // 保存当前块对应的交易
+  _insertBlockTxs(blk);
+}
+
+void PreParser::_insertBlockTxs(const CBlock &blk) {
+  const int32_t kBatchSize = 500;  // 每500条为一个批次
+
+  int32_t i = 0;
+  string key;
+  string value;
+  for (const auto &tx : blk.vtx) {
+    value += tx.GetHash().ToString();
+
+    if ((i+1) % kBatchSize == 0) {
+      key = Strings::Format("%s%s_%d", KVDB_PREFIX_BLOCK_TXS_STR,
+                            blk.GetHash().ToString().c_str(), (int32_t)(i/kBatchSize));
+      kvSet(key, value);
+      value.clear();
+    }
+    i++;
+  }
+
+  if (value.size() != 0) {
+    key = Strings::Format("%s%s_%d", KVDB_PREFIX_BLOCK_TXS_STR,
+                          blk.GetHash().ToString().c_str(), (int32_t)(i/kBatchSize));
+    kvSet(key, value);
+    value.clear();
+  }
 }
 
 void PreParser::parseTxInputs(const CTransaction &tx, const int64_t txId,
@@ -899,8 +738,7 @@ void PreParser::parseTxSelf(const int32_t height, const int64_t txId, const uint
   fwriter_->append(s, fTxs_[tableIdx_Tx(txId)]);
 }
 
-void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo,
-                 FILE *f, FileWriter *fwriter) {
+void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo) {
 //  string line;
 //  AddrTx &t = addrInfo->addrTx_;
 //
@@ -1038,7 +876,7 @@ void PreParser::run() {
 
     // 处理块
     LOG_INFO("parse block, height: %6d, txs: %5lld", curHeight_, blk.vtx.size());
-    parseBlock(blk, blockId, curHeight_, (int32_t)blkRawHex.length()/2, chainId);
+    parseBlock(blk, blockId, curHeight_, (int32_t)blkRawHex.length()/2);
 
     // 处理交易
     for (auto &tx : blk.vtx) {

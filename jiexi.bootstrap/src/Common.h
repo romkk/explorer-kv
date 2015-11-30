@@ -166,9 +166,9 @@ inline void BitsToDifficulty(uint32 bits, uint64 &difficulty) {
 }
 
 void BitsToTarget(uint32 bits, uint256 & target);
-uint64 TargetToBdiff(uint256 &target);
+uint64 TargetToBdiff(const uint256 &target);
 uint64 TargetToBdiff(const string &str);
-uint64 TargetToPdiff(uint256 &target);
+uint64 TargetToPdiff(const uint256 &target);
 uint64 TargetToPdiff(const string &str);
 // only support perfect diff, like 2^i, 3*(2^i), 5*(2^i)
 uint32 DiffToBits(uint64 diff);

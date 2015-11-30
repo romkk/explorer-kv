@@ -250,7 +250,7 @@ bool GetLocalPrimaryMacAddress(string &primaryMac, const uint32 primaryIp) {
 
 
 
-uint64 TargetToBdiff(uint256 &target) {
+uint64 TargetToBdiff(const uint256 &target) {
   CBigNum m, t;
   m.SetHex("0x00000000FFFF0000000000000000000000000000000000000000000000000000");
   t.setuint256(target);
@@ -264,7 +264,7 @@ uint64 TargetToBdiff(const string &str) {
   return strtoull((m / t).ToString().c_str(), NULL, 10);
 }
 
-uint64 TargetToPdiff(uint256 &target) {
+uint64 TargetToPdiff(const uint256 &target) {
   CBigNum m, t;
   m.SetHex("0x00000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
   t.setuint256(target);

@@ -22,7 +22,7 @@ table APIResponse {
 table TxInput {
   script_asm: string;
   script_hex: string;
-  sequence: long;
+  sequence: uint;
   prev_tx_hash: string;
   prev_position: int;  // coinbase tx prev_postion = -1, prev_value = 0
   prev_value: long;

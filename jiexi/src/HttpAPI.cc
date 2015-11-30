@@ -304,8 +304,7 @@ void APIHandler::address(APIInOut &resp, evhtp_request_t *req) {
     for (const auto &value : values) {
       auto fbAddressTx = flatbuffers::GetRoot<fbe::AddressTx>(value.data());
       buf.append("{");
-      buf.append(Strings::Format("\"hash\":\"%s\",", fbAddressTx->tx_hash()->c_str()));
-      buf.append(Strings::Format("\"height\":%d,",   fbAddressTx->tx_height()));
+//      buf.append(Strings::Format("\"hash\":\"%s\",", fbAddressTx->tx_hash()->c_str()));
       buf.append(Strings::Format("\"ymd\":%d,",      fbAddressTx->ymd()));
       buf.append(Strings::Format("\"balance_diff\":%lld,", fbAddressTx->balance_diff()));
       getTx(fbAddressTx->tx_hash()->str(), buf, resp.verbose_);
@@ -326,25 +325,30 @@ void APIHandler::getTx(const string &txHash, string &buf, int32_t verbose) {
   buf.append(Strings::Format("\"hash\":\"%s\",", txHash.c_str()));
   buf.append(Strings::Format("\"block_height\":%d,", fbTx->height()));
   buf.append(Strings::Format("\"is_coinbase\":%s,",  fbTx->is_coinbase() ? "true" : "false"));
-  buf.append(Strings::Format("\"version\":%d,",      fbTx->version()));
-  buf.append(Strings::Format("\"lock_time\":%u,",    fbTx->lock_time()));
-  buf.append(Strings::Format("\"size\":%d,",         fbTx->size()));
-  buf.append(Strings::Format("\"fee\":%lld,",        fbTx->fee()));
   buf.append(Strings::Format("\"inputs_count\":%d,",    fbTx->inputs_count()));
   buf.append(Strings::Format("\"inputs_value\":%lld,",  fbTx->inputs_value()));
   buf.append(Strings::Format("\"outputs_count\":%d,",   fbTx->outputs_count()));
   buf.append(Strings::Format("\"outputs_value\":%lld,", fbTx->outputs_value()));
-  
+
+  if (verbose >= 2) {
+    buf.append(Strings::Format("\"size\":%d,",         fbTx->size()));
+    buf.append(Strings::Format("\"fee\":%lld,",        fbTx->fee()));
+    buf.append(Strings::Format("\"version\":%d,",      fbTx->version()));
+    buf.append(Strings::Format("\"lock_time\":%u,",    fbTx->lock_time()));
+  }
+
   //
   // inputs
   //
   buf.append("\"inputs\":[");
   for (auto input : *fbTx->inputs()) {
     buf.append("{");
-    buf.append(Strings::Format("\"script_asm\":\"%s\",", input->script_asm()->c_str()));
-    buf.append(Strings::Format("\"script_hex\":\"%s\",", input->script_hex()->c_str()));
-    buf.append(Strings::Format("\"sequence\":%u,", (uint32_t)input->sequence()));
-    
+    if (verbose >= 3) {
+      buf.append(Strings::Format("\"sequence\":%u,", (uint32_t)input->sequence()));
+      buf.append(Strings::Format("\"script_asm\":\"%s\",", input->script_asm()->c_str()));
+      buf.append(Strings::Format("\"script_hex\":\"%s\",", input->script_hex()->c_str()));
+    }
+
     if (!fbTx->is_coinbase()) {
       buf.append(Strings::Format("\"prev_hash\":\"%s\",", input->prev_tx_hash()->c_str()));
       buf.append(Strings::Format("\"prev_position\":%d,", input->prev_position()));
@@ -381,10 +385,11 @@ void APIHandler::getTx(const string &txHash, string &buf, int32_t verbose) {
     buf.append("],");
     
     buf.append(Strings::Format("\"value\":%lld,",         output->value()));
-    buf.append(Strings::Format("\"script_asm\":\"%s\",",  output->script_asm()->c_str()));
-    buf.append(Strings::Format("\"script_hex\":\"%s\",",  output->script_hex()->c_str()));
-    buf.append(Strings::Format("\"script_type\":\"%s\",", output->script_type()->c_str()));
-    
+    if (verbose >= 3) {
+      buf.append(Strings::Format("\"script_asm\":\"%s\",",  output->script_asm()->c_str()));
+      buf.append(Strings::Format("\"script_hex\":\"%s\",",  output->script_hex()->c_str()));
+      buf.append(Strings::Format("\"script_type\":\"%s\",", output->script_type()->c_str()));
+    }
     removeLastComma(buf);
     buf.append("},");
   }

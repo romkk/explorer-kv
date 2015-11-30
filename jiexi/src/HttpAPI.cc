@@ -366,7 +366,7 @@ void APIHandler::getTx(const string &txHash, string &buf, int32_t verbose) {
   kvdb_->get(kvKey, kvValue);
   auto fbTx = flatbuffers::GetRoot<fbe::Tx>(kvValue.data());
   buf.append(Strings::Format("\"hash\":\"%s\",", txHash.c_str()));
-  buf.append(Strings::Format("\"block_height\":%d,", fbTx->height()));
+  buf.append(Strings::Format("\"block_height\":%d,", fbTx->block_height()));
   buf.append(Strings::Format("\"is_coinbase\":%s,",  fbTx->is_coinbase() ? "true" : "false"));
   buf.append(Strings::Format("\"inputs_count\":%d,",    fbTx->inputs_count()));
   buf.append(Strings::Format("\"inputs_value\":%lld,",  fbTx->inputs_value()));

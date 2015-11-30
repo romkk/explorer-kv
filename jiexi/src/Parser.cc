@@ -575,6 +575,7 @@ void _insertBlock(KVDB &kvdb, const CBlock &blk, const int32_t height, const int
     auto fb_prevBlkHash = fbb.CreateString(prevBlockHash);
 
     fbe::BlockBuilder blockBuilder(fbb);
+    blockBuilder.add_height(height);
     blockBuilder.add_bits(header.nBits);
     blockBuilder.add_created_at((uint32_t)time(nullptr));
     blockBuilder.add_difficulty(difficulty);
@@ -719,7 +720,7 @@ static AddressInfo *_getAddressInfo(KVDB &kvdb, const string &address) {
                                    fbAddress->unconfirmed_received(),
                                    fbAddress->unconfirmed_sent(),
                                    fbAddress->unspent_tx_count(),
-                                   fbAddress->unspent_tx_index(),
+                                   fbAddress->unspent_tx_max_index(),
                                    fbAddress->last_confirmed_tx_idx(),
                                    lastUseIdx++);
     }
@@ -1198,8 +1199,8 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   // build tx object
   //
   fbe::TxBuilder txBuilder(fbb);
-  txBuilder.add_height(-1);
-  txBuilder.add_position_in_block(-1);
+  txBuilder.add_block_height(-1);
+  txBuilder.add_block_time(0);
   txBuilder.add_is_coinbase(tx.IsCoinBase());
   txBuilder.add_version(tx.nVersion);
   txBuilder.add_lock_time(tx.nLockTime);
@@ -1256,7 +1257,7 @@ void Parser::flushAddressInfo(const map<string, int64_t> &addressBalance) {
     addressBuilder.add_unconfirmed_received(addr->unconfirmedReceived_);
     addressBuilder.add_unconfirmed_sent(addr->unconfirmedSent_);
     addressBuilder.add_unspent_tx_count(addr->unspentTxCount_);
-    addressBuilder.add_unspent_tx_index(addr->unspentTxIndex_);
+    addressBuilder.add_unspent_tx_max_index(addr->unspentTxIndex_);
     addressBuilder.add_last_confirmed_tx_idx(addr->lastConfirmedTxIdx_);
     fbb.Finish(addressBuilder.Finish());
 
@@ -1403,7 +1404,8 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
       const int64_t fee = txLog2->tx_.GetValueOut() - GetBlockValue(txLog2->blkHeight_, 0);
       txObject->mutate_fee(fee);
     }
-    txObject->mutate_height(txLog2->blkHeight_);
+    txObject->mutate_block_height(txLog2->blkHeight_);
+    txObject->mutate_block_time(txLog2->maxBlkTimestamp_);
 
     kvdb_.set(key, value);
   }
@@ -1472,8 +1474,8 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
     string value;
     kvdb_.get(key, value);
     auto txObject = flatbuffers::GetMutableRoot<fbe::Tx>((void *)value.data());
-    txObject->mutate_position_in_block(-1);
-    txObject->mutate_height(-1);
+    txObject->mutate_block_time(0);
+    txObject->mutate_block_height(-1);
     kvdb_.set(key, value);
   }
 

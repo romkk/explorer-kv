@@ -39,8 +39,8 @@ table TxOutput {
 
 // 01_{tx_hash}
 table Tx {
-  height: int;              // 未确认时为 -1
-  position_in_block: int;   // 未确认时为 -1
+  block_height: int;        // 未确认时为 -1
+  block_time: uint;         // 未确认时为 0
   is_coinbase: bool;
   version: int;
   lock_time: uint;
@@ -63,13 +63,14 @@ table TxSpentBy {
 
 // 11_{block_hash}
 table Block {
+  height: int;
   version: int;
   mrkl_root: string;
   timestamp: uint;
   bits: uint;
   nonce: uint;
-  prev_block_hash: string;
-  next_block_hash: string;
+  prev_block_hash: string;    // 64个0 则表示没有
+  next_block_hash: string;    // 64个0 则表示没有
   size: int;
   pool_difficulty: long;
   difficulty: double;
@@ -93,7 +94,7 @@ table Address {
   unconfirmed_received: long;
   unconfirmed_sent: long;
   unspent_tx_count: int;
-  unspent_tx_index: int;
+  unspent_tx_max_index: int;
   last_confirmed_tx_idx: int;
 }
 

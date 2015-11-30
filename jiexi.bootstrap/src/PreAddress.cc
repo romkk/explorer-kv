@@ -106,12 +106,6 @@ PreAddress::PreAddress(): f_(nullptr) {
     THROW_EXCEPTION_DBEX("open file failure: %s", file.c_str());
   }
 
-  // address 分表为64张
-  addressesIds_.resize(64);
-  for (int i = 0; i < 64; i++) {
-    addressesIds_[i] = (int64_t)i * BILLION;
-  }
-
   running_ = true;
   height_ = 0;
   runningProduceThreads_ = 0;
@@ -172,17 +166,12 @@ void PreAddress::threadConsumeAddr() {
     }
 
     for (auto &addr : buf) {
-      string line;
       if (preAddressHolder_.isExist(addr)) {
         continue;
       }
-
-      const int32_t tableIdx = AddressTableIndex(addr) % 64;
       preAddressHolder_.insert(addr);
-      addressesIds_[tableIdx]++;
-      line = Strings::Format("%s,%lld", addr.c_str(), addressesIds_[tableIdx]);
 
-      fprintf(f_, "%s\n", line.c_str());
+      fprintf(f_, "%s\n", addr.c_str());
       cnt++;
 
       if (cnt % 10000 == 0) {

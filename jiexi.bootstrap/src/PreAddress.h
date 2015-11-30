@@ -72,7 +72,6 @@ private:
 
   vector<string> addrBuf_;
   PreAddressHolder preAddressHolder_;
-  vector<int64_t> addressesIds_;
   FILE *f_;
   mutex lock_;
 

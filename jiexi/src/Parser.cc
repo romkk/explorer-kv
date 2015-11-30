@@ -1879,10 +1879,10 @@ bool Parser::tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId) {
     }
   }
 
-  // 清理旧记录: 保留50万条已经消费过的记录，每2万条触发清理一次
-  if (txLog2->id_ > 50*10000 && txLog2->id_ % 20000 == 0) {
+  // 清理旧记录: 保留200万条已经消费过的记录，每2万条触发清理一次
+  if (txLog2->id_ > 200*10000 && txLog2->id_ % 20000 == 0) {
     string delSql = Strings::Format("DELETE FROM `0_txlogs2` WHERE `id` < %lld",
-                                    txLog2->id_ - 50*10000);
+                                    txLog2->id_ - 200*10000);
     const size_t delRowNum = dbExplorer_.update(delSql);
     LOG_INFO("delete expired txlogs2 items: %llu", delRowNum);
   }

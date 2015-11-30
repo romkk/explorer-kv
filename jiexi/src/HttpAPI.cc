@@ -109,23 +109,46 @@ void kv_output(evhtp_request_t *req, const string &queryId,
   auto fb_data      = fbb.CreateVector(resp.data_);
   auto fb_queryId   = fbb.CreateString(queryId);
   auto fb_errorMsg  = fbb.CreateString(error_msg != nullptr ? error_msg : "");
+  // type_arr
   vector<flatbuffers::Offset<flatbuffers::String> > fb_typesVec;
   for (const auto &type : resp.types_) {
     fb_typesVec.push_back(fbb.CreateString(type));
   }
   auto fb_typesArr = fbb.CreateVector(fb_typesVec);
 
+  // key_arr
+  vector<flatbuffers::Offset<flatbuffers::String> > fb_KeysVec;
+  for (const auto &key : resp.keys_) {
+    fb_KeysVec.push_back(fbb.CreateString(key));
+  }
+  auto fb_KeysArr = fbb.CreateVector(fb_KeysVec);
+
   fbe::APIResponseBuilder apiResp(fbb);
-  apiResp.add_error_no(error_no);
-  apiResp.add_error_msg(fb_errorMsg);
-  apiResp.add_id(fb_queryId);
+  apiResp.add_error_no  (error_no);
+  apiResp.add_error_msg (fb_errorMsg);
+  apiResp.add_id        (fb_queryId);
   apiResp.add_length_arr(fb_lengthArr);
   apiResp.add_offset_arr(fb_offsetArr);
-  apiResp.add_type_arr(fb_typesArr);
+  apiResp.add_type_arr  (fb_typesArr);
+  apiResp.add_key_arr   (fb_KeysArr);
   apiResp.add_data(fb_data);
   fbb.Finish(apiResp.Finish());
   
   evbuffer_add_reference(req->buffer_out, fbb.GetBufferPointer(), fbb.GetSize(), NULL, NULL);
+
+  // debug test
+  {
+    auto r = flatbuffers::GetRoot<fbe::APIResponse>(fbb.GetBufferPointer());
+    for (auto i = 0; i < r->offset_arr()->size(); i++) {
+      LOG_DEBUG("offset_arr: %u: %d", i, r->offset_arr()->Get(i));
+    }
+    for (auto i = 0; i < r->length_arr()->size(); i++) {
+      LOG_DEBUG("length_arr: %u: %d", i, r->length_arr()->Get(i));
+    }
+    for (auto i = 0; i < r->key_arr()->size(); i++) {
+      LOG_DEBUG("key_arr: %u: %s", i, r->key_arr()->Get(i)->c_str());
+    }
+  }
 }
 
 void kv_handle_get(evhtp_request_t *req, const vector<string> &params, const string &queryId) {
@@ -233,8 +256,12 @@ void cb_api(evhtp_request_t *req, void *ptr) {
   
   APIInOut apiInOut(verbose, pageNo, pageSize);
   if (strcmp(method, "address") == 0) {
-    string data;
     gAPIHandler->address(apiInOut, req);
+  } else if (strcmp(method, "tx") == 0) {
+    gAPIHandler->tx(apiInOut, req);
+  } else {
+    api_output_error(req, API_ERROR_INVALID_PARAMS, "method is not found");
+    return;
   }
   
   // output
@@ -356,6 +383,23 @@ void APIHandler::address(APIInOut &resp, evhtp_request_t *req) {
     removeLastComma(buf);
   }
   buf.append("]");  // /txs
+  buf.append("}");
+}
+
+void APIHandler::tx(APIInOut &resp, evhtp_request_t *req) {
+  string hash;
+  if (evhtp_kv_find(req->uri->query, "hash") != nullptr) {
+    hash = string(evhtp_kv_find(req->uri->query, "hash"));
+  }
+  if (hash.length() != 64) {
+    resp.errorNo_  = API_ERROR_INVALID_PARAMS;
+    resp.errorMsg_ = "invalid tx hash";
+    return;
+  }
+
+  string &buf = resp.data_;
+  buf.append("{");
+  getTx(hash, buf, resp.verbose_);
   buf.append("}");
 }
 

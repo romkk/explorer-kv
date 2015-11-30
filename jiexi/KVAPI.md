@@ -30,6 +30,8 @@ table APIResponse {
 }
 ```
 
+`key_arr` 返回查询的keys，若`method`为`get`，则返回所有的keys；若`method`为`range`，则返回查询到存在的keys。
+
 -----------------
 
 

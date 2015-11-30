@@ -29,6 +29,7 @@ typedef void (*handleFunction)(evhtp_request_t *req, const vector<string> &param
 KVDB *gDB = nullptr;
 std::unordered_map<string, handleFunction> gHandleFunctions;  // kv handle functions
 APIHandler *gAPIHandler = nullptr;
+std::vector<const char *> gKeyTypes;  // 键对应的类型
 
 
 //////////////////////////////// static functions //////////////////////////////
@@ -52,12 +53,19 @@ void dbGetKeys(const vector<string> &keys, APIResponse &resp) {
   assert(keys.size() != 0);
   resp.length_.resize(keys.size(),  0);
   resp.offset_.resize(keys.size(), -1);
+  resp.types_.resize(keys.size(),  "");
   
   vector<string> buffer(keys.size());
   gDB->multiGet(keys, buffer);
   assert(buffer.size() == keys.size());
   
   for (size_t i = 0; i < keys.size(); i++) {
+    // type
+    const int32_t keyPrefixInt = atoi(keys[i].substr(0, 2).c_str());
+    if (keyPrefixInt >= 0 && keyPrefixInt < gKeyTypes.size() && gKeyTypes[keyPrefixInt] != nullptr) {
+      resp.types_[i] = string(gKeyTypes[keyPrefixInt]);
+    }
+
     // 设置data
     if (buffer[i].size() == 0) {
       continue;
@@ -90,13 +98,19 @@ void kv_output(evhtp_request_t *req, const string &queryId,
   auto fb_data      = fbb.CreateVector(resp.data_);
   auto fb_queryId   = fbb.CreateString(queryId);
   auto fb_errorMsg  = fbb.CreateString(error_msg != nullptr ? error_msg : "");
-  
+  vector<flatbuffers::Offset<flatbuffers::String> > fb_typesVec;
+  for (const auto &type : resp.types_) {
+    fb_typesVec.push_back(fbb.CreateString(type));
+  }
+  auto fb_typesArr = fbb.CreateVector(fb_typesVec);
+
   fbe::APIResponseBuilder apiResp(fbb);
   apiResp.add_error_no(error_no);
   apiResp.add_error_msg(fb_errorMsg);
   apiResp.add_id(fb_queryId);
   apiResp.add_length_arr(fb_lengthArr);
   apiResp.add_offset_arr(fb_offsetArr);
+  apiResp.add_type_arr(fb_typesArr);
   apiResp.add_data(fb_data);
   fbb.Finish(apiResp.Finish());
   
@@ -120,6 +134,7 @@ void kv_handle_ping(evhtp_request_t *req, const vector<string> &params, const st
   resp.data_.insert(resp.data_.end(), s.begin(), s.end());
   resp.length_.push_back((int32_t)s.size());
   resp.offset_.push_back(0);
+  resp.types_.push_back("string");
   kv_output(req, queryId, resp);
   evhtp_send_reply(req, EVHTP_RES_OK);
 }
@@ -419,6 +434,21 @@ void APIServer::init() {
   // 注册方法名称
   gHandleFunctions["get"]  = kv_handle_get;
   gHandleFunctions["ping"] = kv_handle_ping;
+
+  // 注册键值对应名称
+  gKeyTypes.resize(100, nullptr);
+  gKeyTypes[01] = "Tx";
+  gKeyTypes[02] = "TxSpentBy";
+  gKeyTypes[10] = "string";
+  gKeyTypes[11] = "Block";
+  gKeyTypes[12] = "string";
+  gKeyTypes[20] = "Address";
+  gKeyTypes[21] = "AddressTx";
+  gKeyTypes[22] = "string";
+  gKeyTypes[23] = "AddressUnspent";
+  gKeyTypes[24] = "AddressUnspentIdx";
+  gKeyTypes[30] = "DoubleSpending";
+  gKeyTypes[90] = "string";
   
   // 设置
   gAPIHandler = new APIHandler(kvdb_);

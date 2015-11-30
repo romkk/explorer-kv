@@ -44,6 +44,7 @@ class APIResponse {
 public:
 	vector<uint8_t> data_;
 	vector<int32_t> length_, offset_;
+  vector<string> types_;
 };
 
 class APIInOut {

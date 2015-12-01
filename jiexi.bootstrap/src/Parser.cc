@@ -475,14 +475,13 @@ KVHandler::KVHandler(): running_(true), startTime_(0), counter_(0), runningConsu
   // open Rocks DB
   //
   // Optimize RocksDB. This is the easiest way to get RocksDB to perform well
-  options_.IncreaseParallelism(8);
+  options_.IncreaseParallelism();
   options_.OptimizeLevelStyleCompaction();
   options_.create_if_missing = true;   // create the DB if it's not already present
-  options_.disableDataSync   = true;   // disable syncing of data files
-
-  options_.write_buffer_size = (size_t)512 * 1024 * 1024;
-  options_.max_write_buffer_number = 2048;
   options_.compression = rocksdb::kSnappyCompression;
+
+//  options_.disableDataSync   = true;   // disable syncing of data files
+//  options_.write_buffer_size = (size_t)64 * 1024 * 1024;
 
   const string kvpath = Strings::Format("./rocksdb_bootstrap_%d_%s",
                                         (int32_t)Config::GConfig.getInt("raw.max.block.height", -1),
@@ -492,9 +491,9 @@ KVHandler::KVHandler(): running_(true), startTime_(0), counter_(0), runningConsu
     THROW_EXCEPTION_DBEX("open rocks db fail");
   }
 
-  // Optimize
-  writeOptions_.disableWAL = true;   // disable Write Ahead Log
-  writeOptions_.sync       = false;  // use Asynchronous Writes
+//  // Optimize
+//  writeOptions_.disableWAL = true;   // disable Write Ahead Log
+//  writeOptions_.sync       = false;  // use Asynchronous Writes
 }
 
 KVHandler::~KVHandler() {
@@ -522,9 +521,10 @@ void KVHandler::set(const string &key, const string &value) {
 void KVHandler::set(const string &key, const uint8_t *data, const size_t size) {
   while (1) {
     lock_.lock();
-    if (keysLength_.size() > 10 * 10000) {
+    if (keysLength_.size() > 5 * 10000) {
       lock_.unlock();
-      sleepMs(200);
+      LOG_WARN("too many kv items in buffer, wait...");
+      sleepMs(1000);
       continue;
     }
 
@@ -562,33 +562,54 @@ size_t KVHandler::writeToDisk() {
     if (keysLength_.size() == 0) {
       return cnt;
     }
-    tmpKeysData_   = keysData_;
-    tmpKeysLength_ = keysLength_;
-    tmpKeysOffset_ = keysOffset_;
 
-    tmpValuesData_   = valuesData_;
-    tmpValuesLength_ = valuesLength_;
-    tmpValuesOffset_ = valuesOffset_;
+    tmpKeysData_.swap(keysData_);
+    tmpKeysLength_.swap(keysLength_);
+    tmpKeysOffset_.swap(keysOffset_);
 
-    keysData_.clear();
-    keysLength_.clear();
-    keysOffset_.clear();
-
-    valuesData_.clear();
-    valuesLength_.clear();
-    valuesOffset_.clear();
+    tmpValuesData_.swap(valuesData_);
+    tmpValuesLength_.swap(valuesLength_);
+    tmpValuesOffset_.swap(valuesOffset_);
   }
 
-  rocksdb::WriteBatch batch;
+//  rocksdb::WriteBatch batch;
+//  for (auto i = 0; i < tmpKeysLength_.size(); i++) {
+//    const rocksdb::Slice key  ((const char *)&tmpKeysData_[0]   + tmpKeysOffset_[i],   tmpKeysLength_[i]);
+//    const rocksdb::Slice value((const char *)&tmpValuesData_[0] + tmpValuesOffset_[i], tmpValuesLength_[i]);
+//
+//    batch.Put(key, value);
+//
+//    // 每 N 条写一次
+//    if (batch.Count() % 50 == 0) {
+//      rocksdb::Status s = db_->Write(writeOptions_, &batch);
+//      if (!s.ok()) {
+//        THROW_EXCEPTION_DBEX("write kv WriteBatch failure");
+//      }
+//    }
+//
+//    cnt++;
+//    counter_++;
+//    if (counter_ % 100000 == 0 && time(nullptr) > startTime_) {
+//      printSpeed();
+//    }
+//  }
+//
+//  // 剩余的批次
+//  if (batch.Count() != 0) {
+//    rocksdb::Status s = db_->Write(writeOptions_, &batch);
+//    if (!s.ok()) {
+//      THROW_EXCEPTION_DBEX("write kv WriteBatch failure");
+//    }
+//  }
+
   for (auto i = 0; i < tmpKeysLength_.size(); i++) {
     const rocksdb::Slice key  ((const char *)&tmpKeysData_[0]   + tmpKeysOffset_[i],   tmpKeysLength_[i]);
     const rocksdb::Slice value((const char *)&tmpValuesData_[0] + tmpValuesOffset_[i], tmpValuesLength_[i]);
-
-    batch.Put(key, value);
+    db_->Put(writeOptions_, key, value);
 
     cnt++;
     counter_++;
-    if (counter_ % 100000 == 0 && time(nullptr) > startTime_) {
+    if (counter_ % 50000 == 0 && time(nullptr) > startTime_) {
       printSpeed();
     }
   }
@@ -601,11 +622,6 @@ size_t KVHandler::writeToDisk() {
   tmpValuesLength_.clear();
   tmpValuesOffset_.clear();
 
-  rocksdb::Status s = db_->Write(writeOptions_, &batch);
-  if (!s.ok()) {
-    THROW_EXCEPTION_DBEX("write kv WriteBatch failure");
-  }
-
   return cnt;
 }
 
@@ -614,7 +630,7 @@ void KVHandler::threadConsumeKVItems() {
 
   while (running_) {
     if (writeToDisk() == 0) {
-      sleepMs(500);
+      sleepMs(200);
     }
   }  //  /while (running_)
 

@@ -532,8 +532,8 @@ struct Address FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   bool mutate_unspent_tx_count(int32_t unspent_tx_count) { return SetField(16, unspent_tx_count); }
   int32_t unspent_tx_max_index() const { return GetField<int32_t>(18, 0); }
   bool mutate_unspent_tx_max_index(int32_t unspent_tx_max_index) { return SetField(18, unspent_tx_max_index); }
-  int32_t last_confirmed_tx_idx() const { return GetField<int32_t>(20, 0); }
-  bool mutate_last_confirmed_tx_idx(int32_t last_confirmed_tx_idx) { return SetField(20, last_confirmed_tx_idx); }
+  int32_t last_confirmed_tx_index() const { return GetField<int32_t>(20, 0); }
+  bool mutate_last_confirmed_tx_index(int32_t last_confirmed_tx_index) { return SetField(20, last_confirmed_tx_index); }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<int64_t>(verifier, 4 /* received */) &&
@@ -544,7 +544,7 @@ struct Address FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
            VerifyField<int64_t>(verifier, 14 /* unconfirmed_sent */) &&
            VerifyField<int32_t>(verifier, 16 /* unspent_tx_count */) &&
            VerifyField<int32_t>(verifier, 18 /* unspent_tx_max_index */) &&
-           VerifyField<int32_t>(verifier, 20 /* last_confirmed_tx_idx */) &&
+           VerifyField<int32_t>(verifier, 20 /* last_confirmed_tx_index */) &&
            verifier.EndTable();
   }
 };
@@ -560,7 +560,7 @@ struct AddressBuilder {
   void add_unconfirmed_sent(int64_t unconfirmed_sent) { fbb_.AddElement<int64_t>(14, unconfirmed_sent, 0); }
   void add_unspent_tx_count(int32_t unspent_tx_count) { fbb_.AddElement<int32_t>(16, unspent_tx_count, 0); }
   void add_unspent_tx_max_index(int32_t unspent_tx_max_index) { fbb_.AddElement<int32_t>(18, unspent_tx_max_index, 0); }
-  void add_last_confirmed_tx_idx(int32_t last_confirmed_tx_idx) { fbb_.AddElement<int32_t>(20, last_confirmed_tx_idx, 0); }
+  void add_last_confirmed_tx_index(int32_t last_confirmed_tx_index) { fbb_.AddElement<int32_t>(20, last_confirmed_tx_index, 0); }
   AddressBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
   AddressBuilder &operator=(const AddressBuilder &);
   flatbuffers::Offset<Address> Finish() {
@@ -578,13 +578,13 @@ inline flatbuffers::Offset<Address> CreateAddress(flatbuffers::FlatBufferBuilder
    int64_t unconfirmed_sent = 0,
    int32_t unspent_tx_count = 0,
    int32_t unspent_tx_max_index = 0,
-   int32_t last_confirmed_tx_idx = 0) {
+   int32_t last_confirmed_tx_index = 0) {
   AddressBuilder builder_(_fbb);
   builder_.add_unconfirmed_sent(unconfirmed_sent);
   builder_.add_unconfirmed_received(unconfirmed_received);
   builder_.add_sent(sent);
   builder_.add_received(received);
-  builder_.add_last_confirmed_tx_idx(last_confirmed_tx_idx);
+  builder_.add_last_confirmed_tx_index(last_confirmed_tx_index);
   builder_.add_unspent_tx_max_index(unspent_tx_max_index);
   builder_.add_unspent_tx_count(unspent_tx_count);
   builder_.add_unconfirmed_tx_count(unconfirmed_tx_count);
@@ -599,15 +599,15 @@ struct AddressTx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   flatbuffers::String *mutable_tx_hash() { return GetPointer<flatbuffers::String *>(6); }
   int32_t tx_height() const { return GetField<int32_t>(8, 0); }
   bool mutate_tx_height(int32_t tx_height) { return SetField(8, tx_height); }
-  int32_t ymd() const { return GetField<int32_t>(10, 0); }
-  bool mutate_ymd(int32_t ymd) { return SetField(10, ymd); }
+  uint32_t tx_block_time() const { return GetField<uint32_t>(10, 0); }
+  bool mutate_tx_block_time(uint32_t tx_block_time) { return SetField(10, tx_block_time); }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<int64_t>(verifier, 4 /* balance_diff */) &&
            VerifyField<flatbuffers::uoffset_t>(verifier, 6 /* tx_hash */) &&
            verifier.Verify(tx_hash()) &&
            VerifyField<int32_t>(verifier, 8 /* tx_height */) &&
-           VerifyField<int32_t>(verifier, 10 /* ymd */) &&
+           VerifyField<uint32_t>(verifier, 10 /* tx_block_time */) &&
            verifier.EndTable();
   }
 };
@@ -618,7 +618,7 @@ struct AddressTxBuilder {
   void add_balance_diff(int64_t balance_diff) { fbb_.AddElement<int64_t>(4, balance_diff, 0); }
   void add_tx_hash(flatbuffers::Offset<flatbuffers::String> tx_hash) { fbb_.AddOffset(6, tx_hash); }
   void add_tx_height(int32_t tx_height) { fbb_.AddElement<int32_t>(8, tx_height, 0); }
-  void add_ymd(int32_t ymd) { fbb_.AddElement<int32_t>(10, ymd, 0); }
+  void add_tx_block_time(uint32_t tx_block_time) { fbb_.AddElement<uint32_t>(10, tx_block_time, 0); }
   AddressTxBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
   AddressTxBuilder &operator=(const AddressTxBuilder &);
   flatbuffers::Offset<AddressTx> Finish() {
@@ -631,10 +631,10 @@ inline flatbuffers::Offset<AddressTx> CreateAddressTx(flatbuffers::FlatBufferBui
    int64_t balance_diff = 0,
    flatbuffers::Offset<flatbuffers::String> tx_hash = 0,
    int32_t tx_height = 0,
-   int32_t ymd = 0) {
+   uint32_t tx_block_time = 0) {
   AddressTxBuilder builder_(_fbb);
   builder_.add_balance_diff(balance_diff);
-  builder_.add_ymd(ymd);
+  builder_.add_tx_block_time(tx_block_time);
   builder_.add_tx_height(tx_height);
   builder_.add_tx_hash(tx_hash);
   return builder_.Finish();

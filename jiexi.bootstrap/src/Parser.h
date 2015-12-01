@@ -86,30 +86,23 @@ public:
 };
 
 struct AddrTx {
-  int64_t txId_;
-  int64_t balanceDiff_;
-  int64_t balanceFinal_;
-  int32_t prevYmd_;
-  int32_t nextYmd_;
-  int64_t prevTxId_;
-  int64_t nextTxId_;
-  int32_t txHeight_;
-  int32_t ymd_;
+  int64_t  balanceDiff_;
+  int32_t  txHeight_;
+  uint32_t txBlockTime_;  // 交易所在的块时间，未确认为零
+  uint256  txHash_;
 
   AddrTx() {
-    memset((char *)&txId_, 0, sizeof(struct AddrTx));
+    memset((char *)&balanceDiff_, 0, sizeof(struct AddrTx));
+    txHeight_ = -1;
   }
 };
 
 struct AddrInfo {
   char addrStr_[36];
-  int64_t idx_;
-  int32_t beginTxYmd_;
-  int32_t endTxYmd_;
-  int64_t beginTxId_;
-  int64_t endTxId_;
-  int64_t totalReceived_;
-  int64_t totalSent_;
+  int64_t received_;
+  int64_t sent_;
+  int32_t txCount_;
+  int32_t unspentTxCount_;
 
   struct AddrTx addrTx_;
 
@@ -132,19 +125,15 @@ public:
   string  scriptHex_;
   string  scriptAsm_;
   string  typeStr_;
-  uint256 spentTxHash_;
-  int32_t spentPosition_;
 
 public:
-  TxOutput(): value_(0), spentTxHash_(), spentPosition_(-1) {}
+  TxOutput(): value_(0) {}
   void operator=(const TxOutput &val) {
     address_    = val.address_;
     value_      = val.value_;
     scriptHex_  = val.scriptHex_;
     scriptAsm_  = val.scriptAsm_;
     typeStr_    = val.typeStr_;
-    spentTxHash_    = val.spentTxHash_;
-    spentPosition_  = val.spentPosition_;
   }
 };
 
@@ -197,16 +186,13 @@ public:
   vector<struct TxInfo>::iterator find(const uint256 &hash);
   vector<struct TxInfo>::iterator find(const string &hashStr);
 
-  void addOutputs(const CTransaction &tx,
-                  AddrHandler *addrHandler, const int32_t height,
-                  map<string, int64_t> &addressBalance);
+  void addOutputs(const CTransaction &tx, const int32_t height);
   void delOutput(const uint256 &hash, const int32_t n);
   void delOutput(TxInfo &txInfo, const int32_t n);
   void delOutputAll(TxInfo &txInfo);
   class TxOutput *getOutput(const uint256 &hash, const int32_t n);
 
-  void dumpUnspentOutputToFile(vector<FILE *> &fUnspentOutputs,
-                               vector<FILE *> &fTxOutputs);
+  void dumpUnspentOutputToFile();
 };
 
 ///////////////////////////////  BlockTimestamp  /////////////////////////////////
@@ -223,6 +209,22 @@ public:
 };
 
 
+/////////////////////////////////  KVHandler  //////////////////////////////////
+
+class KVHandler {
+  // rocksdb
+  rocksdb::DB *db_;
+  rocksdb::Options options_;
+  rocksdb::WriteOptions writeOptions_;
+
+public:
+  KVHandler();
+  ~KVHandler();
+
+  void set(const string &key, const string &value);
+  void set(const string &key, const uint8_t *data, const size_t length);
+};
+
 /////////////////////////////////  PreParser  //////////////////////////////////
 
 class PreParser {
@@ -233,10 +235,6 @@ class PreParser {
 
   AddrHandler *addrHandler_;
   TxHandler   *txHandler_;
-
-  // rocksdb
-  rocksdb::DB *db_;
-  rocksdb::Options options_;
 
   string filePreTx_;
   string filePreAddr_;
@@ -253,18 +251,10 @@ class PreParser {
                   const int32_t height, const int32_t blockBytes);
 
   // parse TX
-  void parseTx(const int32_t height, const CTransaction &tx, const uint32_t nTime);
-  void parseTxInputs(const CTransaction &tx, const int64_t txId,
-                     int64_t &valueIn, map<string, int64_t> &addressBalance);
-  void parseTxSelf(const int32_t height, const int64_t txId, const uint256 &txHash,
-                   const CTransaction &tx, const int64_t valueIn,
-                   const int32_t ymd);
+  void parseTx(const int32_t height, const CTransaction &tx, const uint32_t blockNTime);
   void handleAddressTxs(const map<string, int64_t> &addressBalance,
-                        const int64_t txId, const int32_t ymd, const int32_t height);
-
-  //
-  void kvSet(const string &key, const string &value);
-  void kvSet(const string &key, const uint8_t *data, const size_t length);
+                        const int32_t height, const uint32_t blockTime,
+                        const uint256 txHash);
 
   // help functions
   void _saveBlock(const BlockInfo &b);

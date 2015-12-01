@@ -95,15 +95,15 @@ table Address {
   unconfirmed_sent: long;
   unspent_tx_count: int;
   unspent_tx_max_index: int;
-  last_confirmed_tx_idx: int;
+  last_confirmed_tx_index: int;
 }
 
 // 21_{address}_{index}
 table AddressTx {
   balance_diff: long;
   tx_hash: string;
-  tx_height: int;  // 未确认为 -1
-  ymd: int;        // 未确认为 -1
+  tx_height: int;       // 未确认为 -1
+  tx_block_time: uint;  // 交易所在的块时间，未确认为零
 }
 
 // 23_{address}_{index}

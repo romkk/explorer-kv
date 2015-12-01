@@ -95,7 +95,6 @@ void kv_output_error(evhtp_request_t * req, const int32_t error_no, const char *
   APIResponse resp;
   const string queryId = Strings::Format("rocksdb-%lld", Time::CurrentTimeMill());
   kv_output(req, queryId, resp, error_no, error_msg);
-  evhtp_send_reply(req, EVHTP_RES_400);
 }
 
 void kv_output(evhtp_request_t *req, const string &queryId,
@@ -107,7 +106,6 @@ void kv_output(evhtp_request_t *req, const string &queryId,
   auto fb_lengthArr = fbb.CreateVector(resp.length_);
   auto fb_offsetArr = fbb.CreateVector(resp.offset_);
   auto fb_data      = fbb.CreateVector(resp.data_);
-  auto fb_queryId   = fbb.CreateString(queryId);
   auto fb_errorMsg  = fbb.CreateString(error_msg != nullptr ? error_msg : "");
   // type_arr
   vector<flatbuffers::Offset<flatbuffers::String> > fb_typesVec;
@@ -126,19 +124,28 @@ void kv_output(evhtp_request_t *req, const string &queryId,
   fbe::APIResponseBuilder apiResp(fbb);
   apiResp.add_error_no  (error_no);
   apiResp.add_error_msg (fb_errorMsg);
-  apiResp.add_id        (fb_queryId);
   apiResp.add_length_arr(fb_lengthArr);
   apiResp.add_offset_arr(fb_offsetArr);
   apiResp.add_type_arr  (fb_typesArr);
   apiResp.add_key_arr   (fb_KeysArr);
   apiResp.add_data(fb_data);
   fbb.Finish(apiResp.Finish());
-  
+
+  evhtp_headers_add_header(req->headers_out,
+                           evhtp_header_new("RequestID", queryId.c_str(), 0, 0));
   evbuffer_add_reference(req->buffer_out, fbb.GetBufferPointer(), fbb.GetSize(), NULL, NULL);
 
   // debug test
-  {
+  if (IsDebug()) {
+    LOG_DEBUG("--------------------------------------------------------------");
     auto r = flatbuffers::GetRoot<fbe::APIResponse>(fbb.GetBufferPointer());
+    uint256 respHash;
+    SHA256(fbb.GetBufferPointer(), fbb.GetSize(), (unsigned char*)&respHash);
+    evhtp_headers_add_header(req->headers_out,
+                             evhtp_header_new("CheckSum-SHA256", respHash.ToString().c_str(), 0, 0));
+
+    LOG_DEBUG("response data length: %u, sha256: %s, id: %s",
+              fbb.GetSize(), respHash.ToString().c_str(), queryId.c_str());
     for (auto i = 0; i < r->offset_arr()->size(); i++) {
       LOG_DEBUG("offset_arr: %u: %d", i, r->offset_arr()->Get(i));
     }
@@ -149,6 +156,8 @@ void kv_output(evhtp_request_t *req, const string &queryId,
       LOG_DEBUG("key_arr: %u: %s", i, r->key_arr()->Get(i)->c_str());
     }
   }
+
+  evhtp_send_reply(req, error_no == 0 ? EVHTP_RES_OK : EVHTP_RES_400);
 }
 
 void kv_handle_get(evhtp_request_t *req, const vector<string> &params, const string &queryId) {
@@ -159,7 +168,6 @@ void kv_handle_get(evhtp_request_t *req, const vector<string> &params, const str
   APIResponse resp;
   dbGetKeys(params, resp);  // params 即 keys
   kv_output(req, queryId, resp);
-  evhtp_send_reply(req, EVHTP_RES_OK);
 }
 
 void kv_handle_range(evhtp_request_t *req, const vector<string> &params, const string &queryId) {
@@ -176,7 +184,6 @@ void kv_handle_range(evhtp_request_t *req, const vector<string> &params, const s
   APIResponse resp;
   dbRangeKeys(params[0], params[1], limit, resp);
   kv_output(req, queryId, resp);
-  evhtp_send_reply(req, EVHTP_RES_OK);
 }
 
 void kv_handle_ping(evhtp_request_t *req, const vector<string> &params, const string &queryId) {
@@ -187,7 +194,6 @@ void kv_handle_ping(evhtp_request_t *req, const vector<string> &params, const st
   resp.offset_.push_back(0);
   resp.types_.push_back("string");
   kv_output(req, queryId, resp);
-  evhtp_send_reply(req, EVHTP_RES_OK);
 }
 
 ////////////////////////////////// api functions ///////////////////////////////////

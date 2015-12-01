@@ -5,6 +5,7 @@
 // @author zhibiao.pan@bitmain.com
 // @since 2015-11
 //
+// 首个字段尽量避免非标量：如字符串、数组之类的，FB对这些支持的不太好
 //
 namespace fbe;  // flatbuffers explorer
 
@@ -19,9 +20,9 @@ table APIResponse {
 }
 
 table TxInput {
+  sequence: uint;
   script_asm: string;
   script_hex: string;
-  sequence: uint;
   prev_tx_hash: string;
   prev_position: int;  // coinbase tx prev_postion = -1, prev_value = 0
   prev_value: long;
@@ -29,8 +30,8 @@ table TxInput {
 }
 
 table TxOutput {
-  addresses: [string];
   value: long;
+  addresses: [string];
   script_asm: string;
   script_hex: string;
   script_type: string;
@@ -99,18 +100,18 @@ table Address {
 
 // 21_{address}_{index}
 table AddressTx {
+  balance_diff: long;
   tx_hash: string;
   tx_height: int;  // 未确认为 -1
   ymd: int;        // 未确认为 -1
-  balance_diff: long;
 }
 
 // 23_{address}_{index}
 table AddressUnspent {
+  value: long;
   tx_hash: string;
   position: int;
   position2: short;  // 16 bit: short ushort
-  value: long;
 }
 
 // 24_{address}_{tx_hash}_{position}

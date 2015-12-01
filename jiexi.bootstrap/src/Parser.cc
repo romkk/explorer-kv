@@ -166,6 +166,9 @@ AddrHandler::AddrHandler(const size_t addrCount, const string &filePreAddr) {
   std::sort(addrInfo_.begin(), addrInfo_.end());
 }
 
+AddrHandler::~AddrHandler() {
+}
+
 vector<struct AddrInfo>::iterator AddrHandler::find(const string &address) {
   AddrInfo needle;
   strncpy(needle.addrStr_, address.c_str(), 35);  // 地址最长35字符
@@ -238,6 +241,9 @@ TxHandler::TxHandler(const size_t txCount, const string &file) {
   }
   // sort for binary search
   std::sort(txInfo_.begin(), txInfo_.end());
+}
+
+TxHandler::~TxHandler() {
 }
 
 vector<struct TxInfo>::iterator TxHandler::find(const uint256 &hash) {
@@ -464,7 +470,7 @@ void BlockTimestamp::popBlock() {
 //--------------------------------- KVHandler ----------------------------------
 ////////////////////////////////////////////////////////////////////////////////
 
-KVHandler::KVHandler() {
+KVHandler::KVHandler(): running_(true), startTime_(0), counter_(0), runningConsumeThreads_(0) {
   //
   // open Rocks DB
   //
@@ -492,21 +498,128 @@ KVHandler::KVHandler() {
 }
 
 KVHandler::~KVHandler() {
+  stop();
+  // 等待生成线程处理完成
+  while (runningConsumeThreads_ > 0) {
+    sleep(1);
+  }
+
   delete db_;  // close kv db
+
+  LOG_INFO("kv total items: %lld", counter_);
+  printSpeed();
+}
+
+void KVHandler::printSpeed() {
+  LOG_INFO("kv items: %lld, speed: %lld items / seconds", counter_,
+           (int64_t)(counter_ * 1.0 / (double)(time(nullptr) - startTime_)))
 }
 
 void KVHandler::set(const string &key, const string &value) {
   set(key, (const uint8_t *)value.data(), value.size());
 }
 
-void KVHandler::set(const string &key, const uint8_t *data, const size_t length) {
-  rocksdb::Slice value((const char *)data, length);
-  rocksdb::Status s = db_->Put(writeOptions_, key, value);
-  if (!s.ok()) {
-    THROW_EXCEPTION_DBEX("set key fail, key: %s", key.c_str());
+void KVHandler::set(const string &key, const uint8_t *data, const size_t size) {
+  while (1) {
+    lock_.lock();
+    if (keysLength_.size() > 10 * 10000) {
+      lock_.unlock();
+      sleepMs(200);
+      continue;
+    }
+
+    keysLength_.push_back((int32_t)key.size());
+    keysOffset_.push_back((int32_t)keysData_.size());
+    keysData_.insert(keysData_.end(), key.begin(), key.end());
+
+    valuesLength_.push_back((int32_t)size);
+    valuesOffset_.push_back((int32_t)valuesData_.size());
+    valuesData_.insert(valuesData_.end(), data, data + size);
+
+    lock_.unlock();
+    break;
   }
 }
 
+void KVHandler::start() {
+  running_ = true;
+  startTime_ = time(nullptr);
+
+  // 启动写 kvdb 线程
+  boost::thread t(boost::bind(&KVHandler::threadConsumeKVItems, this));
+  runningConsumeThreads_ = 1;
+}
+
+void KVHandler::stop() {
+  running_ = false;
+}
+
+size_t KVHandler::writeToDisk() {
+  size_t cnt = 0;
+
+  {
+    ScopeLock sl(lock_);
+    if (keysLength_.size() == 0) {
+      return cnt;
+    }
+    tmpKeysData_   = keysData_;
+    tmpKeysLength_ = keysLength_;
+    tmpKeysOffset_ = keysOffset_;
+
+    tmpValuesData_   = valuesData_;
+    tmpValuesLength_ = valuesLength_;
+    tmpValuesOffset_ = valuesOffset_;
+
+    keysData_.clear();
+    keysLength_.clear();
+    keysOffset_.clear();
+
+    valuesData_.clear();
+    valuesLength_.clear();
+    valuesOffset_.clear();
+  }
+
+  rocksdb::WriteBatch batch;
+  for (auto i = 0; i < tmpKeysLength_.size(); i++) {
+    const rocksdb::Slice key  ((const char *)&tmpKeysData_[0]   + tmpKeysOffset_[i],   tmpKeysLength_[i]);
+    const rocksdb::Slice value((const char *)&tmpValuesData_[0] + tmpValuesOffset_[i], tmpValuesLength_[i]);
+
+    batch.Put(key, value);
+
+    cnt++;
+    counter_++;
+    if (counter_ % 100000 == 0 && time(nullptr) > startTime_) {
+      printSpeed();
+    }
+  }
+
+  tmpKeysData_.clear();
+  tmpKeysLength_.clear();
+  tmpKeysOffset_.clear();
+
+  tmpValuesData_.clear();
+  tmpValuesLength_.clear();
+  tmpValuesOffset_.clear();
+
+  rocksdb::Status s = db_->Write(writeOptions_, &batch);
+  if (!s.ok()) {
+    THROW_EXCEPTION_DBEX("write kv WriteBatch failure");
+  }
+
+  return cnt;
+}
+
+void KVHandler::threadConsumeKVItems() {
+  LogScope ls("thread: threadConsumeKVItems");
+
+  while (running_) {
+    if (writeToDisk() == 0) {
+      sleepMs(500);
+    }
+  }  //  /while (running_)
+
+  runningConsumeThreads_ = 0;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 //--------------------------------- PreParser ----------------------------------
@@ -532,6 +645,10 @@ PreParser::~PreParser() {
 
   // close kv
   delete gKVHandler;
+
+  gTxHandler   = nullptr;
+  gKVHandler   = nullptr;
+  gAddrHandler = nullptr;
 }
 
 void PreParser::stop() {
@@ -539,6 +656,7 @@ void PreParser::stop() {
     running_ = false;
     LOG_INFO("stop PreParser...");
   }
+  gKVHandler->stop();
 }
 
 void PreParser::init() {
@@ -565,6 +683,7 @@ void PreParser::init() {
 
   // kv handler
   gKVHandler = new KVHandler();
+  gKVHandler->start();
 }
 
 void PreParser::_saveBlock(const BlockInfo &b) {

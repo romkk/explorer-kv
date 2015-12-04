@@ -250,6 +250,8 @@ class KVHandler {
   void threadConsumeKVItems();
   size_t writeToDisk();
 
+  void writeBatch();
+
 public:
   KVHandler();
   ~KVHandler();
@@ -260,6 +262,7 @@ public:
   void start();
   void stop();
 };
+
 
 /////////////////////////////////  PreParser  //////////////////////////////////
 

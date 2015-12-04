@@ -381,7 +381,7 @@ void APIHandler::address(APIInOut &resp, evhtp_request_t *req) {
       auto fbAddressTx = flatbuffers::GetRoot<fbe::AddressTx>(value.data());
       buf.append("{");
 //      buf.append(Strings::Format("\"hash\":\"%s\",", fbAddressTx->tx_hash()->c_str()));
-      buf.append(Strings::Format("\"ymd\":%d,",      fbAddressTx->ymd()));
+      buf.append(Strings::Format("\"block_time\":%u,",      fbAddressTx->tx_block_time()));
       buf.append(Strings::Format("\"balance_diff\":%lld,", fbAddressTx->balance_diff()));
       getTx(fbAddressTx->tx_hash()->str(), buf, resp.verbose_);
       buf.append("},");

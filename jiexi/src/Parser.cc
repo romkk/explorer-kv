@@ -164,15 +164,17 @@ string TxLog2::toString() const {
 
 /////////////////////////////////  AddressTxNode  ///////////////////////////////////
 AddressTxNode::AddressTxNode() {
-  memset(&ymd_, 0, sizeof(AddressTxNode));
+  reset();
 }
 
 AddressTxNode::AddressTxNode(const AddressTxNode &node) {
-  memcpy(&ymd_, &node.ymd_, sizeof(AddressTxNode));
+  memcpy(&txBlockTime_, &node.txBlockTime_, sizeof(AddressTxNode));
 }
 
 void AddressTxNode::reset() {
-  memset(&ymd_, 0, sizeof(AddressTxNode));
+  memset(&txBlockTime_, 0, sizeof(AddressTxNode));
+  txHeight_ = -1;
+  idx_ = -1;
 }
 
 
@@ -721,7 +723,7 @@ static AddressInfo *_getAddressInfo(KVDB &kvdb, const string &address) {
                                    fbAddress->unconfirmed_sent(),
                                    fbAddress->unspent_tx_count(),
                                    fbAddress->unspent_tx_max_index(),
-                                   fbAddress->last_confirmed_tx_idx(),
+                                   fbAddress->last_confirmed_tx_index(),
                                    lastUseIdx++);
     }
     _addrTxCache[address] = addressPtr;
@@ -774,7 +776,7 @@ void _accpetTx_insertAddressTxs(KVDB &kvdb, class TxLog2 *txLog2,
       addressTxBuilder.add_balance_diff(balanceDiff);
       addressTxBuilder.add_tx_hash(txhash);
       addressTxBuilder.add_tx_height(-1);
-      addressTxBuilder.add_ymd(-1);
+      addressTxBuilder.add_tx_block_time(txLog2->maxBlkTimestamp_);  // TODO: block time
       fbb.Finish(addressTxBuilder.Finish());
 
       // 21_{address}_{010index}
@@ -1258,7 +1260,7 @@ void Parser::flushAddressInfo(const map<string, int64_t> &addressBalance) {
     addressBuilder.add_unconfirmed_sent(addr->unconfirmedSent_);
     addressBuilder.add_unspent_tx_count(addr->unspentTxCount_);
     addressBuilder.add_unspent_tx_max_index(addr->unspentTxIndex_);
-    addressBuilder.add_last_confirmed_tx_idx(addr->lastConfirmedTxIdx_);
+    addressBuilder.add_last_confirmed_tx_index(addr->lastConfirmedTxIdx_);
     fbb.Finish(addressBuilder.Finish());
 
     const string key = Strings::Format("%s%s", KVDB_PREFIX_ADDR_OBJECT, address.c_str());
@@ -1304,7 +1306,7 @@ void Parser::_getAddressTxNode(const string &address, const uint256 &txhash,
   node->txHeight_    = addressTx->tx_height();
   node->balanceDiff_ = addressTx->balance_diff();
   node->idx_         = index;
-  node->ymd_         = addressTx->ymd();
+  node->txBlockTime_ = addressTx->tx_block_time();
 }
 
 void Parser::_confirmTx_MoveToFirstUnconfirmed(const string &address,
@@ -1350,7 +1352,7 @@ void Parser::_confirmAddressTxNode(const string &address, AddressTxNode *node, A
     string value;
     kvdb_.get(key, value);
     auto addressTx = flatbuffers::GetMutableRoot<fbe::AddressTx>((void *)value.data());
-    addressTx->mutate_ymd(node->ymd_);
+    addressTx->mutate_tx_block_time(node->txBlockTime_);
     addressTx->mutate_tx_height(node->txHeight_);
     kvdb_.set(key, value);
   }
@@ -1383,8 +1385,8 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
     }
 
     // 更新即将确认的节点字段
-    currNode.ymd_      = txLog2->ymd_;
-    currNode.txHeight_ = txLog2->blkHeight_;
+    currNode.txBlockTime_ = txLog2->maxBlkTimestamp_;  // TODO: block time
+    currNode.txHeight_    = txLog2->blkHeight_;
 
     // 确认
     _confirmAddressTxNode(address, &currNode, addrInfo);
@@ -1439,12 +1441,12 @@ void Parser::_unconfirmAddressTxNode(const string &address, AddressTxNode *node,
     string value;
     kvdb_.get(key, value);
     auto addressTx = flatbuffers::GetMutableRoot<fbe::AddressTx>((void *)value.data());
-    addressTx->mutate_ymd(-1);
+    addressTx->mutate_tx_block_time(0);
     addressTx->mutate_tx_height(-1);
     kvdb_.set(key, value);
 
-    node->ymd_      = -1;
-    node->txHeight_ = -1;
+    node->txBlockTime_ = 0;
+    node->txHeight_    = -1;
   }
 }
 

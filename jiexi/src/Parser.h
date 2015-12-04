@@ -159,10 +159,10 @@ public:
 ///////////////////////////////  AddressTxNode  /////////////////////////////////
 class AddressTxNode {
 public:
-  int32_t ymd_;  // 初始化、复制时使用 memcpy(), 保持 ymd_ 为第一个字段
-  int32_t txHeight_;
-  int64_t balanceDiff_;
-  int32_t idx_;
+  uint32_t txBlockTime_;  // 初始化、复制时使用 memcpy(), 保持 txBlockTime_ 为第一个字段
+  int32_t  txHeight_;
+  int64_t  balanceDiff_;
+  int32_t  idx_;
 
   AddressTxNode();
   AddressTxNode(const AddressTxNode &node);

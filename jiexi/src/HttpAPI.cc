@@ -133,7 +133,7 @@ void kv_output(evhtp_request_t *req, const string &queryId,
 
   evhtp_headers_add_header(req->headers_out,
                            evhtp_header_new("RequestID", queryId.c_str(), 0, 0));
-  evbuffer_add_reference(req->buffer_out, fbb.GetBufferPointer(), fbb.GetSize(), NULL, NULL);
+  evbuffer_add(req->buffer_out, fbb.GetBufferPointer(), fbb.GetSize());
 
   // debug test
   if (IsDebug()) {
@@ -154,6 +154,9 @@ void kv_output(evhtp_request_t *req, const string &queryId,
     }
     for (auto i = 0; i < r->key_arr()->size(); i++) {
       LOG_DEBUG("key_arr: %u: %s", i, r->key_arr()->Get(i)->c_str());
+    }
+    for (auto i = 0; i < r->type_arr()->size(); i++) {
+      LOG_DEBUG("type_arr: %u: %s", i, r->type_arr()->Get(i)->c_str());
     }
   }
 
@@ -201,13 +204,13 @@ void api_output(evhtp_request_t *req, const string &data,
                 const int32_t error_no, const char *error_msg) {
   string output = Strings::Format("{\"error_no\":%d,\"error_msg\":\"%s\",\"data\":",
                                   error_no, error_msg ? error_msg : "");
-  evbuffer_add_reference(req->buffer_out, output.c_str(), output.length(), NULL, NULL);
+  evbuffer_add(req->buffer_out, output.c_str(), output.length());
   if (data.length() == 0) {
-    evbuffer_add_reference(req->buffer_out, "null", 4, NULL, NULL);
+    evbuffer_add(req->buffer_out, "null", 4);
   } else {
-    evbuffer_add_reference(req->buffer_out, data.c_str(), data.length(), NULL, NULL);
+    evbuffer_add(req->buffer_out, data.c_str(), data.length());
   }
-  evbuffer_add_reference(req->buffer_out, "}", 1, NULL, NULL);
+  evbuffer_add(req->buffer_out, "}", 1);
   evhtp_send_reply(req, error_no == API_ERROR_SUCCESS ? EVHTP_RES_OK : EVHTP_RES_400);
 }
 
@@ -221,7 +224,7 @@ void api_output_error(evhtp_request_t *req, const int32_t error_no, const char *
 
 void cb_root(evhtp_request_t * req, void *ptr) {
   string s = Strings::Format("btc.com Explorer API server, %s (UTC+0)", date("%F %T").c_str());
-  evbuffer_add_reference(req->buffer_out, s.c_str(), s.length(), NULL, NULL);
+  evbuffer_add(req->buffer_out, s.c_str(), s.length());
   evhtp_send_reply(req, EVHTP_RES_OK);
 }
 
@@ -574,6 +577,9 @@ void APIServer::stop() {
   evhtp_unbind_socket(htp_);
   evhtp_free(htp_);
   event_base_free(evbase_);
+
+  evbase_ = nullptr;
+  htp_    = nullptr;
 }
 
 

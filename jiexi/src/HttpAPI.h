@@ -25,10 +25,6 @@
 #include "KVDB.h"
 #include "Util.h"
 
-#include "rapidjson/document.h"
-#include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
-
 #include "explorer_generated.h"
 
 
@@ -41,9 +37,13 @@
 
 class APIResponse {
 public:
-	vector<uint8_t> data_;
-	vector<int32_t> length_, offset_;
+  int64_t beginTime_;
+  vector<uint8_t> data_;
+  vector<int32_t> length_, offset_;
   vector<string> types_, keys_;
+
+public:
+  APIResponse(): beginTime_(Time::CurrentTimeNano()) {}
 };
 
 class APIInOut {

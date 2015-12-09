@@ -131,21 +131,32 @@ void kv_output(evhtp_request_t *req, const string &queryId,
   apiResp.add_data(fb_data);
   fbb.Finish(apiResp.Finish());
 
-  evhtp_headers_add_header(req->headers_out,
-                           evhtp_header_new("RequestID", queryId.c_str(), 0, 0));
-  evbuffer_add(req->buffer_out, fbb.GetBufferPointer(), fbb.GetSize());
+  // RequestID
+  {
+    evhtp_headers_add_header(req->headers_out,
+                             evhtp_header_new("RequestID", queryId.c_str(), 1, 1));
+    evbuffer_add(req->buffer_out, fbb.GetBufferPointer(), fbb.GetSize());
+  }
+
+  // CheckSum-SHA256
+  {
+    uint256 respHash;
+    SHA256(fbb.GetBufferPointer(), fbb.GetSize(), (unsigned char*)&respHash);
+    evhtp_headers_add_header(req->headers_out,
+                             evhtp_header_new("CheckSum-SHA256", respHash.ToString().c_str(), 1, 1));
+  }
+
+  // Process-MicroTime
+  {
+    const string processTimeStr = Strings::Format("%.3f", (double)(Time::CurrentTimeNano() - resp.beginTime_) / 1000000.0);
+    evhtp_headers_add_header(req->headers_out,
+                             evhtp_header_new("Process-MicroTime", processTimeStr.c_str(), 1, 1));
+  }
 
   // debug test
   if (IsDebug()) {
     LOG_DEBUG("--------------------------------------------------------------");
     auto r = flatbuffers::GetRoot<fbe::APIResponse>(fbb.GetBufferPointer());
-    uint256 respHash;
-    SHA256(fbb.GetBufferPointer(), fbb.GetSize(), (unsigned char*)&respHash);
-    evhtp_headers_add_header(req->headers_out,
-                             evhtp_header_new("CheckSum-SHA256", respHash.ToString().c_str(), 0, 0));
-
-    LOG_DEBUG("response data length: %u, sha256: %s, id: %s",
-              fbb.GetSize(), respHash.ToString().c_str(), queryId.c_str());
     for (auto i = 0; i < r->offset_arr()->size(); i++) {
       LOG_DEBUG("offset_arr: %u: %d", i, r->offset_arr()->Get(i));
     }
@@ -164,16 +175,17 @@ void kv_output(evhtp_request_t *req, const string &queryId,
 }
 
 void kv_handle_get(evhtp_request_t *req, const vector<string> &params, const string &queryId) {
+  APIResponse resp;
   if (params.size() == 0) {
     kv_output_error(req, API_ERROR_EMPTY_PARAMS, "params is empty");
     return;
   }
-  APIResponse resp;
   dbGetKeys(params, resp);  // params 即 keys
   kv_output(req, queryId, resp);
 }
 
 void kv_handle_range(evhtp_request_t *req, const vector<string> &params, const string &queryId) {
+  APIResponse resp;
   if (params.size() != 3) {
     kv_output_error(req, API_ERROR_INVALID_PARAMS, "params should be: {start_key, end_key, limit}");
     return;
@@ -183,8 +195,6 @@ void kv_handle_range(evhtp_request_t *req, const vector<string> &params, const s
     kv_output_error(req, API_ERROR_INVALID_PARAMS, "invalid limit");
     return;
   }
-
-  APIResponse resp;
   dbRangeKeys(params[0], params[1], limit, resp);
   kv_output(req, queryId, resp);
 }

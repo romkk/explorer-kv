@@ -156,7 +156,13 @@ void KVDB::rangeLT(const string &start, const string &end, const int32_t limit,
   LOG_DEBUG("rangeLT, start: %s, end: %s, limit: %d", start.c_str(), end.c_str(), limit);
   
   auto it = db_->NewIterator(rocksdb::ReadOptions());
-  for (it->Seek(start);
+  it->Seek(start);
+  
+  // 因为是逆向的，所以检测第一个，Seek()的当前key是大于等于stat的
+  if (it->key().ToString() != start) {
+    it->Prev();
+  }
+  for (;
        it->Valid() && strcmp(it->key().ToString().c_str(), end.c_str()) >= 0;
        it->Prev()) {
     keys.push_back(it->key().ToString());

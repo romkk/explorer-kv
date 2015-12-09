@@ -521,8 +521,11 @@ KVHandler::KVHandler(): running_(true), startTime_(0), counter_(0), runningConsu
   bbt_opts.format_version = 2;
   options_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbt_opts));
 
-
-  const string kvpath = Strings::Format("./rocksdb_bootstrap_%d_%s",
+  string kvDir  = Config::GConfig.get("rocksdb.ouput.dir", "");
+  if (kvDir.length() && *std::end(kvDir) == '/') {
+    kvDir.resize(kvDir.length() - 1);
+  }
+  const string kvpath = Strings::Format("%s/rocksdb_bootstrap_%d_%s", kvDir.length() ? kvDir.c_str() : "",
                                         (int32_t)Config::GConfig.getInt("raw.max.block.height", -1),
                                         date("%F %T").c_str());
   rocksdb::Status s = rocksdb::DB::Open(options_, kvpath, &db_);

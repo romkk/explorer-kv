@@ -199,19 +199,16 @@ vector<struct AddrInfo>::iterator AddrHandler::find(const string &address) {
   return it;
 }
 
-void AddrHandler::dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs,
-                                    vector<FILE *> &fAddrs_) {
-  const string now = date("%F %T");
-  string s;
-
-  flatbuffers::FlatBufferBuilder fbb;
-  fbb.ForceDefaults(true);
-
+void AddrHandler::dumpAddressAndTxs() {
   for (auto addr = addrInfo_.begin(); addr != addrInfo_.end(); addr++) {
     // address tx
     _saveAddrTx(addr);
 
     const string &address = addr->addrStr_;
+    const string key = Strings::Format("%s%s", KVDB_PREFIX_ADDR_OBJECT, address.c_str());
+
+    flatbuffers::FlatBufferBuilder fbb;
+    fbb.ForceDefaults(true);
 
     fbe::AddressBuilder addressBuilder(fbb);
     addressBuilder.add_received(addr->received_);
@@ -225,7 +222,6 @@ void AddrHandler::dumpAddressAndTxs(map<int32_t, FILE *> &fAddrTxs,
     addressBuilder.add_last_confirmed_tx_index(addr->txCount_ - 1);
     fbb.Finish(addressBuilder.Finish());
 
-    const string key = Strings::Format("%s%s", KVDB_PREFIX_ADDR_OBJECT, address.c_str());
     gKVHandler->set(key, fbb.GetBufferPointer(), fbb.GetSize());
   }
 }
@@ -1219,7 +1215,7 @@ void PreParser::run() {
   if (running_) {
     // 清理数据：地址数据, 地址最后关联的交易
     LogScope ls("dump address and txs");
-//    addrHandler_->dumpAddressAndTxs(fAddrTxs_, fAddrs_);
+    addrHandler_->dumpAddressAndTxs();
   }
 }
 

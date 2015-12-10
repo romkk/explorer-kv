@@ -474,7 +474,14 @@ void BlockTimestamp::popBlock() {
 //--------------------------------- KVHandler ----------------------------------
 ////////////////////////////////////////////////////////////////////////////////
 
-KVHandler::KVHandler(): running_(true), startTime_(0), counter_(0), runningConsumeThreads_(0) {
+KVHandler::KVHandler(): running_(true), startTime_(0), totalStartTime_(0),
+counter_(0), totalCounter_(0), totalSize_(0),
+runningConsumeThreads_(0), boundedBuffer_(10 * 10000)
+{
+  options_.compression = rocksdb::kSnappyCompression;
+  options_.create_if_missing        = true;   // create the DB if it's not already present
+  options_.disableDataSync          = true;   // disable syncing of data files
+
   //
   // open Rocks DB
   //
@@ -485,7 +492,6 @@ KVHandler::KVHandler(): running_(true), startTime_(0), counter_(0), runningConsu
   //
   // https://github.com/facebook/rocksdb/blob/master/tools/benchmark.sh
   //
-  options_.compression = rocksdb::kSnappyCompression;
   options_.target_file_size_base    = (size_t)128 * 1024 * 1024;
   options_.max_bytes_for_level_base = (size_t)1024 * 1024 * 1024;
   options_.num_levels = 6;
@@ -493,8 +499,6 @@ KVHandler::KVHandler(): running_(true), startTime_(0), counter_(0), runningConsu
   options_.write_buffer_size = (size_t)64 * 1024 * 1024;
   options_.max_write_buffer_number  = 8;
   options_.disable_auto_compactions = true;
-  options_.disableDataSync          = true;   // disable syncing of data files
-  options_.create_if_missing        = true;   // create the DB if it's not already present
 
   // params_bulkload
   options_.max_background_compactions = 16;
@@ -517,13 +521,13 @@ KVHandler::KVHandler(): running_(true), startTime_(0), counter_(0), runningConsu
   bbt_opts.format_version = 2;
   options_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbt_opts));
 
-  string kvDir  = Config::GConfig.get("rocksdb.ouput.dir", "");
+  string kvDir  = Config::GConfig.get("rocksdb.ouput.dir", ".");
   if (kvDir.length() && *std::end(kvDir) == '/') {
     kvDir.resize(kvDir.length() - 1);
   }
-  const string kvpath = Strings::Format("%s/rocksdb_bootstrap_%d_%s", kvDir.length() ? kvDir.c_str() : "",
-                                        (int32_t)Config::GConfig.getInt("raw.max.block.height", -1),
-                                        date("%F %T").c_str());
+  const string kvpath = Strings::Format("%s/rocksdb_bootstrap_%d", kvDir.length() ? kvDir.c_str() : ".",
+                                        (int32_t)Config::GConfig.getInt("raw.max.block.height", -1));
+  LOG_DEBUG("rocksdb path: %s", kvpath.c_str());
   rocksdb::Status s = rocksdb::DB::Open(options_, kvpath, &db_);
   if (!s.ok()) {
     THROW_EXCEPTION_DBEX("open rocks db fail");
@@ -535,197 +539,79 @@ KVHandler::KVHandler(): running_(true), startTime_(0), counter_(0), runningConsu
 }
 
 KVHandler::~KVHandler() {
-//  stop();
-//  // 等待生成线程处理完成
-//  while (runningConsumeThreads_ > 0) {
-//    sleep(1);
-//  }
-
-  writeBatch();
-
+  stopConsumeThread();
   delete db_;  // close kv db
 
-  LOG_INFO("kv total items: %lld", counter_);
+  LOG_INFO("kv total items: %lld", totalCounter_);
   printSpeed();
 }
 
 void KVHandler::printSpeed() {
-  LOG_INFO("kv items: %lld, speed: %lld items / seconds", counter_,
-           (int64_t)(counter_ * 1.0 / (double)(time(nullptr) - startTime_)))
+  LOG_INFO("kv items: %lld, totalSize_: %lld MB, "
+           "curr speed: %lld /s, all speed: %lld /s",
+           totalCounter_, (int64_t)(totalSize_ * 1.0 / 1024 / 1024),
+           (int64_t)(counter_ * 1000.0 / (double)(Time::CurrentTimeMill() - startTime_)),
+           (int64_t)(totalCounter_ * 1000.0 / (double)(Time::CurrentTimeMill() - totalStartTime_)))
+  startTime_ = Time::CurrentTimeMill();
+  counter_ = 0;
 }
 
 void KVHandler::set(const string &key, const string &value) {
   set(key, (const uint8_t *)value.data(), value.size());
 }
 
-
-void KVHandler::writeBatch() {
-  if (keysLength_.size() == 0) {
-    return;
-  }
-
-  rocksdb::WriteBatch batch;
-  for (auto i = 0; i < keysLength_.size(); i++) {
-    const rocksdb::Slice key  ((const char *)&keysData_[0]   + keysOffset_[i],   keysLength_[i]);
-    const rocksdb::Slice value((const char *)&valuesData_[0] + valuesOffset_[i], valuesLength_[i]);
-
-    batch.Put(key, value);
-  }
-
-  rocksdb::Status s = db_->Write(writeOptions_, &batch);
-  if (!s.ok()) {
-    THROW_EXCEPTION_DBEX("write kv WriteBatch failure");
-  }
-
-  keysData_.clear();
-  keysLength_.clear();
-  keysOffset_.clear();
-
-  valuesData_.clear();
-  valuesLength_.clear();
-  valuesOffset_.clear();
-}
-
-
 void KVHandler::set(const string &key, const uint8_t *data, const size_t size) {
-//  rocksdb::Slice value((const char *)data, size);
-//  db_->Put(writeOptions_, key, value);
+  const rocksdb::Slice skey  (key.data(), key.size());
+  const rocksdb::Slice svalue((const char *)data, size);
 
-
+  db_->Put(writeOptions_, skey, svalue);
 
   counter_++;
-  if (counter_ % 50000 == 0 && time(nullptr) > startTime_) {
+  totalCounter_++;
+  totalSize_ += size;
+  if (counter_ % 100000 == 0 && Time::CurrentTimeMill() > startTime_) {
     printSpeed();
   }
-
-  if (keysLength_.size() > 0) {
-    writeBatch();
-  }
-
-  keysLength_.push_back((int32_t)key.size());
-  keysOffset_.push_back((int32_t)keysData_.size());
-  keysData_.insert(keysData_.end(), key.begin(), key.end());
-
-  valuesLength_.push_back((int32_t)size);
-  valuesOffset_.push_back((int32_t)valuesData_.size());
-  valuesData_.insert(valuesData_.end(), data, data + size);
-
-//  while (1) {
-//    lock_.lock();
-//    if (keysLength_.size() > 5 * 10000) {
-//      lock_.unlock();
-//      LOG_WARN("too many kv items in buffer, wait...");
-//      sleepMs(1000);
-//      continue;
-//    }
-//
-//    keysLength_.push_back((int32_t)key.size());
-//    keysOffset_.push_back((int32_t)keysData_.size());
-//    keysData_.insert(keysData_.end(), key.begin(), key.end());
-//
-//    valuesLength_.push_back((int32_t)size);
-//    valuesOffset_.push_back((int32_t)valuesData_.size());
-//    valuesData_.insert(valuesData_.end(), data, data + size);
-//
-//    lock_.unlock();
-//    break;
-//  }
 }
 
 void KVHandler::start() {
   running_ = true;
-  startTime_ = time(nullptr);
+  startTime_ = totalStartTime_ = Time::CurrentTimeMill();
 
 //  // 启动写 kvdb 线程
 //  boost::thread t(boost::bind(&KVHandler::threadConsumeKVItems, this));
 //  runningConsumeThreads_ = 1;
 }
 
-void KVHandler::stop() {
+void KVHandler::stopConsumeThread() {
   running_ = false;
+//  boundedBuffer_.pushFront("--------endkey--------");
+//  boundedBuffer_.pushFront("--------endvalue--------");
+//
+//  // 等待生成线程处理完成
+//  while (runningConsumeThreads_ > 0) {
+//    sleep(1);
+//  }
 }
 
-size_t KVHandler::writeToDisk() {
-  size_t cnt = 0;
-
-  {
-    ScopeLock sl(lock_);
-    if (keysLength_.size() == 0) {
-      return cnt;
-    }
-
-    tmpKeysData_.swap(keysData_);
-    tmpKeysLength_.swap(keysLength_);
-    tmpKeysOffset_.swap(keysOffset_);
-
-    tmpValuesData_.swap(valuesData_);
-    tmpValuesLength_.swap(valuesLength_);
-    tmpValuesOffset_.swap(valuesOffset_);
-  }
-
-//  rocksdb::WriteBatch batch;
-//  for (auto i = 0; i < tmpKeysLength_.size(); i++) {
-//    const rocksdb::Slice key  ((const char *)&tmpKeysData_[0]   + tmpKeysOffset_[i],   tmpKeysLength_[i]);
-//    const rocksdb::Slice value((const char *)&tmpValuesData_[0] + tmpValuesOffset_[i], tmpValuesLength_[i]);
-//
-//    batch.Put(key, value);
-//
-//    // 每 N 条写一次
-//    if (batch.Count() % 50 == 0) {
-//      rocksdb::Status s = db_->Write(writeOptions_, &batch);
-//      if (!s.ok()) {
-//        THROW_EXCEPTION_DBEX("write kv WriteBatch failure");
-//      }
-//    }
-//
-//    cnt++;
-//    counter_++;
-//    if (counter_ % 100000 == 0 && time(nullptr) > startTime_) {
-//      printSpeed();
-//    }
-//  }
-//
-//  // 剩余的批次
-//  if (batch.Count() != 0) {
-//    rocksdb::Status s = db_->Write(writeOptions_, &batch);
-//    if (!s.ok()) {
-//      THROW_EXCEPTION_DBEX("write kv WriteBatch failure");
-//    }
-//  }
-
-  for (auto i = 0; i < tmpKeysLength_.size(); i++) {
-    const rocksdb::Slice key  ((const char *)&tmpKeysData_[0]   + tmpKeysOffset_[i],   tmpKeysLength_[i]);
-    const rocksdb::Slice value((const char *)&tmpValuesData_[0] + tmpValuesOffset_[i], tmpValuesLength_[i]);
-    db_->Put(writeOptions_, key, value);
-
-    cnt++;
-    counter_++;
-    if (counter_ % 50000 == 0 && time(nullptr) > startTime_) {
-      printSpeed();
-    }
-  }
-
-  tmpKeysData_.clear();
-  tmpKeysLength_.clear();
-  tmpKeysOffset_.clear();
-
-  tmpValuesData_.clear();
-  tmpValuesLength_.clear();
-  tmpValuesOffset_.clear();
-
-  return cnt;
+void KVHandler::compact() {
+  LogScope ls("KVHandler::compact");
+  stopConsumeThread();
+  db_->CompactRange(rocksdb::CompactRangeOptions(), nullptr, nullptr);
 }
 
 void KVHandler::threadConsumeKVItems() {
-  LogScope ls("thread: threadConsumeKVItems");
-
-  while (running_) {
-    if (writeToDisk() == 0) {
-      sleepMs(200);
-    }
-  }  //  /while (running_)
-
-  runningConsumeThreads_ = 0;
+//  LogScope ls("thread: threadConsumeKVItems");
+//  string key, value;
+//
+//  while (running_) {
+//    key.clear();
+//    value.clear();
+//    boundedBuffer_.popBack(&key);
+//    boundedBuffer_.popBack(&value);
+//    db_->Put(writeOptions_, key, value);
+//  }
+//  runningConsumeThreads_ = 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -759,11 +645,14 @@ PreParser::~PreParser() {
 }
 
 void PreParser::stop() {
-  if (running_) {
-    running_ = false;
-    LOG_INFO("stop PreParser...");
+  if (!running_) {
+    return;
   }
-  gKVHandler->stop();
+
+  gKVHandler->compact();
+
+  running_ = false;
+  LOG_INFO("stop PreParser...");
 }
 
 void PreParser::init() {
@@ -938,18 +827,18 @@ void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,
 
     vector<struct AddrInfo>::iterator addrInfo = addrHandler_->find(addrStr);
 
+    // 更新上次交易，如果有的话
+    if (addrInfo->addrTx_.txBlockTime_ != 0) {
+      // save last one
+      _saveAddrTx(addrInfo);
+    }
+
     // 记录当前交易信息
     struct AddrTx cur;
     cur.txHeight_     = height;
     cur.balanceDiff_  = balanceDiff;
     cur.txBlockTime_  = blockTime;
     cur.txHash_       = txHash;
-
-    // 更新上次交易，如果有的话
-    if (addrInfo->addrTx_.txHeight_ != -1) {
-      // save last one
-      _saveAddrTx(addrInfo);
-    }
 
     //
     // 更新地址信息

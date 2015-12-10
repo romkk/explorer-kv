@@ -91,10 +91,8 @@ struct AddrTx {
   uint32_t txBlockTime_;  // 交易所在的块时间，未确认为零
   uint256  txHash_;
 
-  AddrTx() {
-    memset((char *)&balanceDiff_, 0, sizeof(struct AddrTx));
-    txHeight_ = -1;
-  }
+public:
+  AddrTx(): balanceDiff_(0), txHeight_(-1), txBlockTime_(0), txHash_() {}
 };
 
 struct AddrInfo {
@@ -218,39 +216,24 @@ class KVHandler {
   atomic<bool> running_;
   mutex lock_;
 
-  time_t startTime_;
+  int64_t startTime_;
   int64_t counter_;
+  int64_t totalStartTime_;
+  int64_t totalCounter_;
+  int64_t totalSize_;
 
   // rocksdb
   rocksdb::DB *db_;
   rocksdb::Options options_;
   rocksdb::WriteOptions writeOptions_;
 
-  // buffer, 采用 vecotr ，vector中元素为 string 时，会导致内存上升过快，得不到释放
-  vector<uint8_t> keysData_;
-  vector<int32_t> keysLength_;
-  vector<int32_t> keysOffset_;
-
-  vector<uint8_t> valuesData_;
-  vector<int32_t> valuesLength_;
-  vector<int32_t> valuesOffset_;
-
-  vector<uint8_t> tmpKeysData_;
-  vector<int32_t> tmpKeysLength_;
-  vector<int32_t> tmpKeysOffset_;
-
-  vector<uint8_t> tmpValuesData_;
-  vector<int32_t> tmpValuesLength_;
-  vector<int32_t> tmpValuesOffset_;
-
+  // 环形队列, 大小必须是偶数
+  BoundedBuffer<string> boundedBuffer_;
 
   void printSpeed();
 
   atomic<int32_t> runningConsumeThreads_;
   void threadConsumeKVItems();
-  size_t writeToDisk();
-
-  void writeBatch();
 
 public:
   KVHandler();
@@ -260,7 +243,8 @@ public:
   void set(const string &key, const uint8_t *data, const size_t length);
 
   void start();
-  void stop();
+  void stopConsumeThread();
+  void compact();
 };
 
 

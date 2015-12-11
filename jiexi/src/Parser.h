@@ -253,9 +253,11 @@ private:
   // 操作 tx 的辅助函数
   void _getAddressTxNode(const string &address, const uint256 &txhash,
                          AddressTxNode *node);
-  void _removeAddressTxNode(AddressInfo *addr, AddressTxNode *node);
+  void _removeAddressTxNode(const string &address, const int32_t idx,
+                            const uint256 &txhash, const int64_t balanceDiff,
+                            AddressInfo *addr);
 
-  void _rejectAddressTxs(class TxLog2 *txLog2, const map<int64_t, int64_t> &addressBalance);
+  void _rejectAddressTxs(class TxLog2 *txLog2, const map<string, int64_t> &addressBalance);
 
   // 确认交易节点 & 反确认
   void _confirmAddressTxNode  (const string &address, AddressTxNode *node, AddressInfo *addr);
@@ -269,10 +271,7 @@ private:
   void _updateTxNodeYmd(AddressInfo *addr, AddressTxNode *node, const int32_t targetYmd);
 
   // 交换地址交易节点
-  void _switchUnconfirmedAddressTxNode(AddressInfo *addr,
-                                       AddressTxNode *prev, AddressTxNode *curr);
-  void _confirmTx_MoveToFirstUnconfirmed(const string &address,
-                                         const int32_t idx1, const int32_t idx2);
+  void _switchTxNode(const string &address, const int32_t idx1, const int32_t idx2);
   void _rejectTx_MoveToLastUnconfirmed(AddressInfo *addr, AddressTxNode *node);
 
   void writeLastProcessTxlogTime();

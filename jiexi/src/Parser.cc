@@ -889,18 +889,14 @@ static void _acceptTx_insertRawHex(KVDB &kvdb, const string &txHex, const uint25
 static void _acceptTx_insertTxObject(KVDB &kvdb, const uint256 &hash,
                                      flatbuffers::FlatBufferBuilder *fbb) {
   const string key = KVDB_PREFIX_TX_OBJECT + hash.ToString();
-//  if (kvdb.keyExist(key)) {
-//    return;  // already exist
-//  }
   kvdb.set(key, fbb->GetBufferPointer(), fbb->GetSize());
 }
 
 // 移除prev unspent outputs
-static void _acceptTx_removeUnspentOutputs(KVDB &kvdb, const uint256 &hash, CTransaction &tx,
+static void _acceptTx_removeUnspentOutputs(KVDB &kvdb, const uint256 &hash, const CTransaction &tx,
                                            vector<const fbe::TxOutput *> &prevTxOutputs) {
   assert(prevTxOutputs.size() == tx.vin.size());
 
-  string key;
   int n = -1;
 
   for (auto fb_txoutput : prevTxOutputs) {
@@ -918,23 +914,24 @@ static void _acceptTx_removeUnspentOutputs(KVDB &kvdb, const uint256 &hash, CTra
 
       // 某个地址的未花费index
       // 24_{address}_{tx_hash}_{position}
-      key = Strings::Format("%s%s_%s_%d", KVDB_PREFIX_ADDR_UNSPENT_INDEX,
+      const string key24 = Strings::Format("%s%s_%s_%d", KVDB_PREFIX_ADDR_UNSPENT_INDEX,
                             address.c_str(), prevHash.ToString().c_str(), (int32_t)prevPostion);
       string value;
-      kvdb.get(key, value);
+      kvdb.get(key24, value);
       auto unspentOutputIdx = flatbuffers::GetRoot<fbe::AddressUnspentIdx>(value.data());
 
       // 删除之
       // 23_{address}_{010index}
-      key = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_UNSPENT, address.c_str(),
-                            unspentOutputIdx->index());
-      kvdb.del(key);
+      const string key23 = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_UNSPENT,
+                                           address.c_str(), unspentOutputIdx->index());
+      kvdb.del(key23);  // 删除unspent list node
+      kvdb.del(key24);  // 删除索引关系
     }
   }
 }
 
 // 生成被消费记录
-static void _acceptTx_insertSpendTxs(KVDB &kvdb, const uint256 &hash, CTransaction &tx) {
+static void _acceptTx_insertSpendTxs(KVDB &kvdb, const uint256 &hash, const CTransaction &tx) {
   flatbuffers::FlatBufferBuilder fbb;
   fbb.ForceDefaults(true);
   string key;
@@ -956,7 +953,9 @@ static void _acceptTx_insertSpendTxs(KVDB &kvdb, const uint256 &hash, CTransacti
   }
 }
 
-// 插入地址的 unspent 记录
+//
+// 插入地址的 unspent 记录: reject tx时，也会用到，恢复未花费记录
+//
 static void _acceptTx_insertAddressUnspent(KVDB &kvdb, const int64_t nValue,
                                            const string &address, const uint256 &hash,
                                            const int32_t position, const int32_t position2) {
@@ -1045,7 +1044,7 @@ map<string, int64_t> Parser::getTxAddressBalance(const CTransaction &tx) {
 // 接收一个新的交易
 void Parser::acceptTx(class TxLog2 *txLog2) {
   assert(txLog2->blkHeight_ == -1);
-  CTransaction &tx = txLog2->tx_;
+  const CTransaction &tx = txLog2->tx_;
 
   // 硬编码特殊交易处理
   //
@@ -1309,19 +1308,22 @@ void Parser::_getAddressTxNode(const string &address, const uint256 &txhash,
   node->txBlockTime_ = addressTx->tx_block_time();
 }
 
-void Parser::_confirmTx_MoveToFirstUnconfirmed(const string &address,
-                                               const int32_t idx1, const int32_t idx2) {
-  // idx2 是即将确认的节点
+// 交换两个交易节点
+void Parser::_switchTxNode(const string &address, const int32_t idx1, const int32_t idx2) {
   vector<string> keys;
   vector<string> values;
 
+  // 21_{address}_{010index}
   keys.push_back(Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_TX, address.c_str(), idx1));
   keys.push_back(Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_TX, address.c_str(), idx2));
   kvdb_.multiGet(keys, values);
   auto addressTx1 = flatbuffers::GetRoot<fbe::AddressTx>((void *)values[0].data());
   auto addressTx2 = flatbuffers::GetRoot<fbe::AddressTx>((void *)values[1].data());
 
+  //
   // switch item
+  //
+  // 21_{address}_{010index}
   kvdb_.set(keys[0], values[1]);
   kvdb_.set(keys[1], values[0]);
 
@@ -1381,7 +1383,7 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
         break;
       }
       // 当前节点交换至第一个未确认节点 (仅会执行一次)
-      _confirmTx_MoveToFirstUnconfirmed(address, addrInfo->lastConfirmedTxIdx_ + 1, currNode.idx_);
+      _switchTxNode(address, addrInfo->lastConfirmedTxIdx_ + 1, currNode.idx_);
     }
 
     // 更新即将确认的节点字段
@@ -1431,8 +1433,9 @@ void Parser::_unconfirmAddressTxNode(const string &address, AddressTxNode *node,
     addr->unconfirmedReceived_ += received;
     addr->unconfirmedSent_     += sent;
     addr->unconfirmedTxCount_++;
-    addr->lastConfirmedTxIdx_   = node->idx_ - 1;  // 全部未确认则为 -1
+    addr->lastConfirmedTxIdx_   -= 1;  // 全部未确认则为 -1
     assert(addr->lastConfirmedTxIdx_ >= -1);
+    assert(node->idx_ - 1 == addr->lastConfirmedTxIdx_);
   }
 
   // update AddressTxNode
@@ -1444,9 +1447,6 @@ void Parser::_unconfirmAddressTxNode(const string &address, AddressTxNode *node,
     addressTx->mutate_tx_block_time(0);
     addressTx->mutate_tx_height(-1);
     kvdb_.set(key, value);
-
-    node->txBlockTime_ = 0;
-    node->txHeight_    = -1;
   }
 }
 
@@ -1493,282 +1493,98 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
 
 // 回滚一个块操作
 void Parser::rejectBlock(TxLog2 *txLog2) {
-//  string sql;
-//
-//  // 获取块Raw Hex
-//  string blkRawHex;
-//  _getBlockRawHexByBlockId(txLog2->blkId_, dbExplorer_, &blkRawHex);
-//
-//  // 解码Raw Block
-//  CBlock blk;
-//  if (!DecodeHexBlk(blk, blkRawHex)) {
-//    THROW_EXCEPTION_DBEX("decode block hex failure, hex: %s", blkRawHex.c_str());
-//  }
-//
-//  const CBlockHeader header  = blk.GetBlockHeader();  // alias
-//  const string prevBlockHash = header.hashPrevBlock.ToString();
-//
-//  // 移除前向block的next指向
-//  sql = Strings::Format("UPDATE `0_blocks` SET `next_block_id`=0, `next_block_hash`=''"
-//                        " WHERE `hash` = '%s' ", prevBlockHash.c_str());
-//  dbExplorer_.updateOrThrowEx(sql, 1);
-//
-//  // table.0_blocks
-//  sql = Strings::Format("DELETE FROM `0_blocks` WHERE `hash`='%s'",
-//                        header.GetHash().ToString().c_str());
-//  dbExplorer_.updateOrThrowEx(sql, 1);
-//
-//  // table.block_txs_xxxx
-//  sql = Strings::Format("DELETE FROM `block_txs_%04d` WHERE `block_id`=%lld",
-//                        tableIdx_BlockTxs(txLog2->blkId_), txLog2->blkId_);
-//  dbExplorer_.updateOrThrowEx(sql, (int32_t)blk.vtx.size());
-//
-//  // 移除块时间戳
-//  blkTs_.popBlock();
-}
+  const int32_t height = txLog2->blkHeight_;
 
-// 回滚，重新插入未花费记录
-void _unremoveUnspentOutputs(MySQLConnection &db,
-                             const int32_t blockHeight,
-                             const int64_t txId, const int32_t position,
-                             const int32_t ymd,
-                             map<int64_t, int64_t> &addressBalance) {
-  
-//  MySQLResult res;
-//  string sql;
-//  string tableName;
-//  char **row;
-//  int n;
-//
-//  // 获取相关output信息
-//  tableName = Strings::Format("tx_outputs_%04d", txId % 100);
-//  sql = Strings::Format("SELECT `address_ids`,`value`,`address` FROM `%s` "
-//                        " WHERE `tx_id`=%lld AND `position`=%d",
-//                        tableName.c_str(), txId, position);
-//  db.query(sql, res);
-//  row = res.nextRow();
-//  assert(res.numRows() == 1);
-//
-//  // 获取地址
-//  const string s      = string(row[0]);
-//  const int64_t value = atoi64(row[1]);
-//  const string ids    = string(row[2]);
-//
-//  vector<string> addressIdsStrVec = split(s, '|');
-//  n = -1;
-//  for (auto &addrIdStr : addressIdsStrVec) {
-//    n++;
-//    const int64_t addrId = atoi64(addrIdStr.c_str());
-//    addressBalance[addrId] += -1 * value;
-//
-//    // 恢复每一个输出地址的 address_unspent_outputs 记录
-//    sql = Strings::Format("INSERT INTO `address_unspent_outputs_%04d`"
-//                          " (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)"
-//                          " VALUES (%lld, %lld, %d, %d, %d, %lld, '%s') ",
-//                          addrId % 10, addrId, txId, position, n, blockHeight,
-//                          value, date("%F %T").c_str());
-//    db.updateOrThrowEx(sql, 1);
-//  }
-}
+  // 获取块Raw Hex
+  string blkRawHex;
+  _getBlockRawHexByBlockId(txLog2->blkId_, dbExplorer_, &blkRawHex);
 
-// 回滚交易 inputs
-static
-void _rejectTxInputs(KVDB &kvdb,
-                     class TxLog2 *txLog2,
-                     map<int64_t, int64_t> &addressBalance) {
-  const CTransaction &tx = txLog2->tx_;
-  const int32_t blockHeight = txLog2->blkHeight_;
-  string key;
+  // 解码Raw Block
+  CBlock blk;
+  if (!DecodeHexBlk(blk, blkRawHex)) {
+    THROW_EXCEPTION_DBEX("decode block hex failure, hex: %s", blkRawHex.c_str());
+  }
 
-  for (auto &in : tx.vin) {
-    // 非 coinbase 无需处理前向交易
-    if (tx.IsCoinBase()) { continue; }
+  const CBlockHeader header  = blk.GetBlockHeader();  // alias
+  const string prevBlockHash = header.hashPrevBlock.ToString();
 
-    const uint256 prevHash = in.prevout.hash;
-    const int32_t prevPos  = (int32_t)in.prevout.n;
+  // TODO: 记录 orphan block 信息
 
-    // 将前向交易的花费记录删除
-    // 02_{tx_hash}_{position}
-    key = Strings::Format("%s%s_%d", KVDB_PREFIX_TX_SPEND,
-                          prevHash.ToString().c_str(), (int32_t)prevPos);
-    kvdb.del(key);
+  //
+  // 10_{block_height}
+  const string key10 = Strings::Format("%s%010d", KVDB_PREFIX_BLOCK_HEIGHT, height);
+  kvdb_.del(key10);
 
-    // 重新插入 address_unspent_outputs_xxxx 相关记录
-//    _unremoveUnspentOutputs(db, blockHeight, prevTxId, prevPos, ymd, addressBalance);
-  } /* /for */
-//
-//  // 删除 table.tx_inputs_xxxx 记录， coinbase tx 也有 tx_inputs_xxxx 记录
-//  sql = Strings::Format("DELETE FROM `tx_inputs_%04d` WHERE `tx_id`=%lld ",
-//                        txId % 100, txId);
-//  db.updateOrThrowEx(sql, (int32_t)tx.vin.size());
-}
+  //
+  // 更新前向块信息
+  //
+  if (height > 0) {
+    // 11_{block_hash}
+    const string prevBlkKey = Strings::Format("%s%s", KVDB_PREFIX_BLOCK_OBJECT, prevBlockHash.c_str());
+    string value;
+    kvdb_.get(prevBlkKey, value);
 
-// 回滚交易 outputs
-static
-void _rejectTxOutputs(MySQLConnection &db,
-                      class TxLog2 *txLog2, const int32_t ymd,
-                      map<int64_t, int64_t> &addressBalance) {
-//  const CTransaction &tx = txLog2->tx_;
-//  const int64_t txId = txLog2->txId_;
-//
-//  int n;
-//  const string now = date("%F %T");
-//  set<string> allAddresss;
-//  string sql;
-//
-//  // 提取涉及到的所有地址
-//  n = -1;
-//  for (auto &out : tx.vout) {
-//    n++;
-//    txnouttype type;
-//    vector<CTxDestination> addresses;
-//    int nRequired;
-//    if (!ExtractDestinations(out.scriptPubKey, type, addresses, nRequired)) {
-//      LOG_WARN("extract destinations failure, txId: %lld, hash: %s, position: %d",
-//               txId, tx.GetHash().ToString().c_str(), n);
-//      continue;
-//    }
-//    for (auto &addr : addresses) {  // multiSig 可能由多个输出地址
-//      allAddresss.insert(CBitcoinAddress(addr).ToString());
-//    }
-//  }
-//  // 拿到所有地址的id
-//  map<string, int64_t> addrMap;
-//  GetAddressIds(db, allAddresss, addrMap);
-//
-//  // 处理输出
-//  // (`address_id`, `tx_id`, `position`, `position2`, `block_height`, `value`, `created_at`)
-//  n = -1;
-//  for (auto &out : tx.vout) {
-//    n++;
-//    txnouttype type;
-//    vector<CTxDestination> addresses;
-//    int nRequired;
-//    ExtractDestinations(out.scriptPubKey, type, addresses, nRequired);
-//
-//    // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
-//    int i = -1;
-//    for (auto &addr : addresses) {
-//      i++;
-//      const string addrStr = CBitcoinAddress(addr).ToString();
-//      const int64_t addrId = addrMap[addrStr];
-//      addressBalance[addrId] += out.nValue;
-//
-//      // 删除： address_unspent_outputs 记录
-//      sql = Strings::Format("DELETE FROM `address_unspent_outputs_%04d` "
-//                            " WHERE `address_id`=%lld AND `tx_id`=%lld "
-//                            " AND `position`=%d AND `position2`=%d ",
-//                            tableIdx_AddrUnspentOutput(addrId),
-//                            addrId, txId, n, i);
-//      db.updateOrThrowEx(sql, 1);
-//    }
-//  }
-//
-//  // delete table.tx_outputs_xxxx
-//  sql = Strings::Format("DELETE FROM `tx_outputs_%04d` WHERE `tx_id`=%lld",
-//                        txId % 100, txId);
-//  db.updateOrThrowEx(sql, (int32_t)tx.vout.size());
+    auto prevBlock = flatbuffers::GetMutableRoot<fbe::Block>((void *)value.data());
+    assert(prevBlock->next_block_hash()->size() == 64);
+    for (flatbuffers::uoffset_t i = 0; i < 64; i++) {
+      prevBlock->mutable_next_block_hash()->Mutate(i, '0');
+    }
+    kvdb_.set(prevBlkKey, value);
+  }
 }
 
 
 // 移除地址交易节点 (含地址信息变更)
-void Parser::_removeAddressTxNode(AddressInfo *addr, AddressTxNode *node) {
-//  string sql;
-//
-//  // 设置倒数第二条记录 next 记录为空, 如果存在的话
-//  if (node->prevYmd_ != 0) {
-//    assert(node->prevTxId_ != 0);
-//
-//    sql = Strings::Format("UPDATE `address_txs_%d` SET "
-//                          " `next_ymd`=0, `next_tx_id`=0, `updated_at`='%s' "
-//                          " WHERE `address_id`=%lld AND `tx_id`=%lld ",
-//                          tableIdx_AddrTxs(node->prevYmd_), date("%F %T").c_str(),
-//                          addr->addrId_, node->prevTxId_);
-//    dbExplorer_.updateOrThrowEx(sql, 1);
-//  }
-//
-//  // 删除最后一个交易节点记录
-//  sql = Strings::Format("DELETE FROM `address_txs_%d` WHERE `address_id`=%lld AND `tx_id`=%lld ",
-//                        tableIdx_AddrTxs(node->ymd_), addr->addrId_, node->txId_);
-//  dbExplorer_.updateOrThrowEx(sql, 1);
-//
-//  //
-//  // 更新地址信息
-//  //
-//  const int64_t received = (node->balanceDiff_ > 0 ? node->balanceDiff_ : 0);
-//  const int64_t sent     = (node->balanceDiff_ < 0 ? node->balanceDiff_ * -1 : 0);
-//
-//  string sqlBegin = "";  // 是否更新 `begin_tx_ymd`/`begin_tx_id`
-//  // 没有节点了，移除的是唯一的节点
-//  if (node->prevYmd_ == 0) {
-//    assert(node->prevTxId_ == 0);
-//    sqlBegin = "`begin_tx_id`=0,`begin_tx_ymd`=0,";
-//    addr->beginTxId_  = 0;
-//    addr->beginTxYmd_ = 0;
-//  }
-//
-//  // 移除的节点必然是未确认的，需要 unconfirmed_xxxx 余额变更
-//  sql = Strings::Format("UPDATE `addresses_%04d` SET `tx_count`=`tx_count`-1, "
-//                        " `total_received` = `total_received` - %lld,"
-//                        " `total_sent`     = `total_sent`     - %lld,"
-//                        " `unconfirmed_received` = `unconfirmed_received` - %lld,"
-//                        " `unconfirmed_sent`     = `unconfirmed_sent`     - %lld,"
-//                        " `unconfirmed_tx_count` = `unconfirmed_tx_count` - 1, "
-//                        " `end_tx_ymd`=%d, `end_tx_id`=%lld, %s `updated_at`='%s' "
-//                        " WHERE `id`=%lld ",
-//                        tableIdx_Addr(addr->addrId_),
-//                        received, sent, received, sent,
-//                        node->prevYmd_, node->prevTxId_,
-//                        sqlBegin.c_str(),
-//                        date("%F %T").c_str(), addr->addrId_);
-//  dbExplorer_.updateOrThrowEx(sql, 1);
-//
-//  addr->txCount_--;
-//  addr->totalReceived_ -= received;
-//  addr->totalSent_     -= sent;
-//  addr->unconfirmedReceived_ -= received;
-//  addr->unconfirmedSent_     -= sent;
-//  addr->unconfirmedTxCount_--;
-//  addr->endTxYmd_ = node->prevYmd_;
-//  addr->endTxId_  = node->prevTxId_;
+void Parser::_removeAddressTxNode(const string &address, const int32_t idx,
+                                  const uint256 &txhash, const int64_t balanceDiff,
+                                  AddressInfo *addr) {
+  assert(addr->txCount_ == idx + 1);
+  const string key21 = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_TX, address.c_str(), idx);
+  const string key22 = Strings::Format("%s%s_%s", KVDB_PREFIX_ADDR_TX_INDEX, address.c_str(), txhash);
+
+  kvdb_.del(key21);
+  kvdb_.del(key22);
+
+  //
+  // 更新地址信息
+  //
+  const int64_t received = (balanceDiff > 0 ? balanceDiff : 0);
+  const int64_t sent     = (balanceDiff < 0 ? balanceDiff * -1 : 0);
+
+  addr->txCount_--;
+  addr->received_ -= received;
+  addr->sent_     -= sent;
+  addr->unconfirmedReceived_ -= received;
+  addr->unconfirmedSent_     -= sent;
+  addr->unconfirmedTxCount_--;
 }
 
 
 // 回滚：变更地址&地址对应交易记录
-void Parser::_rejectAddressTxs(class TxLog2 *txLog2,
-                               const map<int64_t, int64_t> &addressBalance) {
-//  for (auto &it : addressBalance) {
-//    const int64_t addrID = it.first;
-//    //
-//    // 当前要reject的记录不是最后一条记录：需要移动节点
-//    //
-//    AddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
-//    AddressTxNode currNode;  // 当前节点
-//
-//    while (1) {
-//      _getAddressTxNode(txLog2->txId_, addr, &currNode);
-//
-//      // 涉及移动节点的情形: 当前节点并非最后一个节点
-//      if (addr->endTxId_ == currNode.txId_) {
-//        break;
-//      }
-//
-//      // 将本节点交换至交易链末尾
-//      _rejectTx_MoveToLastUnconfirmed(addr, &currNode);
-//    }
-//    assert(addr->endTxId_ == currNode.txId_);
-//
-//    // 移除本节点 (含地址信息变更)
-//    _removeAddressTxNode(addr, &currNode);
-//  } /* /for */
-}
+void Parser::_rejectAddressTxs(class TxLog2 *txLog2, const map<string, int64_t> &addressBalance) {
+  for (auto &it : addressBalance) {
+    const string address = it.first;
 
+    AddressInfo *addrInfo = _getAddressInfo(kvdb_, address);
+    AddressTxNode currNode;  // 当前节点
 
-static
-void _rejectTx(MySQLConnection &db, class TxLog2 *txLog2) {
-//  string sql = Strings::Format("DELETE FROM `txs_%04d` WHERE `tx_id`=%lld ",
-//                               tableIdx_Tx(txLog2->txId_), txLog2->txId_);
-//  db.updateOrThrowEx(sql, 1);
+    // reject记录必须是最后一条记录，若不是最后一条记录则需要移动节点
+    while (1) {
+      _getAddressTxNode(address, txLog2->txHash_, &currNode);
+
+      if (currNode.idx_ + 1 == addrInfo->txCount_) {
+        break;  // 已经是最后一条记录
+      }
+      assert(addrInfo->txCount_ >= 2);
+
+      // 当前节点交换至最后一个节点（应仅执行一次）
+      _switchTxNode(address, addrInfo->txCount_ - 1, currNode.idx_);
+    }
+
+    // 移除本节点 (含地址信息变更)
+    _removeAddressTxNode(address, addrInfo->txCount_ - 1, txLog2->txHash_,
+                         currNode.balanceDiff_, addrInfo);
+  } /* /for */
 }
 
 static
@@ -1784,15 +1600,97 @@ int32_t _getTxYmd(MySQLConnection &db, const int64_t txId) {
 
 // 回滚一个交易, reject 的交易都是未确认的交易
 void Parser::rejectTx(class TxLog2 *txLog2) {
-  auto addressBalance = getTxAddressBalance(txLog2->tx_);
+  const CTransaction &tx = txLog2->tx_;
+  const uint256 &txHash  = txLog2->txHash_;
+  string key;
 
-//  _rejectTxInputs  (dbExplorer_, txLog2, ymd, addressBalance);
-//  _rejectTxOutputs (dbExplorer_, txLog2, ymd, addressBalance);
-//  _rejectAddressTxs(txLog2, addressBalance);
-//  _rejectTx        (dbExplorer_, txLog2);
-//
-//  // 处理未确认计数器和记录
-//  removeUnconfirmedTxPool(txLog2);
+  vector<const fbe::TxOutput *> prevTxOutputs;
+  vector<string> prevTxsData;  // prevTxsData 必须一直存在，否则 prevTxOutputs 读取无效内存
+  map<string/* address */, int64_t/* balance_diff */> addressBalance;
+
+  // 读取前向交易的输出
+  if (!txLog2->tx_.IsCoinBase()) {
+    kvdb_.getPrevTxOutputs(tx, prevTxsData, prevTxOutputs);
+  }
+
+  //
+  // inputs
+  //
+  if (!tx.IsCoinBase()) {  // coinbase 无需处理前向交易
+    int n = -1;
+    for (const auto &in : tx.vin) {
+      n++;
+
+      auto addresses = prevTxOutputs[n]->addresses();
+      const int64_t prevValue = prevTxOutputs[n]->value();
+      const uint256 &prevHash = in.prevout.hash;
+      const int32_t prevPos   = (int32_t)in.prevout.n;
+
+      // 将前向交易的花费记录删除
+      // 02_{tx_hash}_{position}
+      key = Strings::Format("%s%s_%d", KVDB_PREFIX_TX_SPEND,
+                            prevHash.ToString().c_str(), (int32_t)prevPos);
+      kvdb_.del(key);
+
+      // 重新插入前向输出的未花费记录
+      for (auto j = 0; j < addresses->size(); j++) {
+        const string address = addresses->operator[](j)->str();
+        addressBalance[address] += prevValue * -1;
+        _acceptTx_insertAddressUnspent(kvdb_, prevValue, address, prevHash, n, j);
+      }
+    }
+  }
+
+  //
+  // outputs
+  //
+  {
+    int n = -1;
+    for (const auto &out : tx.vout) {
+      n++;
+      string addressStr;
+      txnouttype type;
+      vector<CTxDestination> addresses;
+      int nRequired;
+      ExtractDestinations(out.scriptPubKey, type, addresses, nRequired);
+
+      // 解地址可能失败，但依然有 tx_outputs_xxxx 记录
+      // 输出无有效地址的奇葩TX:
+      //   testnet3: e920604f540fec21f66b6a94d59ca8b1fbde27fc7b4bc8163b3ede1a1f90c245
+      // multiSig 可能由多个输出地址: https://en.bitcoin.it/wiki/BIP_0011
+
+      //
+      // 删除未花费记录
+      //
+      for (auto &addrDest : addresses) {
+        const string address = CBitcoinAddress(addrDest).ToString();
+        addressBalance[address] += out.nValue;
+
+        // 某个地址的未花费index
+        // 24_{address}_{tx_hash}_{position}
+        const string key24 = Strings::Format("%s%s_%s_%d", KVDB_PREFIX_ADDR_UNSPENT_INDEX,
+                                             address.c_str(), txHash.ToString().c_str(), (int32_t)n);
+        string value;
+        kvdb_.get(key24, value);
+        auto unspentOutputIdx = flatbuffers::GetRoot<fbe::AddressUnspentIdx>(value.data());
+
+        // 删除之
+        // 23_{address}_{010index}
+        const string key23 = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_UNSPENT,
+                                             address.c_str(), unspentOutputIdx->index());
+        kvdb_.del(key23);  // 删除unspent list node
+        kvdb_.del(key24);  // 删除索引关系
+      }
+    }
+  }
+
+  _rejectAddressTxs(txLog2, addressBalance);
+
+  // 刷入地址变更信息
+  flushAddressInfo(addressBalance);
+
+  // 处理未确认计数器和记录
+  removeUnconfirmedTxPool(txLog2);
 //
 //  // notification logs
 ////  writeNotificationLogs(addressBalance, txLog2);

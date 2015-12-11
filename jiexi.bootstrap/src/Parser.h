@@ -227,13 +227,7 @@ class KVHandler {
   rocksdb::Options options_;
   rocksdb::WriteOptions writeOptions_;
 
-  // 环形队列, 大小必须是偶数
-  BoundedBuffer<string> boundedBuffer_;
-
   void printSpeed();
-
-  atomic<int32_t> runningConsumeThreads_;
-  void threadConsumeKVItems();
 
 public:
   KVHandler();
@@ -242,8 +236,6 @@ public:
   void set(const string &key, const string &value);
   void set(const string &key, const uint8_t *data, const size_t length);
 
-  void start();
-  void stopConsumeThread();
   void compact();
 };
 

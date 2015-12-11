@@ -18,7 +18,13 @@
 
 #include "KVDB.h"
 
-#include "rocksdb/c.h"
+#include "rocksdb/cache.h"
+#include "rocksdb/compaction_filter.h"
+#include "rocksdb/db.h"
+#include "rocksdb/options.h"
+#include "rocksdb/slice.h"
+#include "rocksdb/table.h"
+#include "rocksdb/memtablerep.h"
 
 //
 // TODO: 采用列族(column family)来优化相同的key,
@@ -27,12 +33,48 @@
 
 
 KVDB::KVDB(const string &dbPath): db_(nullptr), kDBPath_(dbPath) {
+  options_.compression = rocksdb::kSnappyCompression;
+  options_.create_if_missing        = false;
+//  options_.disableDataSync          = true;   // disable syncing of data files
+
+  //
+  // open Rocks DB
+  //
   // Optimize RocksDB. This is the easiest way to get RocksDB to perform well
   options_.IncreaseParallelism();
   options_.OptimizeLevelStyleCompaction();
 
-  // create the DB if it's not already present
-  options_.create_if_missing = true;
+  //
+  // https://github.com/facebook/rocksdb/blob/master/tools/benchmark.sh
+  //
+  options_.target_file_size_base    = (size_t)128 * 1024 * 1024;
+  options_.max_bytes_for_level_base = (size_t)1024 * 1024 * 1024;
+  options_.num_levels = 6;
+
+  options_.write_buffer_size = (size_t)64 * 1024 * 1024;
+  options_.max_write_buffer_number  = 8;
+//  options_.disable_auto_compactions = true;
+//
+//  // params_bulkload
+//  options_.max_background_compactions = 16;
+//  options_.max_background_flushes = 7;
+//  options_.level0_file_num_compaction_trigger = (size_t)10 * 1024 * 1024;
+//  options_.level0_slowdown_writes_trigger     = (size_t)10 * 1024 * 1024;
+//  options_.level0_stop_writes_trigger         = (size_t)10 * 1024 * 1024;
+//
+//  // memtable_factory: vector
+//  options_.memtable_factory.reset(new rocksdb::VectorRepFactory);
+
+  // initialize BlockBasedTableOptions
+  auto cache1 = rocksdb::NewLRUCache(1 * 1024 * 1024 * 1024);
+  auto cache2 = rocksdb::NewLRUCache(1 * 1024 * 1024 * 1024);
+  rocksdb::BlockBasedTableOptions bbt_opts;
+  bbt_opts.block_cache = cache1;
+  bbt_opts.block_cache_compressed = cache2;
+  bbt_opts.cache_index_and_filter_blocks = 0;
+  bbt_opts.block_size = 32 * 1024;
+  bbt_opts.format_version = 2;
+  options_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbt_opts));
   
   // 采用 range 方式获取数据最多为 N
   kRangeMaxSize_ = 10000;

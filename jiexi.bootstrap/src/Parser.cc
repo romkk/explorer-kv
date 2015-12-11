@@ -48,9 +48,9 @@
 #include "rocksdb/memtablerep.h"
 
 
-KVHandler   *gKVHandler   = nullptr;
-AddrHandler *gAddrHandler = nullptr;
-TxHandler   *gTxHandler   = nullptr;
+static KVHandler   *gKVHandler   = nullptr;
+static AddrHandler *gAddrHandler = nullptr;
+static TxHandler   *gTxHandler   = nullptr;
 
 
 static void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo);
@@ -475,8 +475,7 @@ void BlockTimestamp::popBlock() {
 ////////////////////////////////////////////////////////////////////////////////
 
 KVHandler::KVHandler(): running_(true), startTime_(0), totalStartTime_(0),
-counter_(0), totalCounter_(0), totalSize_(0),
-runningConsumeThreads_(0), boundedBuffer_(10 * 10000)
+counter_(0), totalCounter_(0), totalSize_(0)
 {
   options_.compression = rocksdb::kSnappyCompression;
   options_.create_if_missing        = true;   // create the DB if it's not already present
@@ -485,9 +484,9 @@ runningConsumeThreads_(0), boundedBuffer_(10 * 10000)
   //
   // open Rocks DB
   //
-//  // Optimize RocksDB. This is the easiest way to get RocksDB to perform well
-//  options_.IncreaseParallelism();
-//  options_.OptimizeLevelStyleCompaction();
+  // Optimize RocksDB. This is the easiest way to get RocksDB to perform well
+  options_.IncreaseParallelism();
+  options_.OptimizeLevelStyleCompaction();
 
   //
   // https://github.com/facebook/rocksdb/blob/master/tools/benchmark.sh
@@ -536,19 +535,18 @@ runningConsumeThreads_(0), boundedBuffer_(10 * 10000)
   // Optimize
   writeOptions_.disableWAL = true;   // disable Write Ahead Log
   writeOptions_.sync       = false;  // use Asynchronous Writes
+
+  startTime_ = totalStartTime_ = Time::CurrentTimeMill();
 }
 
 KVHandler::~KVHandler() {
-  stopConsumeThread();
   delete db_;  // close kv db
-
-  LOG_INFO("kv total items: %lld", totalCounter_);
   printSpeed();
 }
 
 void KVHandler::printSpeed() {
-  LOG_INFO("kv items: %lld, totalSize_: %lld MB, "
-           "curr speed: %lld /s, all speed: %lld /s",
+  LOG_INFO("items: %lld, size: %lld M, "
+           "speed: %lld / %lld",
            totalCounter_, (int64_t)(totalSize_ * 1.0 / 1024 / 1024),
            (int64_t)(counter_ * 1000.0 / (double)(Time::CurrentTimeMill() - startTime_)),
            (int64_t)(totalCounter_ * 1000.0 / (double)(Time::CurrentTimeMill() - totalStartTime_)))
@@ -574,45 +572,11 @@ void KVHandler::set(const string &key, const uint8_t *data, const size_t size) {
   }
 }
 
-void KVHandler::start() {
-  running_ = true;
-  startTime_ = totalStartTime_ = Time::CurrentTimeMill();
-
-//  // 启动写 kvdb 线程
-//  boost::thread t(boost::bind(&KVHandler::threadConsumeKVItems, this));
-//  runningConsumeThreads_ = 1;
-}
-
-void KVHandler::stopConsumeThread() {
-  running_ = false;
-//  boundedBuffer_.pushFront("--------endkey--------");
-//  boundedBuffer_.pushFront("--------endvalue--------");
-//
-//  // 等待生成线程处理完成
-//  while (runningConsumeThreads_ > 0) {
-//    sleep(1);
-//  }
-}
-
 void KVHandler::compact() {
   LogScope ls("KVHandler::compact");
-  stopConsumeThread();
   db_->CompactRange(rocksdb::CompactRangeOptions(), nullptr, nullptr);
 }
 
-void KVHandler::threadConsumeKVItems() {
-//  LogScope ls("thread: threadConsumeKVItems");
-//  string key, value;
-//
-//  while (running_) {
-//    key.clear();
-//    value.clear();
-//    boundedBuffer_.popBack(&key);
-//    boundedBuffer_.popBack(&value);
-//    db_->Put(writeOptions_, key, value);
-//  }
-//  runningConsumeThreads_ = 0;
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 //--------------------------------- PreParser ----------------------------------
@@ -648,9 +612,6 @@ void PreParser::stop() {
   if (!running_) {
     return;
   }
-
-  gKVHandler->compact();
-
   running_ = false;
   LOG_INFO("stop PreParser...");
 }
@@ -679,7 +640,6 @@ void PreParser::init() {
 
   // kv handler
   gKVHandler = new KVHandler();
-  gKVHandler->start();
 }
 
 void PreParser::_saveBlock(const BlockInfo &b) {
@@ -786,7 +746,7 @@ void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo) {
   fbb.ForceDefaults(true);
 
   AddrTx &t = addrInfo->addrTx_;
-  const int32_t addressTxIndex = addrInfo->txCount_;  // index start from 0
+  const int32_t addressTxIndex = addrInfo->txCount_ - 1;  // index start from 0
   auto fb_txhash = fbb.CreateString(t.txHash_.ToString());
 
   //

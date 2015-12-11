@@ -597,6 +597,7 @@ void _insertBlock(KVDB &kvdb, const CBlock &blk, const int32_t height, const int
     // 11_{block_hash}, 需紧接 blockBuilder.Finish()
     const string key11 = Strings::Format("%s%s", KVDB_PREFIX_BLOCK_OBJECT, blockHash.ToString().c_str());
     kvdb.set(key11, fbb.GetBufferPointer(), fbb.GetSize());
+    fbb.Clear();
   }
 
   // 10_{block_height}
@@ -757,7 +758,6 @@ void _accpetTx_insertAddressTxs(KVDB &kvdb, class TxLog2 *txLog2,
   //
   flatbuffers::FlatBufferBuilder fbb;
   fbb.ForceDefaults(true);
-  auto txhash = fbb.CreateString(txLog2->txHash_.ToString());
 
   for (auto &it : addressBalance) {
     // alias
@@ -772,6 +772,7 @@ void _accpetTx_insertAddressTxs(KVDB &kvdb, class TxLog2 *txLog2,
     // AddressTx
     //
     {
+      auto txhash = fbb.CreateString(txLog2->txHash_.ToString());
       fbe::AddressTxBuilder addressTxBuilder(fbb);
       addressTxBuilder.add_balance_diff(balanceDiff);
       addressTxBuilder.add_tx_hash(txhash);
@@ -783,6 +784,7 @@ void _accpetTx_insertAddressTxs(KVDB &kvdb, class TxLog2 *txLog2,
       const string key21 = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_TX,
                                            address.c_str(), addressTxIndex);
       kvdb.set(key21, fbb.GetBufferPointer(), fbb.GetSize());
+      fbb.Clear();
     }
 
     //
@@ -934,8 +936,8 @@ static void _acceptTx_removeUnspentOutputs(KVDB &kvdb, const uint256 &hash, cons
 static void _acceptTx_insertSpendTxs(KVDB &kvdb, const uint256 &hash, const CTransaction &tx) {
   flatbuffers::FlatBufferBuilder fbb;
   fbb.ForceDefaults(true);
+
   string key;
-  auto fb_spentHash = fbb.CreateString(hash.ToString());
 
   int n = -1;  // postion
   for (const auto &in : tx.vin) {
@@ -945,11 +947,13 @@ static void _acceptTx_insertSpendTxs(KVDB &kvdb, const uint256 &hash, const CTra
     key = Strings::Format("%s%s_%d", KVDB_PREFIX_TX_SPEND,
                           prevHash.ToString().c_str(), (int32_t)in.prevout.n);
 
+    auto fb_spentHash = fbb.CreateString(hash.ToString());
     fbe::TxSpentByBuilder txSpentByBuilder(fbb);
     txSpentByBuilder.add_position(n);
     txSpentByBuilder.add_tx_hash(fb_spentHash);
     fbb.Finish(txSpentByBuilder.Finish());
     kvdb.set(key, fbb.GetBufferPointer(), fbb.GetSize());
+    fbb.Clear();
   }
 }
 
@@ -961,7 +965,7 @@ static void _acceptTx_insertAddressUnspent(KVDB &kvdb, const int64_t nValue,
                                            const int32_t position, const int32_t position2) {
   flatbuffers::FlatBufferBuilder fbb;
   fbb.ForceDefaults(true);
-  auto fb_spentHash = fbb.CreateString(hash.ToString());
+
   AddressInfo *addr = _getAddressInfo(kvdb, address);
 
   addr->unspentTxIndex_++;
@@ -979,6 +983,7 @@ static void _acceptTx_insertAddressUnspent(KVDB &kvdb, const int64_t nValue,
     addressUnspentIdxBuilder.add_index(addressUnspentIndex);
     fbb.Finish(addressUnspentIdxBuilder.Finish());
     kvdb.set(key24, fbb.GetBufferPointer(), fbb.GetSize());
+    fbb.Clear();
   }
 
   //
@@ -987,6 +992,8 @@ static void _acceptTx_insertAddressUnspent(KVDB &kvdb, const int64_t nValue,
   {
     const string key23 = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_UNSPENT,
                                          address.c_str(), addressUnspentIndex);
+
+    auto fb_spentHash = fbb.CreateString(hash.ToString());
     fbe::AddressUnspentBuilder addressUnspentBuilder(fbb);
     addressUnspentBuilder.add_position(position);
     addressUnspentBuilder.add_position2(position2);
@@ -994,6 +1001,7 @@ static void _acceptTx_insertAddressUnspent(KVDB &kvdb, const int64_t nValue,
     addressUnspentBuilder.add_value(nValue);
     fbb.Finish(addressUnspentBuilder.Finish());
     kvdb.set(key23, fbb.GetBufferPointer(), fbb.GetSize());
+    fbb.Clear();
   }
 }
 
@@ -1264,6 +1272,7 @@ void Parser::flushAddressInfo(const map<string, int64_t> &addressBalance) {
 
     const string key = Strings::Format("%s%s", KVDB_PREFIX_ADDR_OBJECT, address.c_str());
     kvdb_.set(key, fbb.GetBufferPointer(), fbb.GetSize());
+    fbb.Clear();
   }
 }
 

@@ -1645,7 +1645,7 @@ void Parser::rejectTx(class TxLog2 *txLog2) {
       for (auto j = 0; j < addresses->size(); j++) {
         const string address = addresses->operator[](j)->str();
         addressBalance[address] += prevValue * -1;
-        _acceptTx_insertAddressUnspent(kvdb_, prevValue, address, prevHash, n, j);
+        _acceptTx_insertAddressUnspent(kvdb_, prevValue, address, prevHash, prevPos, j);
       }
     }
   }

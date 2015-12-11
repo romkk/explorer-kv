@@ -200,15 +200,15 @@ vector<struct AddrInfo>::iterator AddrHandler::find(const string &address) {
 }
 
 void AddrHandler::dumpAddressAndTxs() {
+  flatbuffers::FlatBufferBuilder fbb;
+  fbb.ForceDefaults(true);
+
   for (auto addr = addrInfo_.begin(); addr != addrInfo_.end(); addr++) {
     // address tx
     _saveAddrTx(addr);
 
     const string &address = addr->addrStr_;
     const string key = Strings::Format("%s%s", KVDB_PREFIX_ADDR_OBJECT, address.c_str());
-
-    flatbuffers::FlatBufferBuilder fbb;
-    fbb.ForceDefaults(true);
 
     fbe::AddressBuilder addressBuilder(fbb);
     addressBuilder.add_received(addr->received_);
@@ -223,6 +223,7 @@ void AddrHandler::dumpAddressAndTxs() {
     fbb.Finish(addressBuilder.Finish());
 
     gKVHandler->set(key, fbb.GetBufferPointer(), fbb.GetSize());
+    fbb.Clear();
   }
 }
 
@@ -376,7 +377,6 @@ void _saveUnspentOutput(TxInfo &txInfo, int32_t position) {
 
   flatbuffers::FlatBufferBuilder fbb;
   fbb.ForceDefaults(true);
-  auto fb_spentHash = fbb.CreateString(hash.ToString());
 
   // 遍历处理，可能含有多个地址
   for (size_t i = 0; i < out->address_.size(); i++) {
@@ -395,6 +395,7 @@ void _saveUnspentOutput(TxInfo &txInfo, int32_t position) {
       addressUnspentIdxBuilder.add_index(addressUnspentIndex);
       fbb.Finish(addressUnspentIdxBuilder.Finish());
       gKVHandler->set(key24, fbb.GetBufferPointer(), fbb.GetSize());
+      fbb.Clear();
     }
 
     //
@@ -403,6 +404,7 @@ void _saveUnspentOutput(TxInfo &txInfo, int32_t position) {
     {
       const string key23 = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_UNSPENT,
                                            address.c_str(), addressUnspentIndex);
+      auto fb_spentHash = fbb.CreateString(hash.ToString());
       fbe::AddressUnspentBuilder addressUnspentBuilder(fbb);
       addressUnspentBuilder.add_position(position);
       addressUnspentBuilder.add_position2((int32_t)i);
@@ -410,6 +412,7 @@ void _saveUnspentOutput(TxInfo &txInfo, int32_t position) {
       addressUnspentBuilder.add_value(out->value_);
       fbb.Finish(addressUnspentBuilder.Finish());
       gKVHandler->set(key23, fbb.GetBufferPointer(), fbb.GetSize());
+      fbb.Clear();
     }
   }
 }
@@ -673,6 +676,7 @@ void PreParser::_saveBlock(const BlockInfo &b) {
   const string key11 = Strings::Format("%s%s", KVDB_PREFIX_BLOCK_OBJECT,
                                        b.blockHash_.ToString().c_str());
   gKVHandler->set(key11, fbb.GetBufferPointer(), fbb.GetSize());
+  fbb.Clear();
 
   // 10_{block_height}
   const string key10 = Strings::Format("%s%010d", KVDB_PREFIX_BLOCK_HEIGHT, b.height_);
@@ -764,6 +768,7 @@ void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo) {
     const string key21 = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_TX,
                                          addrInfo->addrStr_, addressTxIndex);
     gKVHandler->set(key21, fbb.GetBufferPointer(), fbb.GetSize());
+    fbb.Clear();
   }
 
   //
@@ -882,15 +887,19 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
         //
         // 02_{tx_hash}_{position}
         {
+          // TODO: 剥离为函数
+          flatbuffers::FlatBufferBuilder fbb2;
+          fbb2.ForceDefaults(true);
           string key = Strings::Format("%s%s_%d", KVDB_PREFIX_TX_SPEND,
                                        prevHash.ToString().c_str(), (int32_t)prevPostion);
 
-          auto fb_spentHash = fbb.CreateString(txHash.ToString());
-          fbe::TxSpentByBuilder txSpentByBuilder(fbb);
+          auto fb_spentHash = fbb2.CreateString(txHash.ToString());
+          fbe::TxSpentByBuilder txSpentByBuilder(fbb2);
           txSpentByBuilder.add_position(n);
           txSpentByBuilder.add_tx_hash(fb_spentHash);
           fbb.Finish(txSpentByBuilder.Finish());
-          gKVHandler->set(key, fbb.GetBufferPointer(), fbb.GetSize());
+          gKVHandler->set(key, fbb2.GetBufferPointer(), fbb2.GetSize());
+          fbb2.Clear();
         }
 
         valueIn += prevValue;
@@ -1012,6 +1021,7 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
   {
     const string key = KVDB_PREFIX_TX_OBJECT + txHash.ToString();
     gKVHandler->set(key, fbb.GetBufferPointer(), fbb.GetSize());
+    fbb.Clear();
   }
 
   // 处理地址变更

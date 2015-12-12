@@ -86,6 +86,7 @@ KVDB::~KVDB() {
 
 void KVDB::close() {
   if (db_ != nullptr) {
+    LOG_INFO("close kv db");
     delete db_;
     db_ = nullptr;
   }

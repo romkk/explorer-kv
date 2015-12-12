@@ -256,7 +256,7 @@ void TxInfoCache::getTxInfo(MySQLConnection &db,
 Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
 running_(true),
 unconfirmedTxsSize_(0), unconfirmedTxsCount_(0),
-kvdb_(Config::GConfig.get("rocksdb.path", "./rocksdb")),
+kvdb_(Config::GConfig.get("rocksdb.path", "")),
 blkTs_(2016), notifyProducer_(nullptr)
 {
   notifyFileLog2Producer_ = Config::GConfig.get("notify.log2producer.file");
@@ -280,10 +280,22 @@ blkTs_(2016), notifyProducer_(nullptr)
 Parser::~Parser() {
   stop();
 
-  if (watchNotifyThread_.joinable()) {
-    watchNotifyThread_.join();
+//  LOG_INFO("stop api server thread...");
+//  if (threadAPIServer_.joinable()) {
+//    threadAPIServer_.join();
+//  }
+
+  LOG_INFO("stop handle txlogs thread...");
+  if (threadHandleTxlogs_.joinable()) {
+    threadHandleTxlogs_.join();
   }
 
+  LOG_INFO("stop watch notify thread...");
+  if (threadWatchNotify_.joinable()) {
+    threadWatchNotify_.join();
+  }
+
+  LOG_INFO("stop notify producer...");
   if (notifyProducer_ != nullptr) {
     delete notifyProducer_;
     notifyProducer_ = nullptr;
@@ -291,11 +303,12 @@ Parser::~Parser() {
 }
 
 void Parser::stop() {
-  if (running_) {
-    running_ = false;
-    LOG_INFO("stop tparser");
-  }
+  if (running_ == false) { return; }
 
+  running_ = false;
+  LOG_INFO("stop tparser...");
+
+  apiServer_.stop();
   inotify_.RemoveAll();
   changed_.notify_all();
 }
@@ -338,10 +351,21 @@ bool Parser::init() {
     }
   }
 
-  watchNotifyThread_ = thread(&Parser::threadWatchNotifyFile, this);
+  // 启动监听文件（log2）线程
+  threadWatchNotify_ = thread(&Parser::threadWatchNotifyFile, this);
+
+//  threadAPIServer_ = thread(&Parser::threadAPIServer, this);
+
+  // 启动txlogs2消费线程
+  threadHandleTxlogs_ = thread(&Parser::threadHandleTxlogs, this);
 
   return true;
 }
+
+//void Parser::threadAPIServer() {
+//  LogScope ls("Parser::threadAPIServer");
+//  apiServer_.run();
+//}
 
 void Parser::threadWatchNotifyFile() {
   try {
@@ -380,6 +404,15 @@ void Parser::threadWatchNotifyFile() {
 }
 
 void Parser::run() {
+  // http服务采用libevent，由于只能在当前线程结束，所以放入主线程里
+
+  // 启动API Server Http服务
+  apiServer_.setKVDB(&kvdb_);
+  apiServer_.init();  // setup evhtp
+  apiServer_.run();
+}
+
+void Parser::threadHandleTxlogs() {
   TxLog2 txLog2, lastTxLog2;
   string blockHash;  // 目前仅用在URL回调上
   int64_t lastTxLog2Id = 0;

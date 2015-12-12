@@ -118,7 +118,7 @@ int main(int argc, char **argv) {
   gAPIServer = new APIServer();
   
   // open kv db
-  KVDB *kvdb = new KVDB(Config::GConfig.get("rocksdb.dir"));
+  KVDB *kvdb = new KVDB(Config::GConfig.get("rocksdb.path"));
   
   try {
     kvdb->open();

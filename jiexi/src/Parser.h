@@ -31,6 +31,7 @@
 #include "bitcoin/key.h"
 
 #include "KVDB.h"
+#include "HttpAPI.h"
 
 // tparser的异常，整数
 #define EXCEPTION_TPARSER_TX_INVALID_INPUT 100
@@ -218,12 +219,20 @@ private:
   // notify
   string notifyFileLog2Producer_;
   Inotify inotify_;
-  thread watchNotifyThread_;
+  thread threadWatchNotify_;
 
   // 通知日志
   NotifyProducer *notifyProducer_;
 
+  // API Httpd
+  APIServer apiServer_;
+//  thread threadAPIServer_;
+
+  thread threadHandleTxlogs_;
+
   void threadWatchNotifyFile();
+//  void threadAPIServer();
+  void threadHandleTxlogs();
 
   bool tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId);
 

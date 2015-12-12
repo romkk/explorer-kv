@@ -26,10 +26,10 @@
 typedef void (*handleFunction)(evhtp_request_t *req, const vector<string> &params, const string &queryId);
 
 // global vars
-KVDB *gDB = nullptr;
-std::unordered_map<string, handleFunction> gHandleFunctions;  // kv handle functions
-APIHandler *gAPIHandler = nullptr;
-std::vector<const char *> gKeyTypes;  // 键对应的类型
+static KVDB *gDB = nullptr;
+static std::unordered_map<string, handleFunction> gHandleFunctions;  // kv handle functions
+static APIHandler *gAPIHandler = nullptr;
+static std::vector<const char *> gKeyTypes;  // 键对应的类型
 
 
 //////////////////////////////// static functions //////////////////////////////
@@ -573,15 +573,19 @@ void APIServer::init() {
 }
 
 void APIServer::run() {
+  LogScope ls("APIServer::run");
   assert(evbase_ != nullptr);
-  event_base_loop(evbase_, 0);  // while(1)
+
+  event_base_dispatch(evbase_);
 }
 
 void APIServer::stop() {
   if (evbase_ == nullptr) { return; }
 
+  LogScope ls("APIServer::stop");
+
   // stop event loop
-  event_base_loopexit(evbase_, NULL);
+  event_base_loopbreak(evbase_);
   
   // release resources
   evhtp_unbind_socket(htp_);

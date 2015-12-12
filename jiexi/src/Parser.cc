@@ -419,29 +419,6 @@ void Parser::run() {
         if (txLog2.tx_.IsCoinBase()) {
           acceptBlock(&txLog2, blockHash);
         }
-//        //
-//        // 有可能因为前向交易不存在，导致该tx没有被accept，但log2producer认为accept过了
-//        // 所以，这里检测一下，若没有accept，则执行accept操作
-//        //
-//        const int32_t blockHeight = txLog2.blkHeight_;
-//        const int64_t blockId     = txLog2.blkId_;
-//        const int32_t ymd         = txLog2.ymd_;
-//        const int32_t maxBlkTs    = txLog2.maxBlkTimestamp_;
-//        if (!hasAccepted(&txLog2)) {
-//          txLog2.type_ = LOG2TYPE_TX_ACCEPT;
-//          txLog2.blkHeight_ = -1;
-//          txLog2.blkId_     = -1;
-//          txLog2.ymd_       = UNCONFIRM_TX_YMD;
-//          txLog2.maxBlkTimestamp_ = UNCONFIRM_TX_TIMESTAMP;
-//
-//          acceptTx(&txLog2);
-//
-//          txLog2.type_ = LOG2TYPE_TX_CONFIRM;
-//          txLog2.blkHeight_ = blockHeight;
-//          txLog2.blkId_     = blockId;
-//          txLog2.ymd_       = ymd;
-//          txLog2.maxBlkTimestamp_ = maxBlkTs;
-//        }
         confirmTx(&txLog2);
       }
       else if (txLog2.type_ == LOG2TYPE_TX_UNCONFIRM) {
@@ -487,24 +464,6 @@ void Parser::run() {
 error:
   dbExplorer_.execute("ROLLBACK");
   return;
-}
-
-bool Parser::hasAccepted(class TxLog2 *txLog2) {
-  MySQLResult res;
-  string sql;
-  char **row = nullptr;
-  const string hash = txLog2->txHash_.ToString();
-
-  // 存在于 table.txs_xxxx 表中，说明已经 accept 处理过了
-  sql = Strings::Format("SELECT `height` FROM `txs_%04d` WHERE `hash` = '%s'",
-                        HexToDecLast2Bytes(hash) % 64, hash.c_str());
-  dbExplorer_.query(sql, res);
-  if (res.numRows() == 1) {
-    row = res.nextRow();
-    assert(atoi(row[0]) == 0);  // 确认数应该为零
-    return true;
-  }
-  return false;
 }
 
 
@@ -1799,32 +1758,5 @@ bool Parser::tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId) {
   return true;
 }
 
-
-uint256 Parser::blockId2Hash(const int64_t blockId) {
-  static map<int64_t, uint256> id2hash_;
-
-  auto it = id2hash_.find(blockId);
-  if (it != id2hash_.end()) {
-    return it->second;
-  }
-
-  MySQLResult res;
-  char **row = nullptr;
-  string sql;
-
-  sql = Strings::Format("SELECT `block_hash` FROM `0_raw_blocks` "
-                        " WHERE `id`=%lld ", blockId);
-  dbExplorer_.query(sql, res);
-  if (res.numRows() == 0) {
-    THROW_EXCEPTION_DBEX("can't find block by blockID(%lld) in table.0_raw_blocks",
-                         blockId);
-  }
-  row = res.nextRow();
-
-  uint256 blockHash(row[0]);
-  id2hash_.insert(make_pair(blockId, blockHash));
-
-  return blockHash;
-}
 
 

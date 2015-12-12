@@ -119,9 +119,10 @@ int main(int argc, char **argv) {
   
   // open kv db
   KVDB *kvdb = new KVDB(Config::GConfig.get("rocksdb.dir"));
-  kvdb->open();
   
   try {
+    kvdb->open();
+    
     gAPIServer->setKVDB(kvdb);
     gAPIServer->init();
     
@@ -129,6 +130,9 @@ int main(int argc, char **argv) {
     
     delete gAPIServer;
     gAPIServer = nullptr;
+
+    delete kvdb;
+    kvdb = nullptr;
   }
   catch (std::exception & e) {
     LOG_FATAL("apiserver exception: %s", e.what());

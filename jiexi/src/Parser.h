@@ -245,8 +245,6 @@ private:
   // flush address info
   void flushAddressInfo(const map<string, int64_t> &addressBalance);
 
-  bool hasAccepted(class TxLog2 *txLog2);
-
   // 获取tx对应各个地址的余额变更情况
   map<string, int64_t> getTxAddressBalance(const CTransaction &tx);
 
@@ -279,8 +277,6 @@ private:
   // 写入通知日志文件
   void writeNotificationLogs(const map<int64_t, int64_t> &addressBalance, class TxLog2 *txLog2);
 
-  // block id 2 hash
-  uint256 blockId2Hash(const int64_t blockId);
 
 public:
   Parser();

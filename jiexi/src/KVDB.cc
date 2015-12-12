@@ -114,6 +114,7 @@ void KVDB::del(const string &key) {
   if (!s.ok()) {
     THROW_EXCEPTION_DBEX("delelte key: %s fail", key.c_str());
   }
+  LOG_DEBUG("[KVDB::del] key: %s", key.c_str());
 }
 
 void KVDB::get(const string &key, string &value) {

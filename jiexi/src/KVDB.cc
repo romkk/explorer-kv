@@ -127,10 +127,14 @@ void KVDB::get(const string &key, string &value) {
   LOG_DEBUG("[KVDB::get] key: %s, value size: %llu", key.c_str(), value.size());
 }
 
-void KVDB::getMayNotExist(const string &key, string &value) {
-  value.clear();
-  db_->Get(rocksdb::ReadOptions(), key, &value);
+bool KVDB::getMayNotExist(const string &key, string &value) {
   LOG_DEBUG("[KVDB::getMayNotExist] key: %s, value size: %llu", key.c_str(), value.size());
+  value.clear();
+  rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &value);
+  if (s.IsNotFound()) {
+    return false;
+  }
+  return true;
 }
 
 void KVDB::set(const string &key, const string &value) {

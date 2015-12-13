@@ -65,7 +65,7 @@ public:
   void del(const string &key);
 
   void get(const string &key, string &value);
-  void getMayNotExist(const string &key, string &value);
+  bool getMayNotExist(const string &key, string &value);
 
   void set(const string &key, const string &value);
   void set(const string &key, const uint8_t *data, const size_t length);

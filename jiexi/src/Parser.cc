@@ -260,11 +260,9 @@ void TxInfoCache::getTxInfo(MySQLConnection &db,
 }
 
 /////////////////////////////////  Parser  ///////////////////////////////////
-Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
-running_(true),
-unconfirmedTxsSize_(0), unconfirmedTxsCount_(0),
+Parser::Parser(): running_(true), unconfirmedTxsSize_(0), unconfirmedTxsCount_(0),
 kvdb_(Config::GConfig.get("rocksdb.path", "")),
-blkTs_(2016), notifyProducer_(nullptr), txlogsBuffer_(2000)
+blkTs_(2016), notifyProducer_(nullptr), txlogsBuffer_(200)
 {
   notifyFileLog2Producer_ = Config::GConfig.get("notify.log2producer.file");
   if (notifyFileLog2Producer_.empty()) {
@@ -327,13 +325,15 @@ void Parser::stop() {
 }
 
 bool Parser::init() {
-  if (!dbExplorer_.ping()) {
+  // try connect mysql db
+  MySQLConnection dbExplorer(Config::GConfig.get("db.explorer.uri"));
+  if (!dbExplorer.ping()) {
     LOG_FATAL("connect to explorer DB failure");
     return false;
   }
 
   // 检测DB参数： max_allowed_packet
-  const int32_t maxAllowed = atoi(dbExplorer_.getVariable("max_allowed_packet").c_str());
+  const int32_t maxAllowed = atoi(dbExplorer.getVariable("max_allowed_packet").c_str());
   const int32_t kMinAllowed = 8*1024*1024;
   if (maxAllowed < kMinAllowed) {
     LOG_FATAL("mysql.db.max_allowed_packet(%d) is too small, should >= %d",
@@ -438,6 +438,11 @@ void Parser::threadHandleTxlogs() {
       continue;
     }
 
+    LOG_INFO("process txlog2, logId: %d, type: %d, "
+             "height: %d, tx hash: %s, created: %s",
+             txLog2.id_, txLog2.type_, txLog2.blkHeight_,
+             txLog2.txHash_.ToString().c_str(), txLog2.createdAt_.c_str());
+
     if (txLog2.type_ == LOG2TYPE_TX_ACCEPT) {
       //
       // acceptTx() 时，当前向交易不存在，我们则删除掉当前 txlog2，并抛出异常。
@@ -464,6 +469,9 @@ void Parser::threadHandleTxlogs() {
       LOG_FATAL("invalid txlog2 type: %d", txLog2.type_);
     }
 
+    // 更新最后消费成功 ID
+    updateLastTxlog2Id(txLog2.id_);
+
     writeLastProcessTxlogTime();
 
     if (blockHash.length()) {  // 目前仅用在URL回调上，仅使用一次
@@ -487,10 +495,9 @@ void Parser::writeLastProcessTxlogTime() {
 }
 
 void Parser::updateLastTxlog2Id(const int64_t newId) {
-  string sql = Strings::Format("UPDATE `0_explorer_meta` SET `value` = '%lld',`updated_at`='%s' "
-                               " WHERE `key`='jiexi.last_txlog2_offset'",
-                               newId, date("%F %T").c_str());
-  dbExplorer_.updateOrThrowEx(sql, 1);
+  const string key = "90_tparser_txlogs_offset_id";
+  string value = Strings::Format("%lld", newId);
+  kvdb_.set(key, value);
 }
 
 void _insertBlock(KVDB &kvdb, const CBlock &blk, const int32_t height, const int32_t blockSize) {
@@ -587,9 +594,11 @@ void _insertBlockTxs(KVDB &kvdb, const CBlock &blk) {
 
 // 接收一个新块
 void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
+  MySQLConnection dbExplorer(Config::GConfig.get("db.explorer.uri"));
+
   // 获取块Raw Hex
   string blkRawHex;
-  _getBlockRawHexByBlockId(txLog2->blkId_, dbExplorer_, &blkRawHex);
+  _getBlockRawHexByBlockId(txLog2->blkId_, dbExplorer, &blkRawHex);
 
   // 解码Raw Hex
   CBlock blk;
@@ -1441,11 +1450,13 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
 
 // 回滚一个块操作
 void Parser::rejectBlock(TxLog2 *txLog2) {
+  MySQLConnection dbExplorer(Config::GConfig.get("db.explorer.uri"));
+
   const int32_t height = txLog2->blkHeight_;
 
   // 获取块Raw Hex
   string blkRawHex;
-  _getBlockRawHexByBlockId(txLog2->blkId_, dbExplorer_, &blkRawHex);
+  _getBlockRawHexByBlockId(txLog2->blkId_, dbExplorer, &blkRawHex);
 
   // 解码Raw Block
   CBlock blk;
@@ -1646,36 +1657,27 @@ void Parser::rejectTx(class TxLog2 *txLog2) {
 
 // 获取上次 txlog2 的进度ID
 int64_t Parser::getLastTxLog2Id() {
-  MySQLResult res;
-  int64_t lastID = 0;
-  char **row = nullptr;
-  string sql;
-
-  // find last txlogs2 ID
-  sql = "SELECT `value` FROM `0_explorer_meta` WHERE `key`='jiexi.last_txlog2_offset'";
-  dbExplorer_.query(sql, res);
-  if (res.numRows() == 1) {
-    row = res.nextRow();
-    lastID = strtoll(row[0], nullptr, 10);
-    assert(lastID > 0);
-  } else {
-    const string now = date("%F %T");
-    sql = Strings::Format("INSERT INTO `0_explorer_meta`(`key`,`value`,`created_at`,`updated_at`) "
-                          " VALUES('jiexi.last_txlog2_offset', '0', '%s', '%s')",
-                          now.c_str(), now.c_str());
-    dbExplorer_.update(sql);
-    lastID = 0;  // default value is zero
+  const string key = "90_tparser_txlogs_offset_id";
+  string value;
+  if (kvdb_.getMayNotExist(key, value) == true /* exist */) {
+    return atoi64(value);
   }
-  return lastID;
+
+  // default value is zero
+  updateLastTxlog2Id(0);
+  return 0;
 }
 
 void Parser::threadProduceTxlogs() {
+  MySQLConnection dbExplorer(Config::GConfig.get("db.explorer.uri"));
+
   int64_t lastTxLog2Id = getLastTxLog2Id();
+  LOG_INFO("lastTxLog2Id: %lld", lastTxLog2Id);
 
   while (running_) {
     TxLog2 txLog2;
 
-    if (tryFetchTxLog2FromDB(&txLog2, lastTxLog2Id) == false) {
+    if (tryFetchTxLog2FromDB(&txLog2, lastTxLog2Id, dbExplorer) == false) {
       UniqueLock ul(lock_);
       // 默认等待N毫秒，直至超时，中间有人触发，则立即continue读取记录
       newTxlogs_.wait_for(ul, chrono::milliseconds(3*1000));
@@ -1687,14 +1689,12 @@ void Parser::threadProduceTxlogs() {
     // inset to buffer
     txlogsBuffer_.pushFront(txLog2);
 
-    // 设置为当前的ID，该ID不一定连续，不可以 lastID++
-    updateLastTxlog2Id(txLog2.id_);
     lastTxLog2Id = txLog2.id_;
-
   } /* /while */
 }
 
-bool Parser::tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId) {
+bool Parser::tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId,
+                                  MySQLConnection &dbExplorer) {
   MySQLResult res;
   char **row = nullptr;
   string sql;
@@ -1706,7 +1706,7 @@ bool Parser::tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId) {
                         " WHERE `id` > %lld AND `batch_id` <> -1 ORDER BY `id` ASC LIMIT 1 ",
                         lastId);
 
-  dbExplorer_.query(sql, res);
+  dbExplorer.query(sql, res);
   if (res.numRows() == 0) {
     return false;
   }
@@ -1737,15 +1737,9 @@ bool Parser::tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId) {
     txLog2->maxBlkTimestamp_ = UNCONFIRM_TX_TIMESTAMP;
   }
 
-  LOG_INFO("process txlog2(%c), logId: %d, type: %d, "
-           "height: %d, tx hash: %s, created: %s",
-           '+',
-           txLog2->id_, txLog2->type_, txLog2->blkHeight_,
-           txLog2->txHash_.ToString().c_str(), txLog2->createdAt_.c_str());
-
   // find raw tx hex & id
   {
-    txInfoCache_.getTxInfo(dbExplorer_, txLog2->txHash_,
+    txInfoCache_.getTxInfo(dbExplorer, txLog2->txHash_,
                            &(txLog2->txId_), &(txLog2->txHex_));
     if (!DecodeHexTx(txLog2->tx_, txLog2->txHex_)) {
       THROW_EXCEPTION_DBEX("TX decode failed, hex: %s", txLog2->txHex_.c_str());
@@ -1756,7 +1750,7 @@ bool Parser::tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId) {
   if (txLog2->id_ > 200*10000 && txLog2->id_ % 20000 == 0) {
     string delSql = Strings::Format("DELETE FROM `0_txlogs2` WHERE `id` < %lld",
                                     txLog2->id_ - 200*10000);
-    const size_t delRowNum = dbExplorer_.update(delSql);
+    const size_t delRowNum = dbExplorer.update(delSql);
     LOG_INFO("delete expired txlogs2 items: %llu", delRowNum);
   }
 

@@ -25,4 +25,5 @@
 -----|-------|-----
 `90_tparser_unconfirmed_txs_size`  | string | int64_t字符串，未确认交易体积
 `90_tparser_unconfirmed_txs_count` | string | int32_t字符串，未确认交易数量
+`90_tparser_txlogs_offset_id` | string | int32_t字符串，最后成功消费的txlogs2 ID
 

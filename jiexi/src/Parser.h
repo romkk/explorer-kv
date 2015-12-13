@@ -203,7 +203,6 @@ private:
   Condition newTxlogs_;
 
   atomic<bool> running_;
-  MySQLConnection dbExplorer_;
 
   int64_t unconfirmedTxsSize_;
   int32_t unconfirmedTxsCount_;
@@ -238,7 +237,7 @@ private:
   thread threadProduceTxlogs_;
   void threadProduceTxlogs();
 
-  bool tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId);
+  bool tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId, MySQLConnection &dbExplorer);
 
   int64_t getLastTxLog2Id();
   void updateLastTxlog2Id(const int64_t newId);

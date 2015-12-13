@@ -154,6 +154,7 @@ public:
   ~TxLog2();
 
   string toString() const;
+  bool isEmpty();
 };
 
 
@@ -199,7 +200,7 @@ public:
 class Parser {
 private:
   mutex lock_;
-  Condition changed_;
+  Condition newTxlogs_;
 
   atomic<bool> running_;
   MySQLConnection dbExplorer_;
@@ -223,23 +224,24 @@ private:
 
   // 通知日志
   NotifyProducer *notifyProducer_;
+  void threadWatchNotifyFile();
 
   // API Httpd
   APIServer apiServer_;
-//  thread threadAPIServer_;
 
+  // 处理 txlogs
   thread threadHandleTxlogs_;
-
-  void threadWatchNotifyFile();
-//  void threadAPIServer();
   void threadHandleTxlogs();
 
-  bool tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId);
+  // 生成 txlogs
+  BoundedBuffer<TxLog2> txlogsBuffer_;
+  thread threadProduceTxlogs_;
+  void threadProduceTxlogs();
+
+  bool tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId);
 
   int64_t getLastTxLog2Id();
   void updateLastTxlog2Id(const int64_t newId);
-
-  void checkTableAddressTxs(const uint32_t timestamp);
 
   // block
   void acceptBlock(TxLog2 *txLog2, string &blockHash);

@@ -132,7 +132,7 @@ void _getBlockRawHexByBlockId(const int64_t blockId,
 //   >= 0 有效的块高度
 //
 TxLog2::TxLog2(): id_(0), type_(0), blkHeight_(-2), blkId_(0),
-maxBlkTimestamp_(0), ymd_(0), txId_(0)
+maxBlkTimestamp_(0), ymd_(0), txId_(0), txHash_()
 {
 }
 
@@ -159,6 +159,13 @@ string TxLog2::toString() const {
                              id_, type_, blkHeight_, blkId_, maxBlkTimestamp_,
                              ymd_, createdAt_.c_str());
   return s;
+}
+
+bool TxLog2::isEmpty() {
+  if (txHash_ == uint256()) {
+    return true;
+  }
+  return false;
 }
 
 
@@ -257,7 +264,7 @@ Parser::Parser():dbExplorer_(Config::GConfig.get("db.explorer.uri")),
 running_(true),
 unconfirmedTxsSize_(0), unconfirmedTxsCount_(0),
 kvdb_(Config::GConfig.get("rocksdb.path", "")),
-blkTs_(2016), notifyProducer_(nullptr)
+blkTs_(2016), notifyProducer_(nullptr), txlogsBuffer_(2000)
 {
   notifyFileLog2Producer_ = Config::GConfig.get("notify.log2producer.file");
   if (notifyFileLog2Producer_.empty()) {
@@ -268,7 +275,7 @@ blkTs_(2016), notifyProducer_(nullptr)
   // notification.dir
   //
   {
-    string dir = Config::GConfig.get("notification.dir", "");
+    string dir = Config::GConfig.get("notification.dir", ".");
     if (*(std::prev(dir.end())) == '/') {  // remove last '/'
       dir.resize(dir.length() - 1);
     }
@@ -280,12 +287,12 @@ blkTs_(2016), notifyProducer_(nullptr)
 Parser::~Parser() {
   stop();
 
-//  LOG_INFO("stop api server thread...");
-//  if (threadAPIServer_.joinable()) {
-//    threadAPIServer_.join();
-//  }
+  LOG_INFO("stop txlogs produce thread...");
+  if (threadProduceTxlogs_.joinable()) {
+    threadProduceTxlogs_.join();
+  }
 
-  LOG_INFO("stop handle txlogs thread...");
+  LOG_INFO("stop txlogs comsumer thread...");
   if (threadHandleTxlogs_.joinable()) {
     threadHandleTxlogs_.join();
   }
@@ -308,9 +315,15 @@ void Parser::stop() {
   running_ = false;
   LOG_INFO("stop tparser...");
 
+  // 填入一个空的 txlogs ，使得 popback 时，不会卡住，线程可顺利退出
+  {
+    TxLog2 txlog2;
+    txlogsBuffer_.pushFront(txlog2);
+  }
+
   apiServer_.stop();
   inotify_.RemoveAll();
-  changed_.notify_all();
+  newTxlogs_.notify_all();
 }
 
 bool Parser::init() {
@@ -354,9 +367,10 @@ bool Parser::init() {
   // 启动监听文件（log2）线程
   threadWatchNotify_ = thread(&Parser::threadWatchNotifyFile, this);
 
-//  threadAPIServer_ = thread(&Parser::threadAPIServer, this);
+  // 启动 txlogs2 生产线程
+  threadProduceTxlogs_ = thread(&Parser::threadProduceTxlogs, this);
 
-  // 启动txlogs2消费线程
+  // 启动 txlogs2 消费线程
   threadHandleTxlogs_ = thread(&Parser::threadHandleTxlogs, this);
 
   return true;
@@ -395,7 +409,7 @@ void Parser::threadWatchNotifyFile() {
         count--;
 
         // notify other threads
-        changed_.notify_all();
+        newTxlogs_.notify_all();
       }
     } /* /while */
   } catch (InotifyException &e) {
@@ -413,92 +427,53 @@ void Parser::run() {
 }
 
 void Parser::threadHandleTxlogs() {
-  TxLog2 txLog2, lastTxLog2;
   string blockHash;  // 目前仅用在URL回调上
-  int64_t lastTxLog2Id = 0;
-
-//  // 检测 address_txs_<YYYYMM> 是否存在:  UNCONFIRM_TX_TIMESTAMP(2030-01-01)
-//  checkTableAddressTxs(UNCONFIRM_TX_TIMESTAMP);
 
   while (running_) {
-    try {
-      lastTxLog2Id = getLastTxLog2Id();
+    TxLog2 txLog2;
 
-      if (tryFetchTxLog2(&txLog2, lastTxLog2Id) == false) {
-        UniqueLock ul(lock_);
-        // 默认等待N毫秒，直至超时，中间有人触发，则立即continue读取记录
-        changed_.wait_for(ul, chrono::milliseconds(10*1000));
-        continue;
-      }
-
-//      // 检测 address_txs_<YYYYMM> 是否存在
-//      checkTableAddressTxs(txLog2.maxBlkTimestamp_);
-
-      //
-      // DB START TRANSACTION
-      //
-      if (!dbExplorer_.execute("START TRANSACTION")) {
-        goto error;
-      }
-
-      if (txLog2.type_ == LOG2TYPE_TX_ACCEPT) {
-        //
-        // acceptTx() 时，当前向交易不存在，我们则删除掉当前 txlog2，并抛出异常。
-        //
-        acceptTx(&txLog2);
-      }
-      else if (txLog2.type_ == LOG2TYPE_TX_CONFIRM) {
-        // confirm 时才能 acceptBlock()
-        if (txLog2.tx_.IsCoinBase()) {
-          acceptBlock(&txLog2, blockHash);
-        }
-        confirmTx(&txLog2);
-      }
-      else if (txLog2.type_ == LOG2TYPE_TX_UNCONFIRM) {
-        unconfirmTx(&txLog2);
-      }
-      else if (txLog2.type_ == LOG2TYPE_TX_REJECT) {
-        if (txLog2.tx_.IsCoinBase()) {
-          rejectBlock(&txLog2);
-        }
-        rejectTx(&txLog2);
-      }
-      else {
-        LOG_FATAL("invalid txlog2 type: %d", txLog2.type_);
-      }
-
-      // 设置为当前的ID，该ID不一定连续，不可以 lastID++
-      updateLastTxlog2Id(txLog2.id_);
-
-      //
-      // DB COMMIT
-      //
-      if (!dbExplorer_.execute("COMMIT")) {
-        goto error;
-      }
-      lastTxLog2 = txLog2;
-
-      writeLastProcessTxlogTime();
-
-      if (blockHash.length()) {  // 目前仅用在URL回调上，仅使用一次
-        callBlockRelayParseUrl(blockHash);
-        blockHash.clear();
-      }
-    } /* /try */
-    catch (int e) {
-      // 整数异常，都是可以继续的异常
-      LOG_FATAL("tparser:run exception: %d", e);
+    txlogsBuffer_.popBack(&txLog2);
+    if (txLog2.isEmpty()) {
+      LOG_WARN("txlog2 is empty");
       continue;
+    }
+
+    if (txLog2.type_ == LOG2TYPE_TX_ACCEPT) {
+      //
+      // acceptTx() 时，当前向交易不存在，我们则删除掉当前 txlog2，并抛出异常。
+      //
+      acceptTx(&txLog2);
+    }
+    else if (txLog2.type_ == LOG2TYPE_TX_CONFIRM) {
+      // confirm 时才能 acceptBlock()
+      if (txLog2.tx_.IsCoinBase()) {
+        acceptBlock(&txLog2, blockHash);
+      }
+      confirmTx(&txLog2);
+    }
+    else if (txLog2.type_ == LOG2TYPE_TX_UNCONFIRM) {
+      unconfirmTx(&txLog2);
+    }
+    else if (txLog2.type_ == LOG2TYPE_TX_REJECT) {
+      if (txLog2.tx_.IsCoinBase()) {
+        rejectBlock(&txLog2);
+      }
+      rejectTx(&txLog2);
+    }
+    else {
+      LOG_FATAL("invalid txlog2 type: %d", txLog2.type_);
+    }
+
+    writeLastProcessTxlogTime();
+
+    if (blockHash.length()) {  // 目前仅用在URL回调上，仅使用一次
+      callBlockRelayParseUrl(blockHash);
+      blockHash.clear();
     }
   } /* /while */
 
   return;
-
-error:
-  dbExplorer_.execute("ROLLBACK");
-  return;
 }
-
 
 void Parser::writeLastProcessTxlogTime() {
   // 写最后消费txlog的时间，30秒之内仅写一次
@@ -509,34 +484,6 @@ void Parser::writeLastProcessTxlogTime() {
     lastTime = now;
     writeTime2File("lastProcessTxLogTime.txt", now);
   }
-}
-
-// 检测表是否存在，`create table` 这样的语句会导致DB事务隐形提交，必须摘离出事务之外
-void Parser::checkTableAddressTxs(const uint32_t timestamp) {
-  if (timestamp == 0) { return; }
-
-  static std::set<int32_t> addressTxs;
-  MySQLResult res;
-  string sql;
-
-  const int32_t ymd = atoi(date("%Y%m%d", timestamp).c_str());
-  if (addressTxs.find(ymd) != addressTxs.end()) {
-    return;
-  }
-
-  // show table like to check if exist
-  const string tName = Strings::Format("address_txs_%d", tableIdx_AddrTxs(ymd));
-  sql = Strings::Format("SHOW TABLES LIKE '%s'", tName.c_str());
-  dbExplorer_.query(sql, res);
-  if (res.numRows() > 0) {
-    addressTxs.insert(ymd);
-    return;
-  }
-
-  // create if not exist
-  sql = Strings::Format("CREATE TABLE `%s` LIKE `0_tpl_address_txs`", tName.c_str());
-  dbExplorer_.updateOrThrowEx(sql);
-  addressTxs.insert(ymd);
 }
 
 void Parser::updateLastTxlog2Id(const int64_t newId) {
@@ -1722,7 +1669,32 @@ int64_t Parser::getLastTxLog2Id() {
   return lastID;
 }
 
-bool Parser::tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId) {
+void Parser::threadProduceTxlogs() {
+  int64_t lastTxLog2Id = getLastTxLog2Id();
+
+  while (running_) {
+    TxLog2 txLog2;
+
+    if (tryFetchTxLog2FromDB(&txLog2, lastTxLog2Id) == false) {
+      UniqueLock ul(lock_);
+      // 默认等待N毫秒，直至超时，中间有人触发，则立即continue读取记录
+      newTxlogs_.wait_for(ul, chrono::milliseconds(3*1000));
+      continue;
+    }
+
+    if (!running_) { break; }
+
+    // inset to buffer
+    txlogsBuffer_.pushFront(txLog2);
+
+    // 设置为当前的ID，该ID不一定连续，不可以 lastID++
+    updateLastTxlog2Id(txLog2.id_);
+    lastTxLog2Id = txLog2.id_;
+
+  } /* /while */
+}
+
+bool Parser::tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId) {
   MySQLResult res;
   char **row = nullptr;
   string sql;

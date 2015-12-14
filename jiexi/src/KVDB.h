@@ -37,6 +37,7 @@
 #define KVDB_PREFIX_BLOCK_HEIGHT     "10_"
 #define KVDB_PREFIX_BLOCK_OBJECT     "11_"
 #define KVDB_PREFIX_BLOCK_TXS_STR    "12_"
+#define KVDB_PREFIX_BLOCK_ORPHAN     "13_"
 
 #define KVDB_PREFIX_ADDR_OBJECT     "20_"
 #define KVDB_PREFIX_ADDR_TX         "21_"

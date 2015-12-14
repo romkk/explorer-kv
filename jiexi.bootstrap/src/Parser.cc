@@ -670,6 +670,7 @@ void PreParser::_saveBlock(const BlockInfo &b) {
   blkBuilder.add_timestamp(b.header_.nTime);
   blkBuilder.add_tx_count(b.txCount_);
   blkBuilder.add_version(b.header_.nVersion);
+  blkBuilder.add_is_orphan(false);
   fbb.Finish(blkBuilder.Finish());
 
   // 11_{block_hash}, 需紧接 blockBuilder.Finish()
@@ -1016,6 +1017,7 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
   txBuilder.add_outputs_count((int)tx.vout.size());
   txBuilder.add_outputs_value(valueOut);
   txBuilder.add_created_at((uint32_t)time(nullptr));
+  txBuilder.add_is_double_spend(false);
   fbb.Finish(txBuilder.Finish());
   // insert tx object, 需要紧跟 txBuilder.Finish() 函数，否则 fbb 内存会破坏
   {

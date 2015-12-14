@@ -251,6 +251,8 @@ struct Tx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   bool mutate_outputs_value(int64_t outputs_value) { return SetField(28, outputs_value); }
   uint32_t created_at() const { return GetField<uint32_t>(30, 0); }
   bool mutate_created_at(uint32_t created_at) { return SetField(30, created_at); }
+  uint8_t is_double_spend() const { return GetField<uint8_t>(32, 0); }
+  bool mutate_is_double_spend(uint8_t is_double_spend) { return SetField(32, is_double_spend); }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<int32_t>(verifier, 4 /* block_height */) &&
@@ -271,6 +273,7 @@ struct Tx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
            VerifyField<int32_t>(verifier, 26 /* outputs_count */) &&
            VerifyField<int64_t>(verifier, 28 /* outputs_value */) &&
            VerifyField<uint32_t>(verifier, 30 /* created_at */) &&
+           VerifyField<uint8_t>(verifier, 32 /* is_double_spend */) &&
            verifier.EndTable();
   }
 };
@@ -292,10 +295,11 @@ struct TxBuilder {
   void add_outputs_count(int32_t outputs_count) { fbb_.AddElement<int32_t>(26, outputs_count, 0); }
   void add_outputs_value(int64_t outputs_value) { fbb_.AddElement<int64_t>(28, outputs_value, 0); }
   void add_created_at(uint32_t created_at) { fbb_.AddElement<uint32_t>(30, created_at, 0); }
+  void add_is_double_spend(uint8_t is_double_spend) { fbb_.AddElement<uint8_t>(32, is_double_spend, 0); }
   TxBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
   TxBuilder &operator=(const TxBuilder &);
   flatbuffers::Offset<Tx> Finish() {
-    auto o = flatbuffers::Offset<Tx>(fbb_.EndTable(start_, 14));
+    auto o = flatbuffers::Offset<Tx>(fbb_.EndTable(start_, 15));
     return o;
   }
 };
@@ -314,7 +318,8 @@ inline flatbuffers::Offset<Tx> CreateTx(flatbuffers::FlatBufferBuilder &_fbb,
    flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<TxOutput>>> outputs = 0,
    int32_t outputs_count = 0,
    int64_t outputs_value = 0,
-   uint32_t created_at = 0) {
+   uint32_t created_at = 0,
+   uint8_t is_double_spend = 0) {
   TxBuilder builder_(_fbb);
   builder_.add_outputs_value(outputs_value);
   builder_.add_inputs_value(inputs_value);
@@ -329,6 +334,7 @@ inline flatbuffers::Offset<Tx> CreateTx(flatbuffers::FlatBufferBuilder &_fbb,
   builder_.add_version(version);
   builder_.add_block_time(block_time);
   builder_.add_block_height(block_height);
+  builder_.add_is_double_spend(is_double_spend);
   builder_.add_is_coinbase(is_coinbase);
   return builder_.Finish();
 }
@@ -400,6 +406,8 @@ struct Block FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   bool mutate_reward_fees(int64_t reward_fees) { return SetField(30, reward_fees); }
   uint32_t created_at() const { return GetField<uint32_t>(32, 0); }
   bool mutate_created_at(uint32_t created_at) { return SetField(32, created_at); }
+  uint8_t is_orphan() const { return GetField<uint8_t>(34, 0); }
+  bool mutate_is_orphan(uint8_t is_orphan) { return SetField(34, is_orphan); }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<int32_t>(verifier, 4 /* height */) &&
@@ -420,6 +428,7 @@ struct Block FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
            VerifyField<int64_t>(verifier, 28 /* reward_block */) &&
            VerifyField<int64_t>(verifier, 30 /* reward_fees */) &&
            VerifyField<uint32_t>(verifier, 32 /* created_at */) &&
+           VerifyField<uint8_t>(verifier, 34 /* is_orphan */) &&
            verifier.EndTable();
   }
 };
@@ -442,10 +451,11 @@ struct BlockBuilder {
   void add_reward_block(int64_t reward_block) { fbb_.AddElement<int64_t>(28, reward_block, 0); }
   void add_reward_fees(int64_t reward_fees) { fbb_.AddElement<int64_t>(30, reward_fees, 0); }
   void add_created_at(uint32_t created_at) { fbb_.AddElement<uint32_t>(32, created_at, 0); }
+  void add_is_orphan(uint8_t is_orphan) { fbb_.AddElement<uint8_t>(34, is_orphan, 0); }
   BlockBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
   BlockBuilder &operator=(const BlockBuilder &);
   flatbuffers::Offset<Block> Finish() {
-    auto o = flatbuffers::Offset<Block>(fbb_.EndTable(start_, 15));
+    auto o = flatbuffers::Offset<Block>(fbb_.EndTable(start_, 16));
     return o;
   }
 };
@@ -465,7 +475,8 @@ inline flatbuffers::Offset<Block> CreateBlock(flatbuffers::FlatBufferBuilder &_f
    uint32_t tx_count = 0,
    int64_t reward_block = 0,
    int64_t reward_fees = 0,
-   uint32_t created_at = 0) {
+   uint32_t created_at = 0,
+   uint8_t is_orphan = 0) {
   BlockBuilder builder_(_fbb);
   builder_.add_reward_fees(reward_fees);
   builder_.add_reward_block(reward_block);
@@ -482,6 +493,7 @@ inline flatbuffers::Offset<Block> CreateBlock(flatbuffers::FlatBufferBuilder &_f
   builder_.add_mrkl_root(mrkl_root);
   builder_.add_version(version);
   builder_.add_height(height);
+  builder_.add_is_orphan(is_orphan);
   return builder_.Finish();
 }
 

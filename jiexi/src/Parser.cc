@@ -538,6 +538,7 @@ void _insertBlock(KVDB &kvdb, const CBlock &blk, const int32_t height, const int
     blockBuilder.add_timestamp(header.nTime);
     blockBuilder.add_tx_count((uint32_t)blk.vtx.size());
     blockBuilder.add_version(header.nVersion);
+    blockBuilder.add_is_orphan(false);
     fbb.Finish(blockBuilder.Finish());
 
     // 11_{block_hash}, 需紧接 blockBuilder.Finish()
@@ -612,6 +613,20 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
 
   // 插入区块交易
   _insertBlockTxs(kvdb_, blk);
+
+  // 移除 orphan block 信息, KVDB_PREFIX_BLOCK_ORPHAN
+  {
+    const string key = Strings::Format("%s%010d", KVDB_PREFIX_BLOCK_ORPHAN, txLog2->blkHeight_);
+    string value;
+    if (kvdb_.getMayNotExist(key, value) == true /* exist */) {
+      _removeOrphanBlockHash(blk.GetHash().ToString(), value);
+      if (value.size() > 0) {
+        kvdb_.set(key, value);
+      } else {
+        kvdb_.del(key);
+      }
+    }
+  }
 }
 
 
@@ -1448,6 +1463,39 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
 //  writeNotificationLogs(*addressBalance, txLog2);
 }
 
+// 移除一个字符串（64，哈希）
+void _removeOrphanBlockHash(const string &hash, string &value) {
+  set<string> blks;
+  for (auto i = 0; i < value.length() / 64; i++) {
+    blks.insert(value.substr(i * 64, 64));
+  }
+  blks.erase(hash);
+
+  value.clear();
+  for (const auto &it : blks) {
+    value.insert(value.end(), it.begin(), it.begin() + 64);
+  }
+}
+
+// 插入一个字符串（64，哈希）
+void _insertOrphanBlockHash(const string &hash, string &value) {
+  if (value.length() == 0) {
+    value.insert(value.end(), hash.begin(), hash.begin() + 64);
+    return;
+  }
+
+  set<string> blks;
+  for (auto i = 0; i < value.length() / 64; i++) {
+    blks.insert(value.substr(i * 64, 64));
+  }
+  blks.insert(hash);
+
+  value.clear();
+  for (const auto &it : blks) {
+    value.insert(value.end(), it.begin(), it.begin() + 64);
+  }
+}
+
 // 回滚一个块操作
 void Parser::rejectBlock(TxLog2 *txLog2) {
   MySQLConnection dbExplorer(Config::GConfig.get("db.explorer.uri"));
@@ -1466,13 +1514,33 @@ void Parser::rejectBlock(TxLog2 *txLog2) {
 
   const CBlockHeader header  = blk.GetBlockHeader();  // alias
   const string prevBlockHash = header.hashPrevBlock.ToString();
+  const uint256 blockHash = header.GetHash();
 
-  // TODO: 记录 orphan block 信息
+  // 记录 orphan block 信息, KVDB_PREFIX_BLOCK_ORPHAN
+  {
+    const string key = Strings::Format("%s%010d", KVDB_PREFIX_BLOCK_ORPHAN, height);
+    string value;
+    kvdb_.getMayNotExist(key, value);
+    _insertOrphanBlockHash(blockHash.ToString(), value);
+    kvdb_.set(key, value);
+  }
 
   //
   // 10_{block_height}
   const string key10 = Strings::Format("%s%010d", KVDB_PREFIX_BLOCK_HEIGHT, height);
   kvdb_.del(key10);
+
+  // 更新当前块信息
+  {
+    const string key11 = Strings::Format("%s%s", KVDB_PREFIX_BLOCK_OBJECT, blockHash.ToString().c_str());
+    string value;
+    kvdb_.get(key11, value);
+    auto fb_block = flatbuffers::GetMutableRoot<fbe::Block>((void *)value.data());
+
+    // 孤块标识位设置为 true
+    fb_block->mutate_is_orphan(true);
+    kvdb_.set(key11, value);
+  }
 
   //
   // 更新前向块信息
@@ -1546,16 +1614,6 @@ void Parser::_rejectAddressTxs(class TxLog2 *txLog2, const map<string, int64_t> 
   } /* /for */
 }
 
-static
-int32_t _getTxYmd(MySQLConnection &db, const int64_t txId) {
-//  MySQLResult res;
-//  string sql = Strings::Format("SELECT `ymd` FROM `txs_%04d` WHERE `tx_id`=%lld ",
-//                               tableIdx_Tx(txId), txId);
-//  db.query(sql, res);
-//  assert(res.numRows() == 1);
-//  char **row = res.nextRow();
-//  return atoi(row[0]);
-}
 
 // 回滚一个交易, reject 的交易都是未确认的交易
 void Parser::rejectTx(class TxLog2 *txLog2) {
@@ -1641,6 +1699,19 @@ void Parser::rejectTx(class TxLog2 *txLog2) {
         kvdb_.del(key24);  // 删除索引关系
       }
     }
+  }
+
+  //
+  // update tx object
+  //
+  {
+    // 更新 is_double_spend，设置为true
+    const string key01 = Strings::Format("%s%s", KVDB_PREFIX_TX_OBJECT, txLog2->txHash_.ToString().c_str());
+    string value;
+    kvdb_.get(key01, value);
+    auto txObject = flatbuffers::GetMutableRoot<fbe::Tx>((void *)value.data());
+    txObject->mutate_is_double_spend(true);
+    kvdb_.set(key01, value);
   }
 
   _rejectAddressTxs(txLog2, addressBalance);

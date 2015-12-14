@@ -53,6 +53,7 @@ table Tx {
   outputs_count: int;
   outputs_value: long;
   created_at: uint;
+  is_double_spend: bool;   // 是否为双花交易
 }
 
 // 02_{tx_hash}_{position}
@@ -78,6 +79,7 @@ table Block {
   reward_block: long;
   reward_fees: long;
   created_at: uint;
+  is_orphan: bool;            // 是否为孤块
 }
 
 // 12_{block_hash}_{n}

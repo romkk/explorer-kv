@@ -69,6 +69,9 @@ inline int32_t tableIdx_BlockTxs(const int64_t blockId) {
 }
 
 
+void _insertOrphanBlockHash(const string &hash, string &value);
+void _removeOrphanBlockHash(const string &hash, string &value);
+
 /////////////////////////////////  RawBlock  ////////////////////////////////////
 class RawBlock {
 public:

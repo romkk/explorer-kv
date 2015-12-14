@@ -96,7 +96,7 @@ void KVDB::open() {
   // open DB
   rocksdb::Status s = rocksdb::DB::Open(options_, kDBPath_, &db_);
   if (!s.ok()) {
-    THROW_EXCEPTION_DBEX("open rocks db fail");
+    THROW_EXCEPTION_DBEX("open rocks db fail: %s", s.ToString().c_str());
   }
 }
 
@@ -111,20 +111,20 @@ void KVDB::open() {
 //}
 
 void KVDB::del(const string &key) {
+  LOG_DEBUG("[KVDB::del] key: %s", key.c_str());
   rocksdb::Status s = db_->Delete(rocksdb::WriteOptions(), key);
   if (!s.ok()) {
     THROW_EXCEPTION_DBEX("delelte key: %s fail", key.c_str());
   }
-  LOG_DEBUG("[KVDB::del] key: %s", key.c_str());
 }
 
 void KVDB::get(const string &key, string &value) {
+  LOG_DEBUG("[KVDB::get] key: %s, value size: %llu", key.c_str(), value.size());
   value.clear();
   rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &value);
   if (s.IsNotFound()) {
     THROW_EXCEPTION_DBEX("not found key: %s", key.c_str());
   }
-  LOG_DEBUG("[KVDB::get] key: %s, value size: %llu", key.c_str(), value.size());
 }
 
 bool KVDB::getMayNotExist(const string &key, string &value) {

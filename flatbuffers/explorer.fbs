@@ -80,6 +80,7 @@ table Block {
   reward_fees: long;
   created_at: uint;
   is_orphan: bool;            // 是否为孤块
+  curr_max_timestamp: uint;   // 截至当前所有块的最大时间戳
 }
 
 // 12_{block_hash}_{n}

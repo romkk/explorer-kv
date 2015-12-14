@@ -408,6 +408,8 @@ struct Block FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   bool mutate_created_at(uint32_t created_at) { return SetField(32, created_at); }
   uint8_t is_orphan() const { return GetField<uint8_t>(34, 0); }
   bool mutate_is_orphan(uint8_t is_orphan) { return SetField(34, is_orphan); }
+  uint32_t curr_max_timestamp() const { return GetField<uint32_t>(36, 0); }
+  bool mutate_curr_max_timestamp(uint32_t curr_max_timestamp) { return SetField(36, curr_max_timestamp); }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<int32_t>(verifier, 4 /* height */) &&
@@ -429,6 +431,7 @@ struct Block FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
            VerifyField<int64_t>(verifier, 30 /* reward_fees */) &&
            VerifyField<uint32_t>(verifier, 32 /* created_at */) &&
            VerifyField<uint8_t>(verifier, 34 /* is_orphan */) &&
+           VerifyField<uint32_t>(verifier, 36 /* curr_max_timestamp */) &&
            verifier.EndTable();
   }
 };
@@ -452,10 +455,11 @@ struct BlockBuilder {
   void add_reward_fees(int64_t reward_fees) { fbb_.AddElement<int64_t>(30, reward_fees, 0); }
   void add_created_at(uint32_t created_at) { fbb_.AddElement<uint32_t>(32, created_at, 0); }
   void add_is_orphan(uint8_t is_orphan) { fbb_.AddElement<uint8_t>(34, is_orphan, 0); }
+  void add_curr_max_timestamp(uint32_t curr_max_timestamp) { fbb_.AddElement<uint32_t>(36, curr_max_timestamp, 0); }
   BlockBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
   BlockBuilder &operator=(const BlockBuilder &);
   flatbuffers::Offset<Block> Finish() {
-    auto o = flatbuffers::Offset<Block>(fbb_.EndTable(start_, 16));
+    auto o = flatbuffers::Offset<Block>(fbb_.EndTable(start_, 17));
     return o;
   }
 };
@@ -476,12 +480,14 @@ inline flatbuffers::Offset<Block> CreateBlock(flatbuffers::FlatBufferBuilder &_f
    int64_t reward_block = 0,
    int64_t reward_fees = 0,
    uint32_t created_at = 0,
-   uint8_t is_orphan = 0) {
+   uint8_t is_orphan = 0,
+   uint32_t curr_max_timestamp = 0) {
   BlockBuilder builder_(_fbb);
   builder_.add_reward_fees(reward_fees);
   builder_.add_reward_block(reward_block);
   builder_.add_difficulty(difficulty);
   builder_.add_pool_difficulty(pool_difficulty);
+  builder_.add_curr_max_timestamp(curr_max_timestamp);
   builder_.add_created_at(created_at);
   builder_.add_tx_count(tx_count);
   builder_.add_size(size);

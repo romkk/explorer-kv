@@ -500,7 +500,8 @@ void Parser::updateLastTxlog2Id(const int64_t newId) {
   kvdb_.set(key, value);
 }
 
-void _insertBlock(KVDB &kvdb, const CBlock &blk, const int32_t height, const int32_t blockSize) {
+void _insertBlock(KVDB &kvdb, const CBlock &blk, const int32_t height,
+                  const int32_t blockSize, uint32_t maxBlkTimestamp) {
   CBlockHeader header = blk.GetBlockHeader();  // alias
   const uint256 blockHash    = blk.GetHash();
   const string blockHashStr  = blockHash.ToString();
@@ -539,6 +540,7 @@ void _insertBlock(KVDB &kvdb, const CBlock &blk, const int32_t height, const int
     blockBuilder.add_tx_count((uint32_t)blk.vtx.size());
     blockBuilder.add_version(header.nVersion);
     blockBuilder.add_is_orphan(false);
+    blockBuilder.add_curr_max_timestamp(maxBlkTimestamp);
     fbb.Finish(blockBuilder.Finish());
 
     // 11_{block_hash}, 需紧接 blockBuilder.Finish()
@@ -609,12 +611,14 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
   blockHash = blk.GetHash().ToString();
 
   // 插入数据至 table.0_blocks
-  _insertBlock(kvdb_, blk, txLog2->blkHeight_, (int32_t)blkRawHex.length()/2);
+  _insertBlock(kvdb_, blk, txLog2->blkHeight_, (int32_t)blkRawHex.length()/2, txLog2->maxBlkTimestamp_);
 
   // 插入区块交易
   _insertBlockTxs(kvdb_, blk);
 
+  //
   // 移除 orphan block 信息, KVDB_PREFIX_BLOCK_ORPHAN
+  //
   {
     const string key = Strings::Format("%s%010d", KVDB_PREFIX_BLOCK_ORPHAN, txLog2->blkHeight_);
     string value;
@@ -626,6 +630,13 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
         kvdb_.del(key);
       }
     }
+  }
+
+  // 插入 14\_{010timestamp}_{010height}
+  {
+    const string key = Strings::Format("%s%010u_%010d", KVDB_PREFIX_BLOCK_TIMESTAMP,
+                                       txLog2->maxBlkTimestamp_, txLog2->blkHeight_);
+    kvdb_.set(key, Strings::Format("%s", blk.GetHash().ToString().c_str()));
   }
 }
 
@@ -1540,6 +1551,13 @@ void Parser::rejectBlock(TxLog2 *txLog2) {
     // 孤块标识位设置为 true
     fb_block->mutate_is_orphan(true);
     kvdb_.set(key11, value);
+  }
+
+  // 移除 14\_{010timestamp}_{010height}
+  {
+    const string key14 = Strings::Format("%s%010u_%010d", KVDB_PREFIX_BLOCK_TIMESTAMP,
+                                         txLog2->maxBlkTimestamp_, txLog2->blkHeight_);
+    kvdb_.del(key14);
   }
 
   //

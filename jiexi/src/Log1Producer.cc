@@ -223,7 +223,7 @@ void Chain::pop() {
 
 ///////////////////////////////  Log1Producer  /////////////////////////////////
 Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileHandler_(nullptr),
-  log1FileIndex_(-1), chain_(2016/* max blocks */),
+  log1FileIndex_(-1), chain_(2016 * 2/* max blocks */),
   log0FileIndex_(-1), log0FileOffset_(-1), log0BeginFileLastModifyTime_(0)
 {
   log1Dir_ = Config::GConfig.get("log1.dir");

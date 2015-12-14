@@ -252,7 +252,7 @@ void BlockTimestamp::popBlock() {
 
 ///////////////////////////////  Log2Producer  /////////////////////////////////
 Log2Producer::Log2Producer(): running_(false),
-db_(Config::GConfig.get("mysql.uri")), blkTs_(2016), currBlockHeight_(-1), currLog1FileOffset_(-1)
+db_(Config::GConfig.get("mysql.uri")), blkTs_(2016*2), currBlockHeight_(-1), currLog1FileOffset_(-1)
 {
   kTableTxlogs2Fields_ = "`batch_id`, `type`, `block_height`, \
   `block_id`, `max_block_timestamp`, `tx_hash`, `created_at`, `updated_at`";

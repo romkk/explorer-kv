@@ -294,10 +294,10 @@ void cb_kv(evhtp_request_t *req, void *ptr) {
   const char *queryMethod = evhtp_kv_find(req->uri->query, "method");
   const char *queryParams = evhtp_kv_find(req->uri->query, "params");
   string queryId;
-  if (evhtp_kv_find(req->uri->query, "id") == nullptr) {
+  if (evhtp_kv_find(req->headers_in, "RequestID") == nullptr) {
     queryId = Strings::Format("rocksdb-%lld", Time::CurrentTimeMill());
   } else {
-    queryId = string(evhtp_kv_find(req->uri->query, "id"));
+    queryId = string(evhtp_kv_find(req->headers_in, "RequestID"));
   }
   
   vector<string> params;
@@ -570,6 +570,14 @@ void APIServer::init() {
     kvdb_->set("test01", Strings::Format("value%lld", Time::CurrentTimeMill()));
     kvdb_->set("test02", Strings::Format("value%lld", Time::CurrentTimeMill()));
     kvdb_->set("test03", Strings::Format("value%lld", Time::CurrentTimeMill()));
+
+    flatbuffers::FlatBufferBuilder fbb;
+    auto fb_txHash = fbb.CreateString("f5fb5fe565521441690cacd835bc06abb12bf4a0749b17476bc45c1db9842b17");
+    fbe::TxSpentByBuilder txSpentByBuilder(fbb);
+    txSpentByBuilder.add_position(999);
+    txSpentByBuilder.add_tx_hash(fb_txHash);
+    fbb.Finish(txSpentByBuilder.Finish());
+    kvdb_->set("02_test_spentby", fbb.GetBufferPointer(), fbb.GetSize());
   }
 }
 

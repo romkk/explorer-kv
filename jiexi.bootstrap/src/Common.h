@@ -54,6 +54,8 @@
 #include <condition_variable>
 #include <functional>
 
+#include <boost/filesystem.hpp>
+
 using std::string;
 using std::vector;
 using std::deque;
@@ -460,6 +462,8 @@ throw Exception(type, (AT), Strings::Format(fmt, ##args))
 #define THROW_EXCEPTION_DB(what) throw Exception(EIO, (AT), (what))
 #define THROW_EXCEPTION_DBEX(fmt, args...) \
 throw Exception(EIO, (AT), Strings::Format(fmt, ##args))
+
+bool tryCreateDirectory(const boost::filesystem::path& p);
 
 /**
  * Config

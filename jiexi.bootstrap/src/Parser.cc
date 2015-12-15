@@ -906,7 +906,7 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
           fbe::TxSpentByBuilder txSpentByBuilder(fbb2);
           txSpentByBuilder.add_position(n);
           txSpentByBuilder.add_tx_hash(fb_spentHash);
-          fbb.Finish(txSpentByBuilder.Finish());
+          fbb2.Finish(txSpentByBuilder.Finish());
           gKVHandler->set(key, fbb2.GetBufferPointer(), fbb2.GetSize());
           fbb2.Clear();
         }

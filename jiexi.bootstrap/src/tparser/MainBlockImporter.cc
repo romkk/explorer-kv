@@ -42,7 +42,7 @@ void handler(int sig) {
 }
 
 void usage() {
-  fprintf(stderr, "Usage:\n\tblkimport -c \"blkimport.conf\" -l \"blkimport.log\" -b BeginHeight -e EndHeight\n");
+  fprintf(stderr, "Usage:\n\tblkimport -c \"tparser.bootstrap.conf\" -l \"blkimport.log\" -b BeginHeight -e EndHeight\n");
 }
 
 int main(int argc, char **argv) {

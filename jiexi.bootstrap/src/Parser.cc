@@ -57,12 +57,8 @@ static void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo);
 static void _saveUnspentOutput(TxInfo &txInfo, int32_t position);
 
 
-RawBlock::RawBlock(const int64_t blockId, const int32_t height, const int32_t chainId,
-                   const uint256 hash, const char *hex) {
-  blockId_ = blockId;
+RawBlock::RawBlock(const int32_t height, const char *hex) {
   height_  = height;
-  chainId_ = chainId;
-  hash_    = hash;
   hex_     = strdup(hex);
 }
 RawBlock::~RawBlock() {
@@ -80,9 +76,9 @@ void _loadRawBlockFromDisk(map<int32_t, RawBlock*> &blkCache, const int32_t heig
   string dir = Config::GConfig.get("rawdata.dir", "");
   // 尾部添加 '/'
   if (dir.length() == 0) {
-    dir = "./";
+    dir = ".";
   }
-  else if (dir[dir.length()-1] != '/') {
+  if (dir[dir.length()-1] != '/') {
     dir += "/";
   }
 
@@ -93,11 +89,9 @@ void _loadRawBlockFromDisk(map<int32_t, RawBlock*> &blkCache, const int32_t heig
   }
 
   const int32_t stopHeight  = (int32_t)Config::GConfig.getInt("raw.max.block.height", -1);
-  string path = Strings::Format("%d_%d", height2,
-                                (height2 + (KCountPerFile - 1)) > stopHeight ? stopHeight : (height2 + (KCountPerFile - 1)));
-
-  const string fname = Strings::Format("%s%s/0_raw_blocks",
-                                       dir.c_str(), path.c_str());
+  string datafile = Strings::Format("%d_%d", height2,
+                                    (height2 + (KCountPerFile - 1)) > stopHeight ? stopHeight : (height2 + (KCountPerFile - 1)));
+  const string fname = Strings::Format("%s%s", dir.c_str(), datafile.c_str());
   LOG_INFO("load raw block file: %s", fname.c_str());
   std::ifstream input(fname);
   if (lastOffset > 0) {
@@ -107,14 +101,10 @@ void _loadRawBlockFromDisk(map<int32_t, RawBlock*> &blkCache, const int32_t heig
   const size_t maxReadSize = 500 * 1024 * 1024;  // max read file
 
   while (std::getline(input, line)) {
-    std::vector<std::string> arr = split(line, ',');
-    // line: blockId, hash, height, chain_id, hex
-    const uint256 blkHash(arr[1]);
-    const int32_t blkHeight  = atoi(arr[2].c_str());
-    const int32_t blkChainId = atoi(arr[3].c_str());
-
-    blkCache[blkHeight] = new RawBlock(atoi64(arr[0].c_str()), blkHeight, blkChainId, blkHash, arr[4].c_str());
-
+    std::vector<std::string> arr = split(line, '\t', 2);
+    // line: height, hex
+    const int32_t blkHeight  = atoi(arr[0].c_str());
+    blkCache[blkHeight] = new RawBlock(blkHeight, arr[1].c_str());
     if (input.tellg() > lastOffset + maxReadSize) {
       lastOffset = input.tellg();
     }
@@ -122,8 +112,7 @@ void _loadRawBlockFromDisk(map<int32_t, RawBlock*> &blkCache, const int32_t heig
 }
 
 // 从文件读取raw block
-void getRawBlockFromDisk(const int32_t height, string *rawHex,
-                          int32_t *chainId, int64_t *blockId) {
+void getRawBlockFromDisk(const int32_t height, string *rawHex) {
   // 从磁盘直接读取文件，缓存起来，减少数据库交互
   static map<int32_t, RawBlock*> blkCache;
 
@@ -146,12 +135,10 @@ void getRawBlockFromDisk(const int32_t height, string *rawHex,
   if (it == blkCache.end()) {
     THROW_EXCEPTION_DBEX("can't find rawblock from disk cache, height: %d", height);
   }
-  if (rawHex != nullptr)
+
+  if (rawHex != nullptr) {
     *rawHex  = it->second->hex_;
-  if (chainId != nullptr)
-    *chainId = it->second->chainId_;
-  if (rawHex != nullptr)
-    *blockId = it->second->blockId_;
+  }
 }
 
 
@@ -692,8 +679,7 @@ void PreParser::_saveBlock(const BlockInfo &b) {
   }
 }
 
-void PreParser::parseBlock(const CBlock &blk, const int64_t blockId,
-                           const int32_t height, const int32_t blockBytes) {
+void PreParser::parseBlock(const CBlock &blk, const int32_t height, const int32_t blockBytes) {
   CBlockHeader header = blk.GetBlockHeader();  // alias
 
   blkTs_.pushBlock(height, header.GetBlockTime());
@@ -1047,9 +1033,7 @@ void PreParser::run() {
     }
 
     string blkRawHex;
-    int32_t chainId;
-    int64_t blockId;
-    getRawBlockFromDisk(curHeight_, &blkRawHex, &chainId, &blockId);
+    getRawBlockFromDisk(curHeight_, &blkRawHex);
 
     // 解码Raw Hex
     vector<unsigned char> blockData(ParseHex(blkRawHex));
@@ -1059,13 +1043,12 @@ void PreParser::run() {
       ssBlock >> blk;
     }
     catch (std::exception &e) {
-      THROW_EXCEPTION_DBEX("Block decode failed, height: %d, blockId: %lld",
-                           curHeight_, blockId);
+      THROW_EXCEPTION_DBEX("Block decode failed, height: %d", curHeight_);
     }
 
     // 处理块
     LOG_INFO("parse block, height: %6d, txs: %5lld", curHeight_, blk.vtx.size());
-    parseBlock(blk, blockId, curHeight_, (int32_t)blkRawHex.length()/2);
+    parseBlock(blk, curHeight_, (int32_t)blkRawHex.length()/2);
 
     // 处理交易
     for (auto &tx : blk.vtx) {

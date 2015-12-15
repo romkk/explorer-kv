@@ -192,8 +192,6 @@ void PreAddress::threadProcessBlock(const int32_t idx) {
   while (running_) {
     int32_t curHeight = 0;
     string blkRawHex;
-    int32_t chainId;
-    int64_t blockId;
 
     while (running_) {
       size_t s;
@@ -221,7 +219,7 @@ void PreAddress::threadProcessBlock(const int32_t idx) {
       }
 
       height_++;
-      getRawBlockFromDisk(curHeight, &blkRawHex, &chainId, &blockId);
+      getRawBlockFromDisk(curHeight, &blkRawHex);
     }
 
     // 解码Raw Hex
@@ -234,8 +232,7 @@ void PreAddress::threadProcessBlock(const int32_t idx) {
       ssBlock >> blk;
     }
     catch (std::exception &e) {
-      THROW_EXCEPTION_DBEX("Block decode failed, height: %d, blockId: %lld",
-                           curHeight, blockId);
+      THROW_EXCEPTION_DBEX("Block decode failed, height: %d", curHeight);
     }
 
     // 遍历所有交易，提取涉及到的所有地址

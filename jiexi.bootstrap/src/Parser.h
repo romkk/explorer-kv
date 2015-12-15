@@ -48,8 +48,7 @@
 #define KVDB_PREFIX_ADDR_UNSPENT_INDEX  "24_"
 
 
-void getRawBlockFromDisk(const int32_t height, string *rawHex,
-                         int32_t *chainId, int64_t *blockId);
+void getRawBlockFromDisk(const int32_t height, string *rawHex);
 
 inline int32_t tableIdx_Addr(const int64_t addrId) {
   return (int32_t)(addrId / BILLION % 64);
@@ -76,14 +75,10 @@ inline int32_t tableIdx_BlockTxs(const int64_t blockId) {
 
 class RawBlock {
 public:
-  int64_t blockId_;
   int32_t height_;
-  int32_t chainId_;
-  uint256 hash_;
   char *hex_;
 
-  RawBlock(const int64_t blockId, const int32_t height, const int32_t chainId,
-           const uint256 hash, const char *hex);
+  RawBlock(const int32_t height, const char *hex);
   ~RawBlock();
 };
 
@@ -264,8 +259,7 @@ class PreParser {
   BlockTimestamp blkTs_;
 
   // parse block
-  void parseBlock(const CBlock &blk, const int64_t blockId,
-                  const int32_t height, const int32_t blockBytes);
+  void parseBlock(const CBlock &blk, const int32_t height, const int32_t blockBytes);
 
   // parse TX
   void parseTx(const int32_t height, const CTransaction &tx, const uint32_t blockNTime);

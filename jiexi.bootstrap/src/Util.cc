@@ -25,22 +25,30 @@
 #include <sstream>
 #include <vector>
 
-static std::vector<std::string> &split(const std::string &s, char delim,
-                                       std::vector<std::string> &elems);
-
-std::vector<std::string> split(const std::string &s, char delim) {
-  std::vector<std::string> elems;
-  split(s, delim, elems);
-  return elems;
-}
-
-std::vector<std::string> &split(const std::string &s, char delim,
-                                std::vector<std::string> &elems) {
+static std::vector<std::string> &split(const std::string &s, const char delim,
+                                       std::vector<std::string> &elems,
+                                       const int32_t limit) {
   std::stringstream ss(s);
   std::string item;
   while (std::getline(ss, item, delim)) {
     elems.push_back(item);
+    if (limit != -1 && elems.size() == limit) {
+      break;
+    }
   }
+  return elems;
+}
+
+std::vector<std::string> split(const std::string &s, const char delim) {
+  std::vector<std::string> elems;
+  split(s, delim, elems, -1/* unlimit */);
+  return elems;
+}
+
+std::vector<std::string> split(const std::string &s, const char delim,
+                               const int32_t limit) {
+  std::vector<std::string> elems;
+  split(s, delim, elems, limit);
   return elems;
 }
 

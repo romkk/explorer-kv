@@ -75,7 +75,7 @@ void BlockImporter::run() {
 
   // open file
   const string file = Strings::Format("%s%d_%d", dir_.c_str(), beginHeight_, endHeight_);
-  f_ = fopen(file.c_str(), "a");
+  f_ = fopen(file.c_str(), "wa");
   if (f_ == nullptr) {
     THROW_EXCEPTION_DBEX("open file fail");
   }

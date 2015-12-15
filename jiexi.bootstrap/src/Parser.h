@@ -113,6 +113,45 @@ struct AddrInfo {
   }
 };
 
+// 为了保持最后 unspent 对于某个地址是按照高度排序的
+struct AddrUnspent {
+  int32_t addrOffset_;   // AddrHandler.addrInfo_ offset
+  int32_t height_;
+  int64_t value_;
+  int32_t position_;
+  int32_t position2_;
+  uint256 hash_;
+
+  AddrUnspent() {
+    memset((char *)&addrOffset_, 0, sizeof(struct AddrUnspent));
+  }
+
+  bool operator<(const AddrUnspent &val) const {
+    int64_t l = (int64_t)    addrOffset_ << 32 | (int64_t)    height_;
+    int64_t r = (int64_t)val.addrOffset_ << 32 | (int64_t)val.height_;
+
+    if (l < r) {
+      return true;
+    }
+    return false;
+  }
+};
+
+// 专门处理 unspent 顺序问题，要求按照 地址 + 高度 排序
+class AddrUnspentHandler {
+  vector<struct AddrUnspent> addrUnspent_;
+  size_t insertOffset_;
+
+public:
+  AddrUnspentHandler(const size_t size);
+  ~AddrUnspentHandler();
+
+  void push(int32_t addrOffset, int32_t height, int64_t value, int32_t position,
+            int32_t position2, uint256 hash);
+  void sort();
+  void dump2kvdb();
+};
+
 class TxOutput {
 public:
   vector<string> address_;
@@ -170,6 +209,8 @@ public:
   AddrHandler(const size_t addrCount, const string &file);
   ~AddrHandler();
   vector<struct AddrInfo>::iterator find(const string &address);
+  vector<struct AddrInfo>::iterator find(size_t offset);
+  size_t getOffset(const string &address);
   void dumpAddressAndTxs();
 };
 

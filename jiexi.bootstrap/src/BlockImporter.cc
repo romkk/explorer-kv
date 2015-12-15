@@ -118,11 +118,12 @@ void BlockImporter::threadConsumeBlock() {
       continue;
     }
 
-    writeDisk(data, i + beginHeight_);
-    free(data);
-    i++;
+    const int32_t height = i + beginHeight_;
+    writeDisk(data, height);
+    delete data;
+    LOG_INFO("consume block height: %d", height);
 
-    LOG_INFO("consume block height: %d", i + beginHeight_);
+    i++;
   }
 
   runningConsumeThreads_--;

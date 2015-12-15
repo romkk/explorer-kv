@@ -54,7 +54,6 @@ static TxHandler   *gTxHandler   = nullptr;
 
 
 static void _saveAddrTx(vector<struct AddrInfo>::iterator addrInfo);
-static void _saveUnspentOutput(TxInfo &txInfo, int32_t position);
 
 
 RawBlock::RawBlock(const int32_t height, const char *hex) {
@@ -141,6 +140,76 @@ void getRawBlockFromDisk(const int32_t height, string *rawHex) {
   }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+//------------------------------AddrUnspentHandler -----------------------------
+////////////////////////////////////////////////////////////////////////////////
+AddrUnspentHandler::AddrUnspentHandler(const size_t size): insertOffset_(0) {
+  addrUnspent_.resize(size);
+}
+
+AddrUnspentHandler::~AddrUnspentHandler() {
+}
+
+void AddrUnspentHandler::sort() {
+  std::sort(addrUnspent_.begin(), addrUnspent_.end());
+}
+
+void AddrUnspentHandler::push(int32_t addrOffset, int32_t height,
+                              int64_t value, int32_t position,
+                              int32_t position2, uint256 hash) {
+  assert(insertOffset_ < addrUnspent_.size());
+
+  auto it = &addrUnspent_[insertOffset_++];
+  it->addrOffset_ = addrOffset;
+  it->height_     = height;
+  it->value_      = value;
+  it->position_   = position;
+  it->position2_  = position2;
+  it->hash_       = hash;
+}
+
+void AddrUnspentHandler::dump2kvdb() {
+  flatbuffers::FlatBufferBuilder fbb;
+  fbb.ForceDefaults(true);
+
+  for (const auto &it : addrUnspent_) {
+    auto addrInfo = gAddrHandler->find(it.addrOffset_);
+
+    addrInfo->unspentTxCount_++;
+    const int32_t addressUnspentIndex = addrInfo->unspentTxCount_ - 1;
+
+    //
+    // 24_{address}_{tx_hash}_{position}
+    //
+    {
+      const string key24 = Strings::Format("%s%s_%s_%d", KVDB_PREFIX_ADDR_UNSPENT_INDEX,
+                                           addrInfo->addrStr_, it.hash_.ToString().c_str(), (int32_t)it.position_);
+      fbe::AddressUnspentIdxBuilder addressUnspentIdxBuilder(fbb);
+      addressUnspentIdxBuilder.add_index(addressUnspentIndex);
+      fbb.Finish(addressUnspentIdxBuilder.Finish());
+      gKVHandler->set(key24, fbb.GetBufferPointer(), fbb.GetSize());
+      fbb.Clear();
+    }
+
+    //
+    // 23_{address}_{010index}
+    //
+    {
+      const string key23 = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_UNSPENT,
+                                           addrInfo->addrStr_, addressUnspentIndex);
+      auto fb_spentHash = fbb.CreateString(it.hash_.ToString());
+      fbe::AddressUnspentBuilder addressUnspentBuilder(fbb);
+      addressUnspentBuilder.add_position(it.position_);
+      addressUnspentBuilder.add_position2(it.position2_);
+      addressUnspentBuilder.add_tx_hash(fb_spentHash);
+      addressUnspentBuilder.add_value(it.value_);
+      fbb.Finish(addressUnspentBuilder.Finish());
+      gKVHandler->set(key23, fbb.GetBufferPointer(), fbb.GetSize());
+      fbb.Clear();
+    }
+  }
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 //-------------------------------- AddrHandler ---------------------------------
@@ -212,6 +281,15 @@ void AddrHandler::dumpAddressAndTxs() {
     gKVHandler->set(key, fbb.GetBufferPointer(), fbb.GetSize());
     fbb.Clear();
   }
+}
+
+vector<struct AddrInfo>::iterator AddrHandler::find(size_t offset) {
+  return addrInfo_.begin() + offset;
+}
+
+size_t AddrHandler::getOffset(const string &address) {
+  auto it = find(address);
+  return addrInfo_.end() - it;
 }
 
 
@@ -357,55 +435,11 @@ class TxOutput *TxHandler::getOutput(const uint256 &hash, const int32_t n) {
   return *(it->outputs_ + n);
 }
 
-void _saveUnspentOutput(TxInfo &txInfo, int32_t position) {
-  TxOutput *out = *(txInfo.outputs_ + position);
-  assert(out != nullptr);
-  const uint256 &hash = txInfo.hash256_;
-
-  flatbuffers::FlatBufferBuilder fbb;
-  fbb.ForceDefaults(true);
-
-  // 遍历处理，可能含有多个地址
-  for (size_t i = 0; i < out->address_.size(); i++) {
-    const string &address = out->address_[i];
-    vector<struct AddrInfo>::iterator addrInfo = gAddrHandler->find(address);
-    addrInfo->unspentTxCount_++;
-    const int32_t addressUnspentIndex = addrInfo->unspentTxCount_ - 1;
-
-    //
-    // 24_{address}_{tx_hash}_{position}
-    //
-    {
-      const string key24 = Strings::Format("%s%s_%s_%d", KVDB_PREFIX_ADDR_UNSPENT_INDEX,
-                                           address.c_str(), hash.ToString().c_str(), (int32_t)position);
-      fbe::AddressUnspentIdxBuilder addressUnspentIdxBuilder(fbb);
-      addressUnspentIdxBuilder.add_index(addressUnspentIndex);
-      fbb.Finish(addressUnspentIdxBuilder.Finish());
-      gKVHandler->set(key24, fbb.GetBufferPointer(), fbb.GetSize());
-      fbb.Clear();
-    }
-
-    //
-    // 23_{address}_{010index}
-    //
-    {
-      const string key23 = Strings::Format("%s%s_%010d", KVDB_PREFIX_ADDR_UNSPENT,
-                                           address.c_str(), addressUnspentIndex);
-      auto fb_spentHash = fbb.CreateString(hash.ToString());
-      fbe::AddressUnspentBuilder addressUnspentBuilder(fbb);
-      addressUnspentBuilder.add_position(position);
-      addressUnspentBuilder.add_position2((int32_t)i);
-      addressUnspentBuilder.add_tx_hash(fb_spentHash);
-      addressUnspentBuilder.add_value(out->value_);
-      fbb.Finish(addressUnspentBuilder.Finish());
-      gKVHandler->set(key23, fbb.GetBufferPointer(), fbb.GetSize());
-      fbb.Clear();
-    }
-  }
-}
-
 void TxHandler::dumpUnspentOutputToFile() {
-  // 遍历整个tx区，将未花费的数据写入文件
+  size_t unspentCount = 0;
+  //
+  // 遍历整个tx区，进行计数. 380000高度的未花费记录数量大约 3千万
+  //
   for (auto &it : txInfo_) {
     if (it.outputs_ == nullptr) {
       continue;
@@ -414,10 +448,45 @@ void TxHandler::dumpUnspentOutputToFile() {
       if (*(it.outputs_ + i) == nullptr) {
         continue;
       }
-      _saveUnspentOutput(it, i);
+
+      // 计数器
+      TxOutput *out = *(it.outputs_ + i);
+      unspentCount += out->address_.size();
+    }
+  }
+  LOG_INFO("unspent count: %llu", unspentCount);
+
+  //
+  // 存入 unspentHandler
+  //
+  AddrUnspentHandler unspentHandler(unspentCount);
+  for (auto &it : txInfo_) {
+    if (it.outputs_ == nullptr) {
+      continue;
+    }
+    for (int32_t i = 0; i < it.outputsCount_; i++) {
+      if (*(it.outputs_ + i) == nullptr) {
+        continue;
+      }
+
+      // 存入地址的 unspent
+      TxOutput *out = *(it.outputs_ + i);
+      for (auto j = 0; j < out->address_.size(); j++) {
+        size_t offset = gAddrHandler->getOffset(out->address_[j]);
+        auto txIt = gTxHandler->find(it.hash256_);
+        unspentHandler.push((int32_t)offset, txIt->blockHeight_, out->value_, i, j, it.hash256_);
+      }
     }
     delOutputAll(it);
   }
+
+  // 排序
+  LOG_INFO("sort unspent items");
+  unspentHandler.sort();
+
+  // 导出
+  LOG_INFO("dump unspent items");
+  unspentHandler.dump2kvdb();
 }
 
 
@@ -821,6 +890,7 @@ void _insertSpendBy(const uint256 &txHash, int32_t n, const uint256 &prevHash, i
   flatbuffers::FlatBufferBuilder fbb;
   fbb.ForceDefaults(true);
 
+  // 02_{tx_hash}_{position}
   string key = Strings::Format("%s%s_%d", KVDB_PREFIX_TX_SPEND,
                                prevHash.ToString().c_str(), (int32_t)prevPostion);
 
@@ -894,10 +964,7 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
         TxOutput *poutput = *(pTxInfo->outputs_ + prevPostion);
         prevValue    = poutput->value_;
 
-        //
         // 生成被消费记录
-        //
-        // 02_{tx_hash}_{position}
         _insertSpendBy(txHash, n, prevHash, prevPostion);
 
         valueIn += prevValue;

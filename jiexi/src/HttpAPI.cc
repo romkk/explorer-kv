@@ -206,6 +206,7 @@ void kv_handle_ping(evhtp_request_t *req, const vector<string> &params, const st
   resp.length_.push_back((int32_t)s.size());
   resp.offset_.push_back(0);
   resp.types_.push_back("string");
+  resp.keys_.push_back("ping");
   kv_output(req, queryId, resp);
 }
 

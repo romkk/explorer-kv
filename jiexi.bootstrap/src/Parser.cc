@@ -816,6 +816,23 @@ void PreParser::handleAddressTxs(const map<string, int64_t> &addressBalance,
   }
 }
 
+static
+void _insertSpendBy(const uint256 &txHash, int32_t n, const uint256 &prevHash, int32_t prevPostion) {
+  flatbuffers::FlatBufferBuilder fbb;
+  fbb.ForceDefaults(true);
+
+  string key = Strings::Format("%s%s_%d", KVDB_PREFIX_TX_SPEND,
+                               prevHash.ToString().c_str(), (int32_t)prevPostion);
+
+  auto fb_spentHash = fbb.CreateString(txHash.ToString());
+  fbe::TxSpentByBuilder txSpentByBuilder(fbb);
+  txSpentByBuilder.add_position(n);
+  txSpentByBuilder.add_tx_hash(fb_spentHash);
+  fbb.Finish(txSpentByBuilder.Finish());
+  gKVHandler->set(key, fbb.GetBufferPointer(), fbb.GetSize());
+  fbb.Clear();
+}
+
 void PreParser::parseTx(const int32_t height, const CTransaction &tx,
                         const uint32_t blockNTime) {
   const uint256 txHash = tx.GetHash();
@@ -881,21 +898,7 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
         // 生成被消费记录
         //
         // 02_{tx_hash}_{position}
-        {
-          // TODO: 剥离为函数
-          flatbuffers::FlatBufferBuilder fbb2;
-          fbb2.ForceDefaults(true);
-          string key = Strings::Format("%s%s_%d", KVDB_PREFIX_TX_SPEND,
-                                       prevHash.ToString().c_str(), (int32_t)prevPostion);
-
-          auto fb_spentHash = fbb2.CreateString(txHash.ToString());
-          fbe::TxSpentByBuilder txSpentByBuilder(fbb2);
-          txSpentByBuilder.add_position(n);
-          txSpentByBuilder.add_tx_hash(fb_spentHash);
-          fbb2.Finish(txSpentByBuilder.Finish());
-          gKVHandler->set(key, fbb2.GetBufferPointer(), fbb2.GetSize());
-          fbb2.Clear();
-        }
+        _insertSpendBy(txHash, n, prevHash, prevPostion);
 
         valueIn += prevValue;
 

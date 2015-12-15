@@ -156,7 +156,7 @@ void AddrUnspentHandler::sort() {
 
 void AddrUnspentHandler::push(int32_t addrOffset, int32_t height,
                               int64_t value, int32_t position,
-                              int32_t position2, uint256 hash) {
+                              int32_t position2, uint256 &hash) {
   assert(insertOffset_ < addrUnspent_.size());
 
   auto it = &addrUnspent_[insertOffset_++];
@@ -288,8 +288,7 @@ vector<struct AddrInfo>::iterator AddrHandler::find(size_t offset) {
 }
 
 size_t AddrHandler::getOffset(const string &address) {
-  auto it = find(address);
-  return addrInfo_.end() - it;
+  return find(address) - addrInfo_.begin();
 }
 
 
@@ -329,9 +328,9 @@ vector<struct TxInfo>::iterator TxHandler::find(const uint256 &hash) {
     THROW_EXCEPTION_DBEX("TxHandler can't find TxInfo by hash: %s", hash.ToString().c_str());
   }
   it--;
-  if (it->hash256_ != hash) {
-    THROW_EXCEPTION_DBEX("TxHandler can't find TxInfo by hash: %s", hash.ToString().c_str());
-  }
+//  if (it->hash256_ != hash) {
+//    THROW_EXCEPTION_DBEX("TxHandler can't find TxInfo by hash: %s", hash.ToString().c_str());
+//  }
   return it;
 }
 
@@ -440,7 +439,7 @@ void TxHandler::dumpUnspentOutputToFile() {
   //
   // 遍历整个tx区，进行计数. 380000高度的未花费记录数量大约 3千万
   //
-  for (auto &it : txInfo_) {
+  for (const auto &it : txInfo_) {
     if (it.outputs_ == nullptr) {
       continue;
     }

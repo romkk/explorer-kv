@@ -147,7 +147,7 @@ public:
   ~AddrUnspentHandler();
 
   void push(int32_t addrOffset, int32_t height, int64_t value, int32_t position,
-            int32_t position2, uint256 hash);
+            int32_t position2, uint256 &hash);
   void sort();
   void dump2kvdb();
 };

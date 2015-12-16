@@ -119,18 +119,18 @@ void KVDB::del(const string &key) {
 }
 
 void KVDB::get(const string &key, string &value) {
-  LOG_DEBUG("[KVDB::get] key: %s, value size: %llu", key.c_str(), value.size());
   value.clear();
   rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &value);
+  LOG_DEBUG("[KVDB::get] key: %s, value size: %llu", key.c_str(), value.size());
   if (s.IsNotFound()) {
     THROW_EXCEPTION_DBEX("not found key: %s", key.c_str());
   }
 }
 
 bool KVDB::getMayNotExist(const string &key, string &value) {
-  LOG_DEBUG("[KVDB::getMayNotExist] key: %s, value size: %llu", key.c_str(), value.size());
   value.clear();
   rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), key, &value);
+  LOG_DEBUG("[KVDB::getMayNotExist] key: %s, value size: %llu", key.c_str(), value.size());
   if (s.IsNotFound()) {
     return false;
   }
@@ -138,18 +138,18 @@ bool KVDB::getMayNotExist(const string &key, string &value) {
 }
 
 void KVDB::set(const string &key, const string &value) {
-  LOG_DEBUG("[KVDB::set] key: %s, value size: %llu", key.c_str(), value.size());
   rocksdb::Slice sliceValue(value.data(), value.size());
   rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), key, sliceValue);
+  LOG_DEBUG("[KVDB::set] key: %s, value size: %llu", key.c_str(), value.size());
   if (!s.ok()) {
     THROW_EXCEPTION_DBEX("set key fail, key: %s", key.c_str());
   }
 }
 
 void KVDB::set(const string &key, const uint8_t *data, const size_t length) {
-  LOG_DEBUG("[KVDB::set] key: %s, value size: %llu", key.c_str(), length);
   rocksdb::Slice value((const char *)data, length);
   rocksdb::Status s = db_->Put(rocksdb::WriteOptions(), key, value);
+  LOG_DEBUG("[KVDB::set] key: %s, value size: %llu", key.c_str(), length);
   if (!s.ok()) {
     THROW_EXCEPTION_DBEX("set key fail, key: %s", key.c_str());
   }

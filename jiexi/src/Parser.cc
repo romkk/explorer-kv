@@ -609,6 +609,7 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
     THROW_EXCEPTION_DBEX("decode block hex failure, hex: %s", blkRawHex.c_str());
   }
   blockHash = blk.GetHash().ToString();
+  LOG_INFO("accept block: %d, %s", txLog2->blkHeight_, blockHash.c_str());
 
   // 插入数据至 table.0_blocks
   _insertBlock(kvdb_, blk, txLog2->blkHeight_, (int32_t)blkRawHex.length()/2, txLog2->maxBlkTimestamp_);
@@ -1196,6 +1197,7 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   txBuilder.add_outputs_count((int)tx.vout.size());
   txBuilder.add_outputs_value(valueOut);
   txBuilder.add_created_at((uint32_t)time(nullptr));
+  txBuilder.add_is_double_spend(false);
   fbb.Finish(txBuilder.Finish());
   // insert tx object, 需要紧跟 txBuilder.Finish() 函数，否则 fbb 内存会破坏
   _acceptTx_insertTxObject(kvdb_, txLog2->txHash_, &fbb);
@@ -1526,6 +1528,8 @@ void Parser::rejectBlock(TxLog2 *txLog2) {
   const CBlockHeader header  = blk.GetBlockHeader();  // alias
   const string prevBlockHash = header.hashPrevBlock.ToString();
   const uint256 blockHash = header.GetHash();
+
+  LOG_INFO("reject block: %d, %s", height, blockHash.ToString().c_str());
 
   // 记录 orphan block 信息, KVDB_PREFIX_BLOCK_ORPHAN
   {

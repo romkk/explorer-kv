@@ -575,20 +575,12 @@ void APIServer::init() {
     THROW_EXCEPTION_DBEX("bind socket failure, host: %s, port: %d",
                          listenHost_.c_str(), listenPort_);
   }
-  
+
   {
     // for test
     kvdb_->set("test01", Strings::Format("value%lld", Time::CurrentTimeMill()));
     kvdb_->set("test02", Strings::Format("value%lld", Time::CurrentTimeMill()));
     kvdb_->set("test03", Strings::Format("value%lld", Time::CurrentTimeMill()));
-
-    flatbuffers::FlatBufferBuilder fbb;
-    auto fb_txHash = fbb.CreateString("f5fb5fe565521441690cacd835bc06abb12bf4a0749b17476bc45c1db9842b17");
-    fbe::TxSpentByBuilder txSpentByBuilder(fbb);
-    txSpentByBuilder.add_position(999);
-    txSpentByBuilder.add_tx_hash(fb_txHash);
-    fbb.Finish(txSpentByBuilder.Finish());
-    kvdb_->set("02_test_spentby", fbb.GetBufferPointer(), fbb.GetSize());
   }
 }
 

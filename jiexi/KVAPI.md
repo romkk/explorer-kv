@@ -18,8 +18,8 @@
 #### range 方法
 * `params` 有既定顺序：`start_key`, `end_key`, `limit`, `[offset=0]`
   * `offset` 可选，默认为零
-  * 若字符顺序，`start_key` < `end_key`，则正序获取数据
-  * 若字符顺序，`start_key` > `end_key`，则逆序获取数据
+  * 若字符顺序，`start_key` &lt; `end_key`，则正序获取数据
+  * 若字符顺序，`start_key` &gt; `end_key`，则逆序获取数据
 
 
 ### 返回

@@ -168,30 +168,40 @@ void KVDB::multiGet(const vector<string> &keys, vector<string> &values) {
 
 // [start, end]
 void KVDB::range(const string &start, const string &end, const int32_t limit,
-                 vector<string> &keys, vector<string> &values) {
+                 vector<string> &keys, vector<string> &values, int32_t offset) {
   keys.clear();
   values.clear();
-  
+
+  if (offset < 0) { offset = 0; }
+
   if (strcmp(start.c_str(), end.c_str()) <= 0) {
-    rangeGT(start, end, limit > 0 ? limit : kRangeMaxSize_, keys, values);
+    rangeGT(start, end, limit > 0 ? limit : kRangeMaxSize_, keys, values, offset);
   } else {
-    rangeLT(start, end, limit > 0 ? limit : kRangeMaxSize_, keys, values);
+    rangeLT(start, end, limit > 0 ? limit : kRangeMaxSize_, keys, values, offset);
   }
 }
 
 // [start, end]: start < end
 void KVDB::rangeGT(const string &start, const string &end, const int32_t limit,
-                   vector<string> &keys, vector<string> &values) {
+                   vector<string> &keys, vector<string> &values, int32_t offset) {
   assert(strcmp(start.c_str(), end.c_str()) <= 0);
-  LOG_DEBUG("rangeGT, start: %s, end: %s, limit: %d", start.c_str(), end.c_str(), limit);
-  
+  LOG_DEBUG("rangeGT, start: %s, end: %s, limit: %d, offset: %d",
+            start.c_str(), end.c_str(), limit, offset);
+
+  int32_t cnt = 0;
   auto it = db_->NewIterator(rocksdb::ReadOptions());
   for (it->Seek(start);
        it->Valid() && strcmp(it->key().ToString().c_str(), end.c_str()) <= 0;
-       it->Next()) {
+       it->Next())
+  {
+    // skip offset
+    cnt++;
+    if (offset && offset > (cnt - 1)) {
+      continue;
+    }
+
     keys.push_back(it->key().ToString());
     values.push_back(std::string(it->value().data(), it->value().size()));
-    
     // 检测数量
     if (keys.size() >= limit || keys.size() > kRangeMaxSize_ /* MAX */) { break; }
   }
@@ -199,10 +209,12 @@ void KVDB::rangeGT(const string &start, const string &end, const int32_t limit,
 
 // [start, end]: start > end
 void KVDB::rangeLT(const string &start, const string &end, const int32_t limit,
-                   vector<string> &keys, vector<string> &values) {
+                   vector<string> &keys, vector<string> &values, int32_t offset) {
   assert(strcmp(start.c_str(), end.c_str()) >= 0);
-  LOG_DEBUG("rangeLT, start: %s, end: %s, limit: %d", start.c_str(), end.c_str(), limit);
-  
+  LOG_DEBUG("rangeLT, start: %s, end: %s, limit: %d, offset: %d",
+            start.c_str(), end.c_str(), limit, offset);
+
+  int32_t cnt = 0;
   auto it = db_->NewIterator(rocksdb::ReadOptions());
   it->Seek(start);
 
@@ -212,10 +224,16 @@ void KVDB::rangeLT(const string &start, const string &end, const int32_t limit,
   }
   for (;
        it->Valid() && strcmp(it->key().ToString().c_str(), end.c_str()) >= 0;
-       it->Prev()) {
+       it->Prev())
+  {
+    // skip offset
+    cnt++;
+    if (offset && offset > (cnt - 1)) {
+      continue;
+    }
+
     keys.push_back(it->key().ToString());
     values.push_back(std::string(it->value().data(), it->value().size()));
-    
     // 检测数量
     if (keys.size() >= limit || keys.size() > kRangeMaxSize_ /* MAX */) { break; }
   }

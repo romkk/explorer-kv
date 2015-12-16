@@ -79,10 +79,10 @@ void dbGetKeys(const vector<string> &keys, APIResponse &resp) {
 }
 
 void dbRangeKeys(const string &start, const string &end,
-                 const int32_t limit, APIResponse &resp) {
+                 const int32_t limit, const int32_t offset, APIResponse &resp) {
   vector<string> keys;
   vector<string> values;
-  gDB->range(start, end, limit, keys, values);
+  gDB->range(start, end, limit, keys, values, offset);
   if (keys.size() == 0) {
     return;
   }
@@ -186,8 +186,8 @@ void kv_handle_get(evhtp_request_t *req, const vector<string> &params, const str
 
 void kv_handle_range(evhtp_request_t *req, const vector<string> &params, const string &queryId) {
   APIResponse resp;
-  if (params.size() != 3) {
-    kv_output_error(req, API_ERROR_INVALID_PARAMS, "params should be: {start_key, end_key, limit}");
+  if (params.size() < 3) {
+    kv_output_error(req, API_ERROR_INVALID_PARAMS, "params should be: {start_key, end_key, limit, [offset]}");
     return;
   }
   int32_t limit = atoi(params[2].c_str());
@@ -195,7 +195,16 @@ void kv_handle_range(evhtp_request_t *req, const vector<string> &params, const s
     kv_output_error(req, API_ERROR_INVALID_PARAMS, "invalid limit");
     return;
   }
-  dbRangeKeys(params[0], params[1], limit, resp);
+  int32_t offset = 0;
+  if (params.size() >= 4) {
+    offset = atoi(params[3].c_str());
+    if (offset < 0) {
+      kv_output_error(req, API_ERROR_INVALID_PARAMS, "invalid offset");
+      return;
+    }
+  }
+
+  dbRangeKeys(params[0], params[1], limit, offset, resp);
   kv_output(req, queryId, resp);
 }
 
@@ -523,6 +532,8 @@ APIServer::APIServer() {
   gKeyTypes[10] = "string";
   gKeyTypes[11] = "Block";
   gKeyTypes[12] = "string";
+  gKeyTypes[13] = "string";
+  gKeyTypes[14] = "string";
   gKeyTypes[20] = "Address";
   gKeyTypes[21] = "AddressTx";
   gKeyTypes[22] = "string";

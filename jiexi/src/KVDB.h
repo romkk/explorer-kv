@@ -54,9 +54,9 @@ class KVDB {
   int32_t kRangeMaxSize_;
 
   void rangeGT(const string &start, const string &end, const int32_t limit,
-               vector<string> &keys, vector<string> &values);
+               vector<string> &keys, vector<string> &values, int32_t offset=0);
   void rangeLT(const string &start, const string &end, const int32_t limit,
-               vector<string> &keys, vector<string> &values);
+               vector<string> &keys, vector<string> &values, int32_t offset=0);
 public:
   KVDB(const string &dbPath);
   ~KVDB();
@@ -75,7 +75,7 @@ public:
   void multiGet(const vector<string> &keys, vector<string> &values);
 
   void range(const string &start, const string &end, const int32_t limit,
-             vector<string> &keys, vector<string> &values);
+             vector<string> &keys, vector<string> &values, int32_t offset=0);
   
   void getPrevTxOutputs(const CTransaction &tx,
                         vector<string> &prevTxsData,

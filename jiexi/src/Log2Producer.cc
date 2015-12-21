@@ -118,6 +118,16 @@ uint256 MemTxRepository::getSpentEndTx(const CTransaction &tx) {
   return tx.GetHash();
 }
 
+// 返回移除的交易Hash
+uint256 MemTxRepository::removeTx() {
+  assert(size() > 0);
+
+  auto lastItem = std::prev(txs_.end());
+  auto txHash = getSpentEndTx(lastItem->second);
+  removeTx(txHash);
+  return txHash;
+}
+
 void MemTxRepository::removeTx(const uint256 &hash) {
   LOG_DEBUG("memrepo remove tx: %s", hash.ToString().c_str());
   
@@ -784,27 +794,19 @@ void Log2Producer::commitBatch(const size_t expectAffectedRows) {
 
 // 清理txlogs2的内存交易
 void Log2Producer::clearMempoolTxs() {
-  string sql;
-  MySQLResult res;
-  char **row = nullptr;
-
   //
-  // 由于 table.0_memrepo_txs 是有交易前后依赖顺序的，所以逆序读出，批量移除即可。
-  // 即交易前后相关性借助 table.0_memrepo_txs 来完成。
+  // <del>由于 table.0_memrepo_txs 是有交易前后依赖顺序的，所以逆序读出，批量移除即可。
+  // 即交易前后相关性借助 table.0_memrepo_txs 来完成。</del>
   //
-  sql = "SELECT `tx_hash` FROM `0_memrepo_txs` ORDER BY `position` DESC";
-  db_.query(sql, res);
-  if (res.numRows() == 0) {
-    LOG_WARN("table.0_memrepo_txs is empty, clear mempool finish");
-    return;
-  }
-
+  // 不可以依赖 table.0_memrepo_txs 的交易前后顺序，是可能有问题的. 应该遍历 memRepo_
+  // 并逐个移除。
+  //
   vector<string> values;
   const string nowStr = date("%F %T");
 
   // 遍历，移除所有内存交易（未确认）
-  while ((row = res.nextRow()) != nullptr) {
-    const uint256 hash = uint256(row[0]);
+  while (memRepo_.size() > 0) {
+    const uint256 hash = memRepo_.removeTx();
     string item = Strings::Format("-1,%d,-1,-1,0,'%s','%s','%s'",
                                   LOG2TYPE_TX_REJECT,
                                   hash.ToString().c_str(),
@@ -819,6 +821,19 @@ void Log2Producer::clearMempoolTxs() {
 
   // 提交本批数据
   commitBatch(values.size());
+
+  // 此时 table.0_memrepo_txs 应该为空的
+  {
+    MySQLResult res;
+    string sql = "SELECT COUNT(*) FROM `0_memrepo_txs`";
+    db_.query(sql, res);
+    assert(res.numRows() == 1);
+    char **row = nullptr;
+    row = res.nextRow();
+    if (atoi(row[0]) != 0) {
+      THROW_EXCEPTION_DB("table.0_memrepo_txs SHOULD be empty");
+    }
+  }
 }
 
 void Log2Producer::handleBlockRollback(const int32_t height, const CBlock &blk) {

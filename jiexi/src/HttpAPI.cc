@@ -534,6 +534,7 @@ APIServer::APIServer() {
   gKeyTypes[12] = "string";
   gKeyTypes[13] = "string";
   gKeyTypes[14] = "string";
+  gKeyTypes[15] = "RelayedBy";
   gKeyTypes[20] = "Address";
   gKeyTypes[21] = "AddressTx";
   gKeyTypes[22] = "string";

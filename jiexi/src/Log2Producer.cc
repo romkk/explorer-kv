@@ -45,7 +45,7 @@ bool MemTxRepository::addTx(const CTransaction &tx) {
   //
   for (auto &it : tx.vin) {
     TxOutputKey out(it.prevout.hash, it.prevout.n);
-    // 新交易的输出已经在已花费列表中
+    // 新交易的输入已经在已花费列表中，双花交易
     if (spentOutputs_.find(out) != spentOutputs_.end()) {
       LOG_WARN("conflict tx: %s, input: %s:%d, already spent in tx: %s",
                txhash.ToString().c_str(),
@@ -290,7 +290,10 @@ Log2Producer::~Log2Producer() {
 }
 
 static void _initLog2_loadMemrepoTxs(MySQLConnection &db,
-                                         MemTxRepository &memRepo) {
+                                     MemTxRepository &memRepo) {
+  //
+  // 数据库中的交易不会有双花冲突，这里载入时即使不按照顺序也是不会有问题的
+  //
   string sql = "SELECT `tx_hash` FROM `0_memrepo_txs` ORDER BY `position`";
   MySQLResult res;
   char **row = nullptr;
@@ -812,7 +815,6 @@ void Log2Producer::clearMempoolTxs() {
                                   hash.ToString().c_str(),
                                   nowStr.c_str(), nowStr.c_str());
     values.push_back(item);
-    memRepo_.removeTx(hash);
   }
   assert(memRepo_.size() == 0);
 

@@ -75,9 +75,6 @@ KVDB::KVDB(const string &dbPath): db_(nullptr), kDBPath_(dbPath) {
   bbt_opts.block_size = 32 * 1024;
   bbt_opts.format_version = 2;
   options_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbt_opts));
-  
-  // 采用 range 方式获取数据最多为 N
-  kRangeMaxSize_ = 10000;
 }
 
 KVDB::~KVDB() {
@@ -175,9 +172,9 @@ void KVDB::range(const string &start, const string &end, const int32_t limit,
   if (offset < 0) { offset = 0; }
 
   if (strcmp(start.c_str(), end.c_str()) <= 0) {
-    rangeGT(start, end, limit > 0 ? limit : kRangeMaxSize_, keys, values, offset);
+    rangeGT(start, end, limit, keys, values, offset);
   } else {
-    rangeLT(start, end, limit > 0 ? limit : kRangeMaxSize_, keys, values, offset);
+    rangeLT(start, end, limit, keys, values, offset);
   }
 }
 
@@ -203,7 +200,7 @@ void KVDB::rangeGT(const string &start, const string &end, const int32_t limit,
     keys.push_back(it->key().ToString());
     values.push_back(std::string(it->value().data(), it->value().size()));
     // 检测数量
-    if (keys.size() >= limit || keys.size() > kRangeMaxSize_ /* MAX */) { break; }
+    if (keys.size() >= limit) { break; }
   }
 }
 
@@ -235,7 +232,7 @@ void KVDB::rangeLT(const string &start, const string &end, const int32_t limit,
     keys.push_back(it->key().ToString());
     values.push_back(std::string(it->value().data(), it->value().size()));
     // 检测数量
-    if (keys.size() >= limit || keys.size() > kRangeMaxSize_ /* MAX */) { break; }
+    if (keys.size() >= limit) { break; }
   }
 }
 

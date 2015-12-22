@@ -39,6 +39,7 @@
 #define KVDB_PREFIX_BLOCK_TXS_STR    "12_"
 #define KVDB_PREFIX_BLOCK_ORPHAN     "13_"
 #define KVDB_PREFIX_BLOCK_TIMESTAMP  "14_"
+#define KVDB_PREFIX_BLOCK_RELAYEDBY  "15_"
 
 #define KVDB_PREFIX_ADDR_OBJECT     "20_"
 #define KVDB_PREFIX_ADDR_TX         "21_"
@@ -51,7 +52,6 @@ class KVDB {
   rocksdb::DB *db_;
   rocksdb::Options options_;
   string  kDBPath_;
-  int32_t kRangeMaxSize_;
 
   void rangeGT(const string &start, const string &end, const int32_t limit,
                vector<string> &keys, vector<string> &values, int32_t offset=0);

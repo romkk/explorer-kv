@@ -262,7 +262,8 @@ void TxInfoCache::getTxInfo(MySQLConnection &db,
 /////////////////////////////////  Parser  ///////////////////////////////////
 Parser::Parser(): running_(true), unconfirmedTxsSize_(0), unconfirmedTxsCount_(0),
 kvdb_(Config::GConfig.get("rocksdb.path", "")),
-blkTs_(2016), notifyProducer_(nullptr), txlogsBuffer_(200)
+blkTs_(2016), notifyProducer_(nullptr), txlogsBuffer_(200),
+recognizeBlock_(Config::GConfig.get("pools.json", ""), &kvdb_)
 {
   notifyFileLog2Producer_ = Config::GConfig.get("notify.log2producer.file");
   if (notifyFileLog2Producer_.empty()) {
@@ -280,10 +281,19 @@ blkTs_(2016), notifyProducer_(nullptr), txlogsBuffer_(200)
     notifyProducer_ = new NotifyProducer(dir);
     notifyProducer_->init();
   }
+
+  if (!recognizeBlock_.loadConfigJson()) {
+    THROW_EXCEPTION_DBEX("load pool json fail");
+  }
 }
 
 Parser::~Parser() {
   stop();
+
+  LOG_INFO("stop block recognize thread...");
+  if (threadRecognizeBlock_.joinable()) {
+    threadRecognizeBlock_.join();
+  }
 
   LOG_INFO("stop txlogs produce thread...");
   if (threadProduceTxlogs_.joinable()) {
@@ -373,13 +383,18 @@ bool Parser::init() {
   // 启动 txlogs2 消费线程
   threadHandleTxlogs_ = thread(&Parser::threadHandleTxlogs, this);
 
+  // 启动块识别线程
+  threadRecognizeBlock_ = thread(&Parser::threadRecognizeBlock, this);
+
   return true;
 }
 
-//void Parser::threadAPIServer() {
-//  LogScope ls("Parser::threadAPIServer");
-//  apiServer_.run();
-//}
+void Parser::threadRecognizeBlock() {
+  // 启动时，需要识别块
+  bool isRecognizeAll = Config::GConfig.getBool("pools.recognize.all.at.start", false);
+  recognizeBlock_.recognizeBlocks(99999999, 0, isRecognizeAll ? false : true);
+}
+
 
 void Parser::threadWatchNotifyFile() {
   try {
@@ -453,6 +468,8 @@ void Parser::threadHandleTxlogs() {
       // confirm 时才能 acceptBlock()
       if (txLog2.tx_.IsCoinBase()) {
         acceptBlock(&txLog2, blockHash);
+        // 触发块识别
+        recognizeBlock_.recognizeBlocks(txLog2.blkHeight_, txLog2.blkHeight_, true);
       }
       confirmTx(&txLog2);
     }

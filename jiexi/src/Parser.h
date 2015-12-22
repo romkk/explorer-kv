@@ -32,6 +32,7 @@
 
 #include "KVDB.h"
 #include "HttpAPI.h"
+#include "RecognizeBlock.h"
 
 // tparser的异常，整数
 #define EXCEPTION_TPARSER_TX_INVALID_INPUT 100
@@ -234,6 +235,11 @@ private:
   // 处理 txlogs
   thread threadHandleTxlogs_;
   void threadHandleTxlogs();
+
+  // 块识别
+  RecognizeBlock recognizeBlock_;
+  thread threadRecognizeBlock_;
+  void threadRecognizeBlock();
 
   // 生成 txlogs
   BoundedBuffer<TxLog2> txlogsBuffer_;

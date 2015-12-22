@@ -150,7 +150,6 @@ void RecognizeBlock::recognizeCoinbaseTx(const string &blockHash, const fbe::Tx 
   kvdb_->set(key, fbb.GetBufferPointer(), fbb.GetSize());
   fbb.Clear();
 
-  LOG_INFO("recognize block: %d, %s, %s", cbtx->block_height(), blockHash.c_str(),
-           info.poolName_.c_str());
+  LOG_INFO("recognize block: %s, %s", blockHash.c_str(), info.poolName_.c_str());
 }
 

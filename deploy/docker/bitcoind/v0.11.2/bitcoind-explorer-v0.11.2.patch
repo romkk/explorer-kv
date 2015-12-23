@@ -1,3 +1,14 @@
+diff -uNr bitcoin-0.11.2/src/clientversion.cpp bitcoin-0.11.2-bm/src/clientversion.cpp
+--- bitcoin-0.11.2/src/clientversion.cpp	2015-11-10 21:46:18.000000000 +0800
++++ bitcoin-0.11.2-bm/src/clientversion.cpp	2015-12-23 17:40:57.000000000 +0800
+@@ -108,6 +108,6 @@
+             ss << "; " << *it;
+         ss << ")";
+     }
+-    ss << "/";
++    ss << "/btc.com/";
+     return ss.str();
+ }
 diff -uNr bitcoin-0.11.2/src/init.cpp bitcoin-0.11.2-bm/src/init.cpp
 --- bitcoin-0.11.2/src/init.cpp	2015-11-10 21:46:18.000000000 +0800
 +++ bitcoin-0.11.2-bm/src/init.cpp	2015-12-19 15:58:41.000000000 +0800

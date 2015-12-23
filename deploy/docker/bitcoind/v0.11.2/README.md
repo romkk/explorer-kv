@@ -51,7 +51,7 @@ mkdir -p /work/bitcoind
 docker容器启动命令：
 
 ```
-docker run -it -v /work/bitcoind:/root/.bitcoin --name explorer-bitcoind -p 8333:8333 -p 8332:8332 -p 18333:18333 -p 18332:18332  -d explorer-bitcoind:0.11.2
+docker run -it -v /work/bitcoind:/root/.bitcoin --name explorer-bitcoind -p 8333:8333 -p 8332:8332 -p 18333:18333 -p 18332:18332 --restart always -d explorer-bitcoind:0.11.2
 ```
 
 进入容器：

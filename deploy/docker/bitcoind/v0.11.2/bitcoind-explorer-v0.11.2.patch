@@ -45,7 +45,7 @@ diff -uNr bitcoin-0.11.2/src/init.cpp bitcoin-0.11.2-bm/src/init.cpp
  }
 diff -uNr bitcoin-0.11.2/src/main.cpp bitcoin-0.11.2-bm/src/main.cpp
 --- bitcoin-0.11.2/src/main.cpp	2015-11-10 21:46:18.000000000 +0800
-+++ bitcoin-0.11.2-bm/src/main.cpp	2015-12-19 16:08:59.000000000 +0800
++++ bitcoin-0.11.2-bm/src/main.cpp	2015-12-25 18:10:10.000000000 +0800
 @@ -12,6 +12,7 @@
  #include "checkpoints.h"
  #include "checkqueue.h"
@@ -71,7 +71,21 @@ diff -uNr bitcoin-0.11.2/src/main.cpp bitcoin-0.11.2-bm/src/main.cpp
  {
      AssertLockHeld(cs_main);
      if (pfMissingInputs)
-@@ -1109,6 +1111,11 @@
+@@ -1053,6 +1055,13 @@
+             return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient priority");
+         }
+ 
++        // tx size greater than 2000, must have enough fees
++        if (nSize > 2000 && nFees < ::minRelayTxFee.GetFee(nSize)) {
++            return state.DoS(0, error("AcceptToMemoryPool: not enough fees %s, size: %u, %d < %d",
++                                      hash.ToString(), nSize, nFees, ::minRelayTxFee.GetFee(nSize)),
++                             REJECT_INSUFFICIENTFEE, "insufficient fee(2000)");
++        }
++
+         // Continuously rate-limit free (really, very-low-fee) transactions
+         // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
+         // be annoying or make others' transactions take longer to confirm.
+@@ -1109,6 +1118,11 @@
  
      SyncWithWallets(tx, NULL);
  
@@ -83,7 +97,7 @@ diff -uNr bitcoin-0.11.2/src/main.cpp bitcoin-0.11.2-bm/src/main.cpp
      return true;
  }
  
-@@ -2135,6 +2142,21 @@
+@@ -2135,6 +2149,21 @@
        DateTimeStrFormat("%Y-%m-%d %H:%M:%S", chainActive.Tip()->GetBlockTime()),
        Checkpoints::GuessVerificationProgress(chainParams.Checkpoints(), chainActive.Tip()), pcoinsTip->DynamicMemoryUsage() * (1.0 / (1<<20)), pcoinsTip->GetCacheSize());
  
@@ -105,7 +119,7 @@ diff -uNr bitcoin-0.11.2/src/main.cpp bitcoin-0.11.2-bm/src/main.cpp
      cvBlockChange.notify_all();
  
      // Check the version of the last 100 blocks to see if we need to upgrade:
-@@ -4417,7 +4439,7 @@
+@@ -4417,7 +4446,7 @@
          if (AlreadyHave(inv))
              return true;
  
@@ -114,7 +128,7 @@ diff -uNr bitcoin-0.11.2/src/main.cpp bitcoin-0.11.2-bm/src/main.cpp
          {
              mempool.check(pcoinsTip);
              RelayTransaction(tx);
-@@ -4451,7 +4473,7 @@
+@@ -4451,7 +4480,7 @@
  
                      if (setMisbehaving.count(fromPeer))
                          continue;

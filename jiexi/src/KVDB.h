@@ -30,9 +30,10 @@
 
 #include "explorer_generated.h"
 
-#define KVDB_PREFIX_TX_RAW_HEX   "00_"
-#define KVDB_PREFIX_TX_OBJECT    "01_"
-#define KVDB_PREFIX_TX_SPEND     "02_"
+#define KVDB_PREFIX_TX_RAW_HEX      "00_"
+#define KVDB_PREFIX_TX_OBJECT       "01_"
+#define KVDB_PREFIX_TX_SPEND        "02_"
+#define KVDB_PREFIX_TX_UNCONFIRMED  "03_"
 
 #define KVDB_PREFIX_BLOCK_HEIGHT     "10_"
 #define KVDB_PREFIX_BLOCK_OBJECT     "11_"

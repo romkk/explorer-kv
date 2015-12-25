@@ -529,6 +529,7 @@ APIServer::APIServer() {
   gKeyTypes.resize(100, nullptr);
   gKeyTypes[01] = "Tx";
   gKeyTypes[02] = "TxSpentBy";
+  gKeyTypes[03] = "UnconfirmedTx";
   gKeyTypes[10] = "string";
   gKeyTypes[11] = "Block";
   gKeyTypes[12] = "string";
@@ -582,6 +583,7 @@ void APIServer::init() {
     kvdb_->set("test01", Strings::Format("value%lld", Time::CurrentTimeMill()));
     kvdb_->set("test02", Strings::Format("value%lld", Time::CurrentTimeMill()));
     kvdb_->set("test03", Strings::Format("value%lld", Time::CurrentTimeMill()));
+    kvdb_->del("test04");  // delete a key that doesn't exist
   }
 }
 

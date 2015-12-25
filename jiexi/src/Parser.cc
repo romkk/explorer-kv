@@ -884,6 +884,7 @@ static void _acceptTx_insertTxObject(KVDB &kvdb, const uint256 &hash,
                                      flatbuffers::FlatBufferBuilder *fbb) {
   const string key = KVDB_PREFIX_TX_OBJECT + hash.ToString();
   kvdb.set(key, fbb->GetBufferPointer(), fbb->GetSize());
+  fbb->Clear();
 }
 
 // 移除prev unspent outputs
@@ -1233,6 +1234,20 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   // 处理地址交易
   _accpetTx_insertAddressTxs(kvdb_, txLog2, addressBalance);
 
+  // 新增未确认交易
+  {
+    const string key03 = Strings::Format("%s%s", KVDB_PREFIX_TX_UNCONFIRMED,
+                                         txLog2->txHash_.ToString().c_str());
+    auto fb_txhash = fbb.CreateString(txLog2->txHash_.ToString());
+    fbe::UnconfirmedTxBuilder unconfirmedTxBuilder(fbb);
+    unconfirmedTxBuilder.add_fee(fee);
+    unconfirmedTxBuilder.add_size((int)(txLog2->txHex_.length()/2));
+    unconfirmedTxBuilder.add_tx_hash(fb_txhash);
+    fbb.Finish(unconfirmedTxBuilder.Finish());
+    kvdb_.set(key03, fbb.GetBufferPointer(), fbb.GetSize());
+    fbb.Clear();
+  }
+
   // 刷入地址变更信息
   flushAddressInfo(addressBalance);
 
@@ -1416,6 +1431,13 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
     kvdb_.set(key, value);
   }
 
+  // 移除未确认交易
+  {
+    const string key03 = Strings::Format("%s%s", KVDB_PREFIX_TX_UNCONFIRMED,
+                                         txLog2->txHash_.ToString().c_str());
+    kvdb_.del(key03);
+  }
+
   // 刷入地址变更信息
   flushAddressInfo(addressBalance);
 
@@ -1481,6 +1503,19 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
     txObject->mutate_block_time(0);
     txObject->mutate_block_height(-1);
     kvdb_.set(key, value);
+
+    // 新增未确认交易
+    flatbuffers::FlatBufferBuilder fbb;
+    const string key03 = Strings::Format("%s%s", KVDB_PREFIX_TX_UNCONFIRMED,
+                                         txLog2->txHash_.ToString().c_str());
+    auto fb_txhash = fbb.CreateString(txLog2->txHash_.ToString());
+    fbe::UnconfirmedTxBuilder unconfirmedTxBuilder(fbb);
+    unconfirmedTxBuilder.add_fee(txObject->fee());
+    unconfirmedTxBuilder.add_size(txObject->size());
+    unconfirmedTxBuilder.add_tx_hash(fb_txhash);
+    fbb.Finish(unconfirmedTxBuilder.Finish());
+    kvdb_.set(key03, fbb.GetBufferPointer(), fbb.GetSize());
+    fbb.Clear();
   }
 
   // 刷入地址变更信息
@@ -1751,6 +1786,13 @@ void Parser::rejectTx(class TxLog2 *txLog2) {
     auto txObject = flatbuffers::GetMutableRoot<fbe::Tx>((void *)value.data());
     txObject->mutate_is_double_spend(true);
     kvdb_.set(key01, value);
+  }
+
+  // 移除未确认
+  {
+    const string key03 = Strings::Format("%s%s", KVDB_PREFIX_TX_UNCONFIRMED,
+                                         txLog2->txHash_.ToString().c_str());
+    kvdb_.del(key03);
   }
 
   _rejectAddressTxs(txLog2, addressBalance);

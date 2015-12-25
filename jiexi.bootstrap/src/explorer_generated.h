@@ -13,6 +13,7 @@ struct TxInput;
 struct TxOutput;
 struct Tx;
 struct TxSpentBy;
+struct UnconfirmedTx;
 struct Block;
 struct BlockTxsHash;
 struct RelayedBy;
@@ -373,6 +374,48 @@ inline flatbuffers::Offset<TxSpentBy> CreateTxSpentBy(flatbuffers::FlatBufferBui
   TxSpentByBuilder builder_(_fbb);
   builder_.add_tx_hash(tx_hash);
   builder_.add_position(position);
+  return builder_.Finish();
+}
+
+struct UnconfirmedTx FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
+  const flatbuffers::String *tx_hash() const { return GetPointer<const flatbuffers::String *>(4); }
+  flatbuffers::String *mutable_tx_hash() { return GetPointer<flatbuffers::String *>(4); }
+  int64_t fee() const { return GetField<int64_t>(6, 0); }
+  bool mutate_fee(int64_t fee) { return SetField(6, fee); }
+  int32_t size() const { return GetField<int32_t>(8, 0); }
+  bool mutate_size(int32_t size) { return SetField(8, size); }
+  bool Verify(flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<flatbuffers::uoffset_t>(verifier, 4 /* tx_hash */) &&
+           verifier.Verify(tx_hash()) &&
+           VerifyField<int64_t>(verifier, 6 /* fee */) &&
+           VerifyField<int32_t>(verifier, 8 /* size */) &&
+           verifier.EndTable();
+  }
+};
+
+struct UnconfirmedTxBuilder {
+  flatbuffers::FlatBufferBuilder &fbb_;
+  flatbuffers::uoffset_t start_;
+  void add_tx_hash(flatbuffers::Offset<flatbuffers::String> tx_hash) { fbb_.AddOffset(4, tx_hash); }
+  void add_fee(int64_t fee) { fbb_.AddElement<int64_t>(6, fee, 0); }
+  void add_size(int32_t size) { fbb_.AddElement<int32_t>(8, size, 0); }
+  UnconfirmedTxBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
+  UnconfirmedTxBuilder &operator=(const UnconfirmedTxBuilder &);
+  flatbuffers::Offset<UnconfirmedTx> Finish() {
+    auto o = flatbuffers::Offset<UnconfirmedTx>(fbb_.EndTable(start_, 3));
+    return o;
+  }
+};
+
+inline flatbuffers::Offset<UnconfirmedTx> CreateUnconfirmedTx(flatbuffers::FlatBufferBuilder &_fbb,
+   flatbuffers::Offset<flatbuffers::String> tx_hash = 0,
+   int64_t fee = 0,
+   int32_t size = 0) {
+  UnconfirmedTxBuilder builder_(_fbb);
+  builder_.add_fee(fee);
+  builder_.add_size(size);
+  builder_.add_tx_hash(tx_hash);
   return builder_.Finish();
 }
 

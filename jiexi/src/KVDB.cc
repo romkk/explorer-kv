@@ -111,7 +111,7 @@ void KVDB::del(const string &key) {
   LOG_DEBUG("[KVDB::del] key: %s", key.c_str());
   rocksdb::Status s = db_->Delete(rocksdb::WriteOptions(), key);
   if (!s.ok()) {
-    THROW_EXCEPTION_DBEX("delelte key: %s fail", key.c_str());
+    THROW_EXCEPTION_DBEX("delete key: %s fail", key.c_str());
   }
 }
 

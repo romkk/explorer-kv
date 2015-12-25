@@ -62,6 +62,13 @@ table TxSpentBy {
   tx_hash: string;
 }
 
+// 03\_{tx\_hash}
+table UnconfirmedTx {
+  tx_hash: string;
+  fee: long;
+  size: int;
+}
+
 // 11_{block_hash}
 table Block {
   height: int;

@@ -7,6 +7,7 @@
 00 | transaction | 00\_{tx\_hash} | Binary | tx raw hex，一次插入不再变更
 01 | transaction | 01\_{tx\_hash} | FlatBuffer | tx object，一次插入不再变更
 02 | transaction | 02\_{tx\_hash}\_{position} | FlatBuffer | spent txs, value记录该hash被谁花费了
+03 | transaction | 03\_{tx\_hash} | FlatBuffer | 未确认交易，hash、大小等信息
 10 | block | 10\_{010block\_height} | string | block height -> hash
 11 | block | 11\_{block\_hash} | FlatBuffer | block object
 12 | block | 12\_{block\_hash}\_{n} | string | block transactions, n为批次号，每500条为一个批次, n从零开始

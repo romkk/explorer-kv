@@ -60,6 +60,7 @@ bool DecodeHexBlk(CBlock& block, const std::string& strHexBlk);
 string UrlEncode(const char *str);
 string UrlDecode(const char *str);
 
+std::string escapeJson(const std::string &s);
 
 ////////////////////////////////  BoundedBuffer  ////////////////////////////////
 template <class T>

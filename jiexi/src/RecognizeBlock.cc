@@ -22,6 +22,7 @@
 
 #include "RecognizeBlock.h"
 #include "utilities_js.hpp"
+#include "Util.h"
 
 RecognizeBlock::RecognizeBlock(const string &configFilePath, KVDB *kvdb):
 configFilePath_(configFilePath), kvdb_(kvdb) {
@@ -73,7 +74,7 @@ void RecognizeBlock::recognizeBlocks(const int32_t beginHeight, const int32_t en
   for (auto hash : values) {
     // check if block has already recognized
     if (stopWhenReachLast) {
-      const string key15 = Strings::Format("%s%s", KVDB_PREFIX_BLOCK_RELAYEDBY, hash.c_str());
+      const string key15 = Strings::Format("%s%s", KVDB_PREFIX_BLOCK_EXTRA, hash.c_str());
       string value;
       if (kvdb_->getMayNotExist(key15, value) == true /* exist */) {
         return;  // meet last recognized block
@@ -135,20 +136,16 @@ void RecognizeBlock::recognizeCoinbaseTx(const string &blockHash, const fbe::Tx 
   MinerInfo info;
   recognizeCoinbaseTx(cbtx, &info);
 
-  // save to kvdb
-  flatbuffers::FlatBufferBuilder fbb;
-  auto fb_name = fbb.CreateString(info.poolName_);
-  auto fb_link = fbb.CreateString(info.poolLink_);
-  fbe::RelayedByBuilder relayedByBuilder(fbb);
-  relayedByBuilder.add_name(fb_name);
-  relayedByBuilder.add_link(fb_link);
-  fbb.Finish(relayedByBuilder.Finish());
+  // extra info
+  string jStr = "{";
+  jStr += "\"pool_name\":\"" + escapeJson(info.poolName_) + "\",";
+  jStr += "\"pool_link\":\"" + escapeJson(info.poolLink_) + "\"";
+  jStr += "}";
 
   // 15\_{block\_hash}
   // 如果存在，则覆盖该值
-  string key = Strings::Format("%s%s", KVDB_PREFIX_BLOCK_RELAYEDBY, blockHash.c_str());
-  kvdb_->set(key, fbb.GetBufferPointer(), fbb.GetSize());
-  fbb.Clear();
+  string key = Strings::Format("%s%s", KVDB_PREFIX_BLOCK_EXTRA, blockHash.c_str());
+  kvdb_->set(key, (uint8_t *)jStr.data(), jStr.size());
 
   LOG_INFO("recognize block: %s, %s", blockHash.c_str(), info.poolName_.c_str());
 }

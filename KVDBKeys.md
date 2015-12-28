@@ -13,7 +13,7 @@
 12 | block | 12\_{block\_hash}\_{n} | string | block transactions, n为批次号，每500条为一个批次, n从零开始
 13 | block | 13\_{010height} | string | 当前高度的孤块Hash值字符串拼接，均为孤块哈希
 14 | block | 14\_{010timestamp}_{010height} | string | 块按照当前最大时间戳(`curr_max_timestamp`)的索引，不含孤块数据
-15 | block | 15\_{block\_hash} | FlatBuffer | 块对应的矿池信息
+15 | block | 15\_{block\_hash} | string | 块对应的额外信息，json字符串
 20 | address | 20\_{address} | FlatBuffer | address object
 21 | address | 21\_{address}\_{010index} | FlatBuffer | 地址交易，address txs list
 22 | address | 22\_{address}\_{tx\_hash} | string | 地址交易索引，int32_t string, address txhash -> address tx idx

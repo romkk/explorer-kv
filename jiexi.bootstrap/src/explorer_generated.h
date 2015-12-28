@@ -16,7 +16,6 @@ struct TxSpentBy;
 struct UnconfirmedTx;
 struct Block;
 struct BlockTxsHash;
-struct RelayedBy;
 struct Address;
 struct AddressTx;
 struct AddressUnspent;
@@ -574,43 +573,6 @@ inline flatbuffers::Offset<BlockTxsHash> CreateBlockTxsHash(flatbuffers::FlatBuf
    flatbuffers::Offset<flatbuffers::String> hash_str = 0) {
   BlockTxsHashBuilder builder_(_fbb);
   builder_.add_hash_str(hash_str);
-  return builder_.Finish();
-}
-
-struct RelayedBy FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
-  const flatbuffers::String *name() const { return GetPointer<const flatbuffers::String *>(4); }
-  flatbuffers::String *mutable_name() { return GetPointer<flatbuffers::String *>(4); }
-  const flatbuffers::String *link() const { return GetPointer<const flatbuffers::String *>(6); }
-  flatbuffers::String *mutable_link() { return GetPointer<flatbuffers::String *>(6); }
-  bool Verify(flatbuffers::Verifier &verifier) const {
-    return VerifyTableStart(verifier) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 4 /* name */) &&
-           verifier.Verify(name()) &&
-           VerifyField<flatbuffers::uoffset_t>(verifier, 6 /* link */) &&
-           verifier.Verify(link()) &&
-           verifier.EndTable();
-  }
-};
-
-struct RelayedByBuilder {
-  flatbuffers::FlatBufferBuilder &fbb_;
-  flatbuffers::uoffset_t start_;
-  void add_name(flatbuffers::Offset<flatbuffers::String> name) { fbb_.AddOffset(4, name); }
-  void add_link(flatbuffers::Offset<flatbuffers::String> link) { fbb_.AddOffset(6, link); }
-  RelayedByBuilder(flatbuffers::FlatBufferBuilder &_fbb) : fbb_(_fbb) { start_ = fbb_.StartTable(); }
-  RelayedByBuilder &operator=(const RelayedByBuilder &);
-  flatbuffers::Offset<RelayedBy> Finish() {
-    auto o = flatbuffers::Offset<RelayedBy>(fbb_.EndTable(start_, 2));
-    return o;
-  }
-};
-
-inline flatbuffers::Offset<RelayedBy> CreateRelayedBy(flatbuffers::FlatBufferBuilder &_fbb,
-   flatbuffers::Offset<flatbuffers::String> name = 0,
-   flatbuffers::Offset<flatbuffers::String> link = 0) {
-  RelayedByBuilder builder_(_fbb);
-  builder_.add_link(link);
-  builder_.add_name(name);
   return builder_.Finish();
 }
 

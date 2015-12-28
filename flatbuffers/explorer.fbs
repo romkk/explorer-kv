@@ -95,12 +95,6 @@ table BlockTxsHash {
   hash_str: string;
 }
 
-// 15\_{block\_hash}
-table RelayedBy {
-  name: string;
-  link: string;
-}
-
 // 20_{address}
 table Address {
   received: long;

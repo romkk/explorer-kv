@@ -34,8 +34,8 @@
 
 #define BILLION 1000000000  // 10亿, 10^9
 
-std::vector<std::string> split(const std::string &s, const char delim);
-std::vector<std::string> split(const std::string &s, const char delim, const int32_t limit);
+vector<string> split(const string &s, const char delim);
+vector<string> split(const string &s, const char delim, const int32_t limit);
 
 size_t getNumberOfLines(const string &file);
 

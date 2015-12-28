@@ -12,3 +12,15 @@ cmake -G "Unix Makefiles"
 make
 make install
 ```
+
+## Amazon - EC2
+
+部署需要跳高 ulimit 设置，默认1024远远不够使用。 `/etc/security/limits.conf` 末尾添加：
+
+```
+ root soft nofile 65535
+ root hard nofile 65535
+ * soft nofile 65535
+ * hard nofile 65535
+```
+然后重启系统以生效。

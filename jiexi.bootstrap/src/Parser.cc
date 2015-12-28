@@ -68,8 +68,8 @@ RawBlock::~RawBlock() {
 // 0_raw_blocks文件里，高度依次递增
 void _loadRawBlockFromDisk(map<int32_t, RawBlock*> &blkCache, const int32_t height) {
   // static vars
-  static size_t lastOffset  = 0;
-  static size_t lastHeight2 = 0;
+  static int64_t lastOffset = 0;
+  static int32_t lastHeightBegin = 0;
 
   const int32_t KCountPerFile = 10000;  // 每个 0_raw_blocks 的容量
   string dir = Config::GConfig.get("rawdata.dir", "");
@@ -81,33 +81,52 @@ void _loadRawBlockFromDisk(map<int32_t, RawBlock*> &blkCache, const int32_t heig
     dir += "/";
   }
 
-  const int32_t height2 = (height / KCountPerFile) * KCountPerFile;
-  if (lastHeight2 != height2) {
+  const int32_t heightBegin = (height / KCountPerFile) * KCountPerFile;
+  const int32_t heightEnd   = heightBegin + (KCountPerFile - 1);
+
+  if (lastHeightBegin != heightBegin) {
     lastOffset = 0;
-    lastHeight2 = height2;
+    lastHeightBegin = heightBegin;
   }
 
-  const int32_t stopHeight  = (int32_t)Config::GConfig.getInt("raw.max.block.height", -1);
-  string datafile = Strings::Format("%d_%d", height2,
-                                    (height2 + (KCountPerFile - 1)) > stopHeight ? stopHeight : (height2 + (KCountPerFile - 1)));
+  const int32_t stopHeight = (int32_t)Config::GConfig.getInt("raw.max.block.height", -1);
+  string datafile = Strings::Format("%d_%d", heightBegin, heightEnd > stopHeight ? stopHeight : heightEnd);
   const string fname = Strings::Format("%s%s", dir.c_str(), datafile.c_str());
-  LOG_INFO("load raw block file: %s", fname.c_str());
-  std::ifstream input(fname);
-  if (lastOffset > 0) {
-    input.seekg(lastOffset, input.beg);
-  }
-  std::string line;
-  const size_t maxReadSize = 500 * 1024 * 1024;  // max read file
 
-  while (std::getline(input, line)) {
-    std::vector<std::string> arr = split(line, '\t', 2);
+  // 载入 raw 数据
+  LOG_INFO("load raw block file: %s", fname.c_str());
+  FILE *fin = fopen(fname.c_str(), "r");
+  if (fin == nullptr) {
+    THROW_EXCEPTION_DBEX("fopen fail: %s, error: %d, %s", fname.c_str(), errno, strerror(errno));
+  }
+  if (lastOffset > 0 && fseek(fin, lastOffset, SEEK_SET) != 0) {
+    // fseek: If successful, the function returns zero.
+    THROW_EXCEPTION_DBEX("fseek fail: %d", ferror(fin));
+  }
+
+  size_t lineSize = 0;
+  char *line = (char *)malloc(32 * 1000 * 1000);  // TODO: 未来块升级了，需要调整大小
+  size_t currSize = 0;  // 已经读取的文件大小
+
+  while (-1 != getline(&line, &lineSize, fin)) {
+    assert(lineSize > 80);
+    string lineStr = string(line);
+    lineStr.resize(lineStr.length() - 1);  // 移除最后一个 '\n' 字符
+
+    currSize += lineStr.length();
+    vector<string> arr = split(lineStr, '\t', 2);
+
     // line: height, hex
     const int32_t blkHeight  = atoi(arr[0].c_str());
     blkCache[blkHeight] = new RawBlock(blkHeight, arr[1].c_str());
-    if (input.tellg() > lastOffset + maxReadSize) {
-      lastOffset = input.tellg();
+
+    if (currSize > 500 * 1024 * 1024 /* max read */) {
+      break;
     }
   }
+  lastOffset = ftell(fin);
+  fclose(fin);
+  free(line);
 }
 
 // 从文件读取raw block
@@ -1094,6 +1113,7 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
 }
 
 void PreParser::run() {
+
   // 解析
   while (running_) {
     if (curHeight_ > stopHeight_) {

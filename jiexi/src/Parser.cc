@@ -1904,6 +1904,8 @@ bool Parser::tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId,
                                     txLog2->id_ - 200*10000);
     const size_t delRowNum = dbExplorer.update(delSql);
     LOG_INFO("delete expired txlogs2 items: %llu", delRowNum);
+
+    // TODO: 清理表: table.raw_txs_xxxx, table.0_raw_blocks
   }
 
   return true;

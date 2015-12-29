@@ -54,6 +54,8 @@
 #include <condition_variable>
 #include <functional>
 
+#include <boost/filesystem.hpp>
+
 using std::string;
 using std::vector;
 using std::deque;
@@ -166,9 +168,9 @@ inline void BitsToDifficulty(uint32 bits, uint64 &difficulty) {
 }
 
 void BitsToTarget(uint32 bits, uint256 & target);
-uint64 TargetToBdiff(uint256 &target);
+uint64 TargetToBdiff(const uint256 &target);
 uint64 TargetToBdiff(const string &str);
-uint64 TargetToPdiff(uint256 &target);
+uint64 TargetToPdiff(const uint256 &target);
 uint64 TargetToPdiff(const string &str);
 // only support perfect diff, like 2^i, 3*(2^i), 5*(2^i)
 uint32 DiffToBits(uint64 diff);
@@ -460,6 +462,8 @@ throw Exception(type, (AT), Strings::Format(fmt, ##args))
 #define THROW_EXCEPTION_DB(what) throw Exception(EIO, (AT), (what))
 #define THROW_EXCEPTION_DBEX(fmt, args...) \
 throw Exception(EIO, (AT), Strings::Format(fmt, ##args))
+
+bool tryCreateDirectory(const boost::filesystem::path& p);
 
 /**
  * Config

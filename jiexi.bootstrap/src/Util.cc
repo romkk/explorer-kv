@@ -25,19 +25,30 @@
 #include <sstream>
 #include <vector>
 
-static std::vector<std::string> &split(const std::string &s, char delim,
-                                       std::vector<std::string> &elems) {
+static std::vector<std::string> &split(const std::string &s, const char delim,
+                                       std::vector<std::string> &elems,
+                                       const int32_t limit) {
   std::stringstream ss(s);
   std::string item;
   while (std::getline(ss, item, delim)) {
     elems.push_back(item);
+    if (limit != -1 && elems.size() == limit) {
+      break;
+    }
   }
   return elems;
 }
 
-std::vector<std::string> split(const std::string &s, char delim) {
+std::vector<std::string> split(const std::string &s, const char delim) {
   std::vector<std::string> elems;
-  split(s, delim, elems);
+  split(s, delim, elems, -1/* unlimit */);
+  return elems;
+}
+
+std::vector<std::string> split(const std::string &s, const char delim,
+                               const int32_t limit) {
+  std::vector<std::string> elems;
+  split(s, delim, elems, limit);
   return elems;
 }
 
@@ -50,102 +61,48 @@ size_t getNumberOfLines(const string &file) {
   return linesCount;
 }
 
-int32_t HexToDecLast2Bytes(const string &hex) {
-  if (hex.length() < 2) {
-    return 0;
-  }
-  const string h = hex.substr(hex.length() - 2, 2);
-  return (int32_t)HexDigit(h[0]) * 16 + (int32_t)HexDigit(h[1]);
+string EncodeHexTx(const CTransaction& tx) {
+  CDataStream ssTx(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+  ssTx << tx;
+  return HexStr(ssTx.begin(), ssTx.end());
 }
 
-int32_t AddressTableIndex(const string &address) {
-  CTxDestination dest;
-  CBitcoinAddress addr(address);
-  string h;
-  if (!addr.IsValid()) {
-    THROW_EXCEPTION_DBEX("invalid address: %s", address.c_str());
-  }
-  dest = addr.Get();
-
-  if (addr.IsScript()) {
-    h = boost::get<CScriptID>(dest).GetHex();
-  } else {
-    h = boost::get<CKeyID>(dest).GetHex();
-  }
-
-  // 输出是反序的
-  // 例如：1Dhx3kGVkLaVFDYacZARheNzAWhYPTxHLq
-  // 应该是：8b60195db4692837d7f61b7be8aa11ecdfaecdcf
-  // 实际string h是：cfcdaedfec11aae87b1bf6d7372869b45d19608b
-  // 所以取头部两个字符
-  return HexToDecLast2Bytes(h.substr(0, 1) + h.substr(1, 1));
+string EncodeHexBlock(const CBlock &block) {
+  CDataStream ssBlock(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+  ssBlock << block;
+  return HexStr(ssBlock.begin(), ssBlock.end());
 }
 
-// 获取地址的ID映射关系
-void GetAddressIds(MySQLConnection &db, const set<string> &allAddresss,
-                   map<string, int64_t> &addrMap) {
-  static std::unordered_map<string, int64_t> addrMapCache;
-  const string now = date("%F %T");
-  const bool isUseCache = Config::GConfig.getBool("cache.address2ids", false);
-  string sql;
+bool DecodeHexTx(CTransaction& tx, const std::string& strHexTx)
+{
+  if (!IsHex(strHexTx))
+    return false;
 
-  for (auto &a : allAddresss) {
-    if (addrMap.find(a) != addrMap.end()) {
-      continue;  // already in map
-    }
+  vector<unsigned char> txData(ParseHex(strHexTx));
+  CDataStream ssData(txData, SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+  try {
+    ssData >> tx;
+  }
+  catch (const std::exception &) {
+    return false;
+  }
 
-    // check if in cache
-    if (isUseCache && addrMapCache.find(a) != addrMapCache.end()) {
-      addrMap.insert(std::make_pair(a, addrMapCache[a]));
-      continue;  // already in cache
-    }
-
-    MySQLResult res;
-    char **row = nullptr;
-    const int64_t tableIdx = AddressTableIndex(a) % 64;
-    const string tableName = Strings::Format("addresses_%04d", tableIdx);
-    const string sqlSelect = Strings::Format("SELECT `id` FROM `%s` WHERE `address`='%s' ",
-                                             tableName.c_str(), a.c_str());
-    db.query(sqlSelect, res);
-    if (res.numRows() == 0) {
-      // 地址不存在，创建一条记录
-      // address ID: 单个表由区间，区间步进值为10亿，内部通过Mysql完成自增
-      // SQL：里面需要弄一个临时表，否则报错：
-      // You can't specify target table 'addresses_xxxx' for update in FROM clause
-      sql = Strings::Format("INSERT INTO `%s` (`id`, `address`, `tx_count`,"
-                            " `total_received`, `total_sent`, `created_at`, `updated_at`)"
-                            " VALUES("
-                            "  (SELECT * FROM (SELECT IFNULL(MAX(`id`), %lld) + 1 FROM `%s`) AS t1), "
-                            " '%s', 0, 0, 0, '%s', '%s')",
-                            tableName.c_str(), tableIdx * BILLION, tableName.c_str(),
-                            a.c_str(), now.c_str(), now.c_str());
-      db.updateOrThrowEx(sql, 1);
-      db.query(sqlSelect, res);
-    }
-
-    assert(res.numRows() == 1);
-    row = res.nextRow();
-
-    addrMap.insert(std::make_pair(a, atoi64(row[0])));
-    if (isUseCache) {
-      addrMapCache.insert(std::make_pair(a, atoi64(row[0])));
-    }
-  } /* /for */
+  return true;
 }
 
-int64_t txHash2Id(MySQLConnection *db, const uint256 &txHash) {
-  MySQLResult res;
-  char **row;
-  string sql;
+bool DecodeHexBlk(CBlock& block, const std::string& strHexBlk)
+{
+  if (!IsHex(strHexBlk))
+    return false;
 
-  const string hashStr = txHash.ToString();
-  sql = Strings::Format("SELECT `id` FROM `raw_txs_%04d` WHERE `tx_hash`='%s'",
-                        HexToDecLast2Bytes(hashStr) % 64, hashStr.c_str());
-  db->query(sql, res);
-  if (res.numRows() != 1) {
-    THROW_EXCEPTION_DBEX("can't find rawtx: %s", hashStr.c_str());
+  std::vector<unsigned char> blockData(ParseHex(strHexBlk));
+  CDataStream ssBlock(blockData, SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
+  try {
+    ssBlock >> block;
   }
-  row = res.nextRow();
+  catch (const std::exception &) {
+    return false;
+  }
 
-  return atoi64(row[0]);
+  return true;
 }

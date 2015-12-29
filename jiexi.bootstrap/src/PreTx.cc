@@ -36,12 +36,6 @@ PreTx::PreTx(): f_(nullptr) {
     THROW_EXCEPTION_DBEX("open file failure: %s", file.c_str());
   }
 
-  // address 分表为64张
-  txIds_.resize(64);
-  for (int i = 0; i < 64; i++) {
-    txIds_[i] = (int64_t)i * BILLION;
-  }
-
   running_ = true;
   height_ = 0;
   runningProduceThreads_ = 0;
@@ -106,20 +100,13 @@ void PreTx::threadConsumeAddr() {
       continue;
     }
 
-    for (auto &tx : buf) {
+    for (const auto &tx : buf) {
       const string txhash = tx.ToString();
-      string line;
-
       //
       // 理论上不会出现重复txhash。（但正式网确实存在两对tx的hash一样）
       // 即使出现一样的，也无关紧要，因为 pre_parser TxHandler采用upper_bound()方法查找ID
       //
-
-      const int32_t tableIdx = HexToDecLast2Bytes(txhash) % 64;
-      txIds_[tableIdx]++;
-      line = Strings::Format("%s,%lld", txhash.c_str(), txIds_[tableIdx]);
-
-      fprintf(f_, "%s\n", line.c_str());
+      fprintf(f_, "%s\n", txhash.c_str());
       cnt++;
 
       if (cnt % 10000 == 0) {
@@ -141,8 +128,6 @@ void PreTx::threadProcessBlock(const int32_t idx) {
   while (running_) {
     int32_t curHeight = 0;
     string blkRawHex;
-    int32_t chainId;
-    int64_t blockId;
 
     while (1) {
       size_t s;
@@ -168,7 +153,7 @@ void PreTx::threadProcessBlock(const int32_t idx) {
       }
 
       height_++;
-      getRawBlockFromDisk(curHeight, &blkRawHex, &chainId, &blockId);
+      getRawBlockFromDisk(curHeight, &blkRawHex);
     }
 
     // 解码Raw Hex
@@ -180,14 +165,13 @@ void PreTx::threadProcessBlock(const int32_t idx) {
       ssBlock >> blk;
     }
     catch (std::exception &e) {
-      THROW_EXCEPTION_DBEX("Block decode failed, height: %d, blockId: %lld",
-                           curHeight, blockId);
+      THROW_EXCEPTION_DBEX("Block decode failed, height: %d", curHeight);
     }
 
     // 遍历所有交易，提取涉及到的所有地址
     vector<uint256> buf;
     buf.reserve(blk.vtx.size());
-    for (auto &tx : blk.vtx) {
+    for (const auto &tx : blk.vtx) {
       //
       // 硬编码特殊交易处理
       //

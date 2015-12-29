@@ -1,0 +1,20 @@
+//
+// explorer schema for flat buffers (test)
+//
+// @copyright bitmain.com
+// @author zhibiao.pan@bitmain.com
+// @since 2015-11
+//
+//
+namespace fbe;  // flatbuffers explorer
+
+
+// for test
+table FooBar {
+  id: int;
+  name: string;
+}
+
+table FooBar2 {
+  int_arr: [int];
+}

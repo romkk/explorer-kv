@@ -40,6 +40,7 @@
 #include <regex>
 
 #include <boost/thread.hpp>
+#include <boost/filesystem.hpp>
 
 #ifdef __MACH__
 #include <mach/clock.h>
@@ -250,7 +251,7 @@ bool GetLocalPrimaryMacAddress(string &primaryMac, const uint32 primaryIp) {
 
 
 
-uint64 TargetToBdiff(uint256 &target) {
+uint64 TargetToBdiff(const uint256 &target) {
   CBigNum m, t;
   m.SetHex("0x00000000FFFF0000000000000000000000000000000000000000000000000000");
   t.setuint256(target);
@@ -264,7 +265,7 @@ uint64 TargetToBdiff(const string &str) {
   return strtoull((m / t).ToString().c_str(), NULL, 10);
 }
 
-uint64 TargetToPdiff(uint256 &target) {
+uint64 TargetToPdiff(const uint256 &target) {
   CBigNum m, t;
   m.SetHex("0x00000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
   t.setuint256(target);
@@ -1159,6 +1160,23 @@ void Exception::logInfo() {
            TypeToString(_type), _reason.c_str(), _stackTrace.c_str());
 }
 
+
+/**
+ * Ignores exceptions thrown by Boost's create_directory if the requested directory exists.
+ * Specifically handles case where path p exists, but it wasn't possible for the user to
+ * write to the parent directory.
+ */
+bool tryCreateDirectory(const boost::filesystem::path& p) {
+  try {
+    return boost::filesystem::create_directory(p);
+  } catch (boost::filesystem::filesystem_error) {
+    if (!boost::filesystem::exists(p) || !boost::filesystem::is_directory(p))
+      throw;
+  }
+
+  // create_directory didn't create the directory, it had to have existed already
+  return false;
+}
 
 
 Config Config::GConfig;

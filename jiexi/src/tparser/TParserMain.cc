@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include <boost/filesystem.hpp>
+#include <boost/interprocess/sync/file_lock.hpp>
 
 #include "../bitcoin/chainparams.h"
 
@@ -71,7 +72,14 @@ int main(int argc, char **argv) {
   }
 
   // write pid to file
-  writePid2FileOrExit("tparser.pid");
+  const string pidFile = "tparser.pid";
+  writePid2FileOrExit(pidFile.c_str());
+  // 防止程序开启两次
+  boost::interprocess::file_lock pidFileLock(pidFile.c_str());
+  if (pidFileLock.try_lock() == false) {
+    LOG_FATAL("lock pid file fail");
+    return 1;
+  }
 
   fdLog = fopen(optLog, "a");
   if (!fdLog) {
@@ -88,6 +96,7 @@ int main(int argc, char **argv) {
   }
   Config::GConfig.parseConfig(optConf);
 
+
   // check testnet
   if (Config::GConfig.getBool("testnet", false)) {
     SelectParams(CChainParams::TESTNET);
@@ -103,26 +112,28 @@ int main(int argc, char **argv) {
     Log::SetLevel((LogLevel)Config::GConfig.getInt("log.level", LOG_LEVEL_INFO));
   }
 
-  // 打印bitcoin network防止配置错误。N秒钟的倒计时显示
-  for (int i = 4; i >= 0; i--) {
-    string s = Strings::Format("\rbitcoin network: %s, %02d...",
-                               Config::GConfig.getBool("testnet", false) ? "testnet3" : "main",
-                               i);
-    fprintf(stdout, "%s", s.c_str());
-    fflush(stdout);
-    sleep(1);
-  }
+//  // 打印bitcoin network防止配置错误。N秒钟的倒计时显示
+//  for (int i = 4; i >= 0; i--) {
+//    string s = Strings::Format("\rbitcoin network: %s, %02d...",
+//                               Config::GConfig.getBool("testnet", false) ? "testnet3" : "main",
+//                               i);
+//    fprintf(stdout, "%s", s.c_str());
+//    fflush(stdout);
+//    sleep(1);
+//  }
 
   signal(SIGTERM, handler);
   signal(SIGINT,  handler);
-
+LOG_DEBUG("%s: %d", __FILE__, __LINE__);
   try {
+LOG_DEBUG("%s: %d", __FILE__, __LINE__);
     gParser = new Parser();
-
+LOG_DEBUG("%s: %d", __FILE__, __LINE__);
     if (!gParser->init()) {
       LOG_FATAL("Parser init failed");
       exit(1);
     }
+LOG_DEBUG("%s: %d", __FILE__, __LINE__);
 
     gParser->run();
 

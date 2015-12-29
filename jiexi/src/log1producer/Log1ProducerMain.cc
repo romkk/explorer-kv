@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include <boost/filesystem.hpp>
+#include <boost/interprocess/sync/file_lock.hpp>
 
 #include "Common.h"
 #include "Log1Producer.h"
@@ -68,7 +69,15 @@ int main(int argc, char **argv) {
   }
 
   // write pid to file
-  writePid2FileOrExit("log1producer.pid");
+  const string pidFile = "log1producer.pid";
+  writePid2FileOrExit(pidFile.c_str());
+  // 防止程序开启两次
+  boost::interprocess::file_lock pidFileLock(pidFile.c_str());
+  if (pidFileLock.try_lock() == false) {
+    LOG_FATAL("lock pid file fail");
+    return 1;
+  }
+
 
   fdLog = fopen(optLog, "a");
   if (!fdLog) {

@@ -1,0 +1,402 @@
+diff -uNr bitcoin-0.11.2/src/clientversion.cpp bitcoin-0.11.2-bm/src/clientversion.cpp
+--- bitcoin-0.11.2/src/clientversion.cpp	2015-11-10 21:46:18.000000000 +0800
++++ bitcoin-0.11.2-bm/src/clientversion.cpp	2015-12-23 17:40:57.000000000 +0800
+@@ -108,6 +108,6 @@
+             ss << "; " << *it;
+         ss << ")";
+     }
+-    ss << "/";
++    ss << "/btc.com/";
+     return ss.str();
+ }
+diff -uNr bitcoin-0.11.2/src/init.cpp bitcoin-0.11.2-bm/src/init.cpp
+--- bitcoin-0.11.2/src/init.cpp	2015-11-10 21:46:18.000000000 +0800
++++ bitcoin-0.11.2-bm/src/init.cpp	2015-12-19 15:58:41.000000000 +0800
+@@ -423,6 +423,7 @@
+     strUsage += HelpMessageOpt("-rpcsslcertificatechainfile=<file.cert>", strprintf(_("Server certificate file (default: %s)"), "server.cert"));
+     strUsage += HelpMessageOpt("-rpcsslprivatekeyfile=<file.pem>", strprintf(_("Server private key (default: %s)"), "server.pem"));
+     strUsage += HelpMessageOpt("-rpcsslciphers=<ciphers>", strprintf(_("Acceptable ciphers (default: %s)"), "TLSv1.2+HIGH:TLSv1+HIGH:!SSLv2:!aNULL:!eNULL:!3DES:@STRENGTH"));
++    strUsage += HelpMessageOpt("-customlogdir=<dir>", _("custom log dir"));
+ 
+     if (mode == HMM_BITCOIN_QT)
+     {
+@@ -1449,5 +1450,22 @@
+     }
+ #endif
+ 
++    // ********************************************************* Step: init custom log
++    std::string customLogDir = GetArg("-customlogdir", "");
++    if (customLogDir.length()) {
++        CBlock block;
++        ReadBlockFromDisk(block, chainActive.Tip());
++        CDataStream ssBlock(SER_NETWORK, PROTOCOL_VERSION);
++        ssBlock << block;
++        std::string blkHex = HexStr(ssBlock.begin(), ssBlock.end());
++        bool res = customLog.init(customLogDir,
++                                  chainActive.Height(),
++                                  chainActive.Tip()->GetBlockHash().ToString(),
++                                  blkHex);
++        if (!res) {
++            // TODO: throw exception
++        }
++    }
++
+     return !fRequestShutdown;
+ }
+diff -uNr bitcoin-0.11.2/src/main.cpp bitcoin-0.11.2-bm/src/main.cpp
+--- bitcoin-0.11.2/src/main.cpp	2015-11-10 21:46:18.000000000 +0800
++++ bitcoin-0.11.2-bm/src/main.cpp	2015-12-25 18:10:10.000000000 +0800
+@@ -12,6 +12,7 @@
+ #include "checkpoints.h"
+ #include "checkqueue.h"
+ #include "consensus/validation.h"
++#include "core_io.h"
+ #include "init.h"
+ #include "merkleblock.h"
+ #include "net.h"
+@@ -67,6 +68,7 @@
+ CFeeRate minRelayTxFee = CFeeRate(5000);
+ 
+ CTxMemPool mempool(::minRelayTxFee);
++CustomLog customLog;
+ 
+ struct COrphanTx {
+     CTransaction tx;
+@@ -932,7 +934,7 @@
+ 
+ 
+ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree,
+-                        bool* pfMissingInputs, bool fRejectAbsurdFee)
++                        bool* pfMissingInputs, bool fRejectAbsurdFee, bool fOutputLog)
+ {
+     AssertLockHeld(cs_main);
+     if (pfMissingInputs)
+@@ -1053,6 +1055,13 @@
+             return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient priority");
+         }
+ 
++        // tx size greater than 2000, must have enough fees
++        if (nSize > 2000 && nFees < ::minRelayTxFee.GetFee(nSize)) {
++            return state.DoS(0, error("AcceptToMemoryPool: not enough fees %s, size: %u, %d < %d",
++                                      hash.ToString(), nSize, nFees, ::minRelayTxFee.GetFee(nSize)),
++                             REJECT_INSUFFICIENTFEE, "insufficient fee(2000)");
++        }
++
+         // Continuously rate-limit free (really, very-low-fee) transactions
+         // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
+         // be annoying or make others' transactions take longer to confirm.
+@@ -1109,6 +1118,11 @@
+ 
+     SyncWithWallets(tx, NULL);
+ 
++    // custom log tx
++    if (fOutputLog) {
++        customLog.appendf(2, "%s|%s", hash.ToString().c_str(), EncodeHexTx(tx).c_str());
++    }
++
+     return true;
+ }
+ 
+@@ -2135,6 +2149,21 @@
+       DateTimeStrFormat("%Y-%m-%d %H:%M:%S", chainActive.Tip()->GetBlockTime()),
+       Checkpoints::GuessVerificationProgress(chainParams.Checkpoints(), chainActive.Tip()), pcoinsTip->DynamicMemoryUsage() * (1.0 / (1<<20)), pcoinsTip->GetCacheSize());
+ 
++    // write custom log
++    if (customLog.IsInitialized()) {
++        CBlock block;
++        ReadBlockFromDisk(block, chainActive.Tip());
++
++        CDataStream ssBlock(SER_NETWORK, PROTOCOL_VERSION);
++        ssBlock << block;
++        std::string blkHex = HexStr(ssBlock.begin(), ssBlock.end());
++
++        customLog.appendf(1/*block*/, "%d|%s|%s",
++                          chainActive.Height(),
++                          chainActive.Tip()->GetBlockHash().ToString().c_str(),
++                          blkHex.c_str());
++    }
++
+     cvBlockChange.notify_all();
+ 
+     // Check the version of the last 100 blocks to see if we need to upgrade:
+@@ -4417,7 +4446,7 @@
+         if (AlreadyHave(inv))
+             return true;
+ 
+-        if (AcceptToMemoryPool(mempool, state, tx, true, &fMissingInputs))
++        if (AcceptToMemoryPool(mempool, state, tx, true, &fMissingInputs, false, true))
+         {
+             mempool.check(pcoinsTip);
+             RelayTransaction(tx);
+@@ -4451,7 +4480,7 @@
+ 
+                     if (setMisbehaving.count(fromPeer))
+                         continue;
+-                    if (AcceptToMemoryPool(mempool, stateDummy, orphanTx, true, &fMissingInputs2))
++                    if (AcceptToMemoryPool(mempool, stateDummy, orphanTx, true, &fMissingInputs2, false, true))
+                     {
+                         LogPrint("mempool", "   accepted orphan tx %s\n", orphanHash.ToString());
+                         RelayTransaction(orphanTx);
+diff -uNr bitcoin-0.11.2/src/main.h bitcoin-0.11.2-bm/src/main.h
+--- bitcoin-0.11.2/src/main.h	2015-11-10 21:46:18.000000000 +0800
++++ bitcoin-0.11.2-bm/src/main.h	2015-12-19 16:04:33.000000000 +0800
+@@ -25,6 +25,7 @@
+ #include "tinyformat.h"
+ #include "txmempool.h"
+ #include "uint256.h"
++#include "util.h"
+ 
+ #include <algorithm>
+ #include <exception>
+@@ -99,6 +100,7 @@
+ extern CScript COINBASE_FLAGS;
+ extern CCriticalSection cs_main;
+ extern CTxMemPool mempool;
++extern CustomLog customLog;
+ typedef boost::unordered_map<uint256, CBlockIndex*, BlockHasher> BlockMap;
+ extern BlockMap mapBlockIndex;
+ extern uint64_t nLastBlockTx;
+@@ -235,7 +237,7 @@
+ 
+ /** (try to) add transaction to memory pool **/
+ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree,
+-                        bool* pfMissingInputs, bool fRejectAbsurdFee=false);
++                        bool* pfMissingInputs, bool fRejectAbsurdFee=false, bool fOutputLog=false);
+ 
+ 
+ struct CNodeStateStats {
+diff -uNr bitcoin-0.11.2/src/rpcrawtransaction.cpp bitcoin-0.11.2-bm/src/rpcrawtransaction.cpp
+--- bitcoin-0.11.2/src/rpcrawtransaction.cpp	2015-11-10 21:46:18.000000000 +0800
++++ bitcoin-0.11.2-bm/src/rpcrawtransaction.cpp	2015-12-19 15:39:23.000000000 +0800
+@@ -789,7 +789,7 @@
+         // push to local node and sync with wallets
+         CValidationState state;
+         bool fMissingInputs;
+-        if (!AcceptToMemoryPool(mempool, state, tx, false, &fMissingInputs, !fOverrideFees)) {
++        if (!AcceptToMemoryPool(mempool, state, tx, false, &fMissingInputs, !fOverrideFees, true)) {
+             if (state.IsInvalid()) {
+                 throw JSONRPCError(RPC_TRANSACTION_REJECTED, strprintf("%i: %s", state.GetRejectCode(), state.GetRejectReason()));
+             } else {
+diff -uNr bitcoin-0.11.2/src/util.cpp bitcoin-0.11.2-bm/src/util.cpp
+--- bitcoin-0.11.2/src/util.cpp	2015-11-10 21:46:18.000000000 +0800
++++ bitcoin-0.11.2-bm/src/util.cpp	2015-12-19 15:48:41.000000000 +0800
+@@ -37,6 +37,7 @@
+ 
+ #include <algorithm>
+ #include <fcntl.h>
++#include <sys/file.h>
+ #include <sys/resource.h>
+ #include <sys/stat.h>
+ 
+@@ -763,3 +764,163 @@
+ #endif // PRIO_THREAD
+ #endif // WIN32
+ }
++
++CustomLog::CustomLog(): isInitialized_(false), fd_(-1), f_(NULL), fileIndex_(0)
++{
++}
++
++CustomLog::~CustomLog() {
++	  if (fd_ != -1) {
++		    flock(fd_, LOCK_UN);
++		    close(fd_);
++		    fd_ = -1;
++	  }
++
++    if (f_ != NULL) {
++        fclose(f_);
++        f_ = NULL;
++    }
++}
++
++bool CustomLog::init(const std::string dir, const int blockHeight,
++                     const std::string &blockHash, const std::string &blockHex) {
++    namespace fs = boost::filesystem;
++
++    // create dir
++    dir_ = dir;
++    if (dir_[dir_.length() - 1] == '/') {
++        dir_.resize(dir_.length() - 1);  // remove last '/'
++    }
++    fs::path p(dir_);
++    TryCreateDirectory(p);
++    if (!fs::exists(p) || !fs::is_directory(p)) {
++        return false;
++    }
++
++    // create notify file
++    notifyFile_ = dir_ + "/NOTIFY_LOG1PRODUCER";
++    FILE *f = fopen(notifyFile_.c_str(), "w");
++    if (f == NULL) {
++        return false;
++    }
++    fclose(f);
++
++    // lock file
++    const string lockFile = strprintf("%s/LOCK", dir_.c_str());
++    fd_ = open(lockFile.c_str(), O_RDWR|O_CREAT|O_TRUNC, 0644);
++    if (flock(fd_, LOCK_EX) != 0) {
++        LogPrintf("can't lock file: %s", lockFile.c_str());
++        return false;
++    }
++
++    // clean all old log files
++    const string logDir = strprintf("%s/files", dir_.c_str());
++    fs::path filesPath(logDir);
++    TryCreateDirectory(filesPath);
++    if (!fs::exists(filesPath) || !fs::is_directory(filesPath)) {
++        return false;
++    }
++    for (fs::directory_iterator end, it(filesPath); it != end; ++it) {
++        LogPrintf("remove old log file: %s", it->path().c_str());
++        boost::uintmax_t n = fs::remove_all(it->path());
++        if (n != 1) {
++            LogPrintf("delete file return file number(%u) is NOT 1, file: %s",
++                      n, it->path().c_str());
++            return false;
++        }
++    }
++
++    // write begin infomation
++    {
++        const string beginFile = strprintf("%s/BEGIN", dir_.c_str());
++        FILE *fBeginFile = fopen(beginFile.c_str(), "w");
++        if (fBeginFile == NULL) {
++            LogPrintf("open file failure: %s", beginFile.c_str());
++            return false;
++        }
++        const string info = strprintf("%u\n", time(NULL));
++        if (fwrite(info.c_str(), 1, info.size(), fBeginFile) != info.size()) {
++            LogPrintf("fwrite file failure: %s", beginFile.c_str());
++            return false;
++        }
++        fclose(fBeginFile);
++    }
++
++    // init finish
++    isInitialized_ = true;
++
++    // write begin block
++    trySwitchFile();
++    appendf(1/*block*/, "%d|%s|%s", blockHeight, blockHash.c_str(), blockHex.c_str());
++
++    return true;
++}
++
++bool CustomLog::IsInitialized() {
++    return isInitialized_;
++}
++
++void CustomLog::append(const int logType, const char *str) {
++    boost::mutex::scoped_lock sl(lock_);
++    trySwitchFile();
++
++    const string date = DateTimeStrFormat("%Y-%m-%d %H:%M:%S", GetTime());
++    const string line = strprintf("%s,%d,%s\n", date.c_str(), logType, str);
++
++    fwrite(line.c_str(), line.size(), 1, f_);
++    fflush(f_);
++
++    // IN_CLOSE_NOWRITE
++    FILE *f = fopen(notifyFile_.c_str(), "r");
++    assert(f != NULL);
++    fclose(f);
++}
++
++void CustomLog::appendf(const int logType, const char *fmt, ...) {
++    if (!isInitialized_) { return; }
++
++    // make string
++    char tmp[1024];
++    string dest;
++    va_list al;
++    va_start(al, fmt);
++    int len = vsnprintf(tmp, 1024, fmt, al);
++    va_end(al);
++    if (len > 1023) {
++        char * destbuff = new char[len+1];
++        va_start(al, fmt);
++        len = vsnprintf(destbuff, len+1, fmt, al);
++        va_end(al);
++        dest.append(destbuff, len);
++        delete destbuff;
++    } else {
++        dest.append(tmp, len);
++    }
++
++    append(logType, dest.c_str());
++}
++
++void CustomLog::trySwitchFile() {
++    // close old FILE ptr if need
++    if (f_ != NULL) {
++        // check file size
++        long size = ftell(f_);
++        if (size < 500 * 1024 * 1024) {
++            return;  // no need to switch file
++        }
++        fclose(f_);
++        f_ = NULL;
++    }
++
++    // create new file
++    const string filePath = strprintf("%s/files/%d.log",
++                                      dir_.c_str(), fileIndex_++);
++    FILE *f = fopen(filePath.c_str(), "a");
++    if (f == NULL) {
++        LogPrintf("open file failure when switch log: %s", filePath.c_str());
++        // TODO: throw exception
++    }
++
++    // switch to new FILE ptr
++    f_ = f;
++}
+diff -uNr bitcoin-0.11.2/src/util.h bitcoin-0.11.2-bm/src/util.h
+--- bitcoin-0.11.2/src/util.h	2015-11-10 21:46:18.000000000 +0800
++++ bitcoin-0.11.2-bm/src/util.h	2015-12-19 15:42:51.000000000 +0800
+@@ -21,12 +21,14 @@
+ #include <exception>
+ #include <map>
+ #include <stdint.h>
++#include <stdio.h>
+ #include <string>
+ #include <vector>
+ 
+ #include <boost/filesystem/path.hpp>
+ #include <boost/signals2/signal.hpp>
+ #include <boost/thread/exceptions.hpp>
++#include <boost/thread.hpp>
+ 
+ /** Signals for translation. */
+ class CTranslationInterface
+@@ -230,4 +232,29 @@
+     }
+ }
+ 
++
++class CustomLog {
++    bool isInitialized_;
++    boost::mutex lock_;
++    std::string dir_;
++    std::string notifyFile_;
++
++    int fd_;   // LOCK file
++    FILE *f_;  // log file handler
++    int fileIndex_;
++
++    void trySwitchFile();
++    void append(const int logType, const char *str);
++
++public:
++    CustomLog();
++    ~CustomLog();
++
++    bool init(const std::string dir, const int blockHeight,
++              const std::string &blockHash, const std::string &blockHex);
++    bool IsInitialized();
++    void appendf(const int logType, const char *fmt, ...);
++
++};
++
+ #endif // BITCOIN_UTIL_H

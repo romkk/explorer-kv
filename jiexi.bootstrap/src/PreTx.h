@@ -22,7 +22,6 @@
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
 
-
 // 预处理交易
 class PreTx {
 private:
@@ -34,7 +33,6 @@ private:
   atomic<int32_t> runningConsumeThreads_;
 
   vector<uint256> txBuf_;
-  vector<int64_t> txIds_;
   FILE *f_;
   mutex lock_;
 

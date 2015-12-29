@@ -1,5 +1,11 @@
 # Explorer - 解析器
 
+## 依赖
+
+* FlatBuffers v1.2.0
+* RapidJSON   v1.0.2
+* RocksDB     版本见 CMakeLists.txt
+
 ## Install Guide
 ### ubuntu 12.04 / 14.04
 
@@ -13,6 +19,18 @@ apt-get install -y cmake build-essential autotools-dev libtool autoconf automake
 
 # pkgs
 apt-get install -y libboost-dev libboost-thread-dev libboost-system-dev libboost-regex-dev libboost-filesystem-dev openssl libssl-dev libmysqlclient-dev libcurl4-openssl-dev libgoogle-perftools-dev
+
+# for rocksdb
+apt-get install -y libgflags-dev libsnappy-dev zlib1g-dev libbz2-dev
+
+# evhtp
+apt-get install libevent-dev
+wget https://github.com/ellzey/libevhtp/archive/1.2.11.tar.gz -O libevhtp-1.2.11.tar.gz
+tar zxvf libevhtp-1.2.11.tar.gz
+cd libevhtp-1.2.11/build
+cmake -DEVHTP_DISABLE_SSL=ON -DEVHTP_DISABLE_REGEX=ON -DEVHTP_BUILD_SHARED=ON ..
+make
+make install
 
 #
 # build

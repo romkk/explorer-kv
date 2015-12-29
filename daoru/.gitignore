@@ -1,6 +1,0 @@
-/vendor/
-/log/*
-!/log/.gitkeep
-
-.env*
-!.env.sample

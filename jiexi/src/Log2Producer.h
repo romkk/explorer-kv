@@ -108,6 +108,7 @@ public:
   uint256 getConflictTx(const CTransaction &tx);
 
   // 从内存交易库中删除一个或多个交易
+  uint256 removeTx();
   void removeTx (const uint256 &hash);
   void removeTxs(const vector<uint256> &txhashs);
 

@@ -31,135 +31,6 @@ CREATE TABLE `raw_txs_%04d` (
 
 loop 0 63 "$tpl_raw_txs"
 
-## address: 0000-0063
-tpl_address='
-DROP TABLE IF EXISTS `addresses_%04d`;
-CREATE TABLE `addresses_%04d` (
-  `id` bigint(20) NOT NULL,
-  `address` varchar(35) NOT NULL,
-  `tx_count` int(11) NOT NULL DEFAULT '0',
-  `total_received` bigint(20) NOT NULL DEFAULT '0',
-  `total_sent` bigint(20) NOT NULL DEFAULT '0',
-  `unconfirmed_received` bigint(20) NOT NULL DEFAULT '0',
-  `unconfirmed_sent` bigint(20) NOT NULL DEFAULT '0',
-  `unconfirmed_tx_count` bigint(20) NOT NULL DEFAULT '0',
-  `begin_tx_id` bigint(20) NOT NULL DEFAULT '0',
-  `begin_tx_ymd` int(11) NOT NULL DEFAULT '0',
-  `end_tx_id` bigint(20) NOT NULL DEFAULT '0',
-  `end_tx_ymd` int(11) NOT NULL DEFAULT '0',
-  `last_confirmed_tx_id` bigint(20) NOT NULL DEFAULT '0',
-  `last_confirmed_tx_ymd` int(11) NOT NULL DEFAULT '0',
-  `created_at` datetime NOT NULL,
-  `updated_at` datetime NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `address` (`address`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
-
-loop 0 63 "$tpl_address"
-
-## block_txs: 0000-0099
-tpl_block_txs='
-DROP TABLE IF EXISTS `block_txs_%04d`;
-CREATE TABLE `block_txs_%04d` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `block_id` bigint(20) NOT NULL,
-  `position` int(11) NOT NULL,
-  `tx_id` bigint(20) NOT NULL,
-  `created_at` datetime NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `block_id_position` (`block_id`,`position`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
-
-loop 0 99 "$tpl_block_txs"
-
-## txs: 0000-0063
-tpl_txs='
-DROP TABLE IF EXISTS `txs_%04d`;
-CREATE TABLE `txs_%04d` (
-  `tx_id` bigint(20) NOT NULL,
-  `hash` char(64) NOT NULL,
-  `height` bigint(20) NOT NULL,
-  `ymd` int(11) NOT NULL,
-  `is_coinbase` tinyint(1) NOT NULL,
-  `version` int(11) NOT NULL,
-  `lock_time` bigint(20) NOT NULL,
-  `size` int(11) NOT NULL,
-  `fee` bigint(20) NOT NULL,
-  `total_in_value` bigint(20) NOT NULL,
-  `total_out_value` bigint(20) NOT NULL,
-  `inputs_count` int(11) NOT NULL,
-  `outputs_count` int(11) NOT NULL,
-  `created_at` datetime NOT NULL,
-  PRIMARY KEY (`tx_id`),
-  UNIQUE KEY `hash` (`hash`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
-
-loop 0 63 "$tpl_txs"
-
-## tx_inputs: 0000-0099
-tpl_tx_inputs='
-DROP TABLE IF EXISTS `tx_inputs_%04d`;
-CREATE TABLE `tx_inputs_%04d` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `tx_id` bigint(20) NOT NULL,
-  `position` int(11) NOT NULL,
-  `input_script_asm` text NOT NULL,
-  `input_script_hex` text NOT NULL,
-  `sequence` bigint(20) NOT NULL,
-  `prev_tx_id` bigint(20) NOT NULL,
-  `prev_position` int(11) NOT NULL,
-  `prev_value` bigint(20) NOT NULL,
-  `prev_address` varchar(1024) NOT NULL,
-  `prev_address_ids` varchar(512) NOT NULL,
-  `created_at` datetime NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `tx_id_position` (`tx_id`,`position`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
-
-loop 0 99 "$tpl_tx_inputs"
-
-## tx_outputs: 0000-0099
-tpl_tx_outputs='
-DROP TABLE IF EXISTS `tx_outputs_%04d`;
-CREATE TABLE `tx_outputs_%04d` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `tx_id` bigint(20) NOT NULL,
-  `position` int(11) NOT NULL,
-  `address` varchar(1024) NOT NULL,
-  `address_ids` varchar(512) NOT NULL,
-  `value` bigint(20) NOT NULL,
-  `output_script_asm` longtext NOT NULL,
-  `output_script_hex` longtext NOT NULL,
-  `output_script_type` enum("NonStandard","PubKey","PubKeyHash","ScriptHash","MultiSig","NullData") NOT NULL,
-  `spent_tx_id` bigint(20) NOT NULL,
-  `spent_position` int(11) NOT NULL,
-  `created_at` datetime NOT NULL,
-  `updated_at` datetime NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `tx_id_position` (`tx_id`,`position`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
-
-loop 0 99 "$tpl_tx_outputs"
-
-## unspent_outputs: 0000-0009
-tpl_unspent_outputs='
-DROP TABLE IF EXISTS `address_unspent_outputs_%04d`;
-CREATE TABLE `address_unspent_outputs_%04d` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `address_id` bigint(20) NOT NULL,
-  `tx_id` bigint(20) NOT NULL,
-  `position` smallint(6) NOT NULL,
-  `position2` smallint(6) NOT NULL DEFAULT '0',
-  `block_height` bigint(20) NOT NULL,
-  `value` bigint(20) NOT NULL,
-  `output_script_type` enum("NonStandard","PubKey","PubKeyHash","ScriptHash","MultiSig","NullData") NOT NULL,
-  `created_at` datetime NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `address_id_tx_id_position_position2` (`address_id`,`tx_id`,`position`,`position2`),
-  KEY `address_id_block_height` (`address_id`,`block_height`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
-
-loop 0 9 "$tpl_unspent_outputs"
 
 # 0_txlogs2
 txlogs2='
@@ -179,34 +50,6 @@ CREATE TABLE `0_txlogs2` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 echo "$txlogs2"
-
-# table template
-tpl_address_txs='
-DROP TABLE IF EXISTS `0_tpl_address_txs`;
-CREATE TABLE `0_tpl_address_txs` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `address_id` bigint(20) NOT NULL,
-  `tx_id` bigint(20) NOT NULL,
-  `tx_height` bigint(20) NOT NULL,
-  `total_received` bigint(20) NOT NULL,
-  `balance_diff` bigint(20) NOT NULL,
-  `balance_final` bigint(20) NOT NULL,
-  `idx` bigint(20) NOT NULL,
-  `ymd` int(11) NOT NULL,
-  `prev_ymd` int(11) NOT NULL,
-  `prev_tx_id` bigint(20) NOT NULL,
-  `next_ymd` int(11) NOT NULL,
-  `next_tx_id` bigint(20) NOT NULL,
-  `created_at` datetime NOT NULL,
-  `updated_at` datetime NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `address_id_tx_id` (`address_id`,`tx_id`),
-  UNIQUE KEY `address_id_idx` (`address_id`,`idx`),
-  KEY `address_id_tx_height` (`address_id`,`tx_height`),
-  KEY `address_id_ymd` (`address_id`,`ymd`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
-
-echo "$tpl_address_txs"
 
 # normal tables
 
@@ -240,43 +83,6 @@ CREATE TABLE `0_explorer_meta` (
 
 echo "$explorer_meta"
 
-blocks='
-DROP TABLE IF EXISTS `0_blocks`;
-CREATE TABLE `0_blocks` (
-  `block_id` bigint(20) NOT NULL,
-  `height` bigint(20) NOT NULL,
-  `hash` char(64) NOT NULL,
-  `version` int(11) NOT NULL,
-  `mrkl_root` char(64) NOT NULL,
-  `timestamp` bigint(20) NOT NULL,
-  `curr_max_timestamp` bigint(20) NOT NULL,
-  `bits` bigint(20) NOT NULL,
-  `nonce` bigint(20) NOT NULL,
-  `prev_block_id` bigint(20) NOT NULL,
-  `prev_block_hash` char(64) NOT NULL,
-  `next_block_id` bigint(20) NOT NULL,
-  `next_block_hash` char(64) NOT NULL,
-  `chain_id` int(11) NOT NULL,
-  `size` int(11) NOT NULL,
-  `pool_difficulty` bigint(20) NOT NULL,
-  `difficulty` bigint(20) NOT NULL,
-  `difficulty_double` decimal(32,4) NOT NULL DEFAULT '0.0000',
-  `tx_count` int(11) NOT NULL,
-  `reward_block` bigint(20) NOT NULL,
-  `reward_fees` bigint(20) NOT NULL,
-  `relayed_by` int(11) NOT NULL DEFAULT '0',
-  `bip_vote` varchar(10) NOT NULL DEFAULT '0',
-  `created_at` datetime NOT NULL,
-  PRIMARY KEY (`block_id`),
-  UNIQUE KEY `block_hash` (`hash`),
-  UNIQUE KEY `height_chain_id` (`height`,`chain_id`),
-  KEY `curr_max_timestamp` (`curr_max_timestamp`),
-  KEY `relayed_by` (`relayed_by`),
-  KEY `bip_vote` (`bip_vote`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
-
-echo "$blocks"
-
 memrepo_txs='
 DROP TABLE IF EXISTS `0_memrepo_txs`;
 CREATE TABLE `0_memrepo_txs` (
@@ -288,31 +94,3 @@ CREATE TABLE `0_memrepo_txs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
 
 echo "$memrepo_txs"
-
-unconfirmed_txs='
-DROP TABLE IF EXISTS `0_unconfirmed_txs`;
-CREATE TABLE `0_unconfirmed_txs` (
-  `position` int(11) NOT NULL,
-  `block_id` bigint(20) NOT NULL,
-  `tx_hash` char(64) NOT NULL,
-  `size` int(11) NOT NULL,
-  `created_at` datetime NOT NULL,
-  PRIMARY KEY (`position`),
-  UNIQUE KEY `tx_hash` (`tx_hash`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;'
-
-echo "$unconfirmed_txs"
-
-pool='
-CREATE TABLE `0_pool` (
-  `pool_id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(200) NOT NULL,
-  `key_words` varchar(500) NOT NULL,
-  `coinbase_address` char(35) NOT NULL,
-  `link` varchar(200) NOT NULL,
-  PRIMARY KEY (`pool_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
-'
-
-echo "$pool"
-

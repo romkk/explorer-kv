@@ -30,7 +30,9 @@
 #include "bitcoin/core.h"
 #include "bitcoin/key.h"
 
-#include "SSDB_client.h"
+#include "KVDB.h"
+#include "HttpAPI.h"
+#include "RecognizeBlock.h"
 
 // tparser的异常，整数
 #define EXCEPTION_TPARSER_TX_INVALID_INPUT 100
@@ -68,6 +70,9 @@ inline int32_t tableIdx_BlockTxs(const int64_t blockId) {
 }
 
 
+void _insertOrphanBlockHash(const string &hash, string &value);
+void _removeOrphanBlockHash(const string &hash, string &value);
+
 /////////////////////////////////  RawBlock  ////////////////////////////////////
 class RawBlock {
 public:
@@ -82,39 +87,31 @@ public:
 };
 
 
-////////////////////////////  LastestAddressInfo  ///////////////////////////////
-class LastestAddressInfo {
+////////////////////////////  AddressInfo  ///////////////////////////////
+class AddressInfo {
 public:
-  int64_t addrId_;
-  int32_t beginTxYmd_;
-  int32_t endTxYmd_;
-  int64_t beginTxId_;
-  int64_t endTxId_;
+  int32_t txCount_;
+  int64_t received_;
+  int64_t sent_;
 
-  int64_t totalReceived_;
-  int64_t totalSent_;
-
+  int32_t unconfirmedTxCount_;
   int64_t unconfirmedReceived_;
   int64_t unconfirmedSent_;
-  int64_t unconfirmedTxCount_;
 
-  int32_t lastConfirmedTxYmd_;
-  int64_t lastConfirmedTxId_;
+  int32_t unspentTxCount_;  // 未花费的数量
+  int32_t unspentTxIndex_;  // 当前最大未花费的索引，每次来都加一
 
-  int64_t txCount_;
-  time_t lastUseTime_;
+  int32_t lastConfirmedTxIdx_;
 
-  string addressStr_;
+  int64_t lastUseIdx_;  // 用于清理缓存，和address本身无关
 
-  LastestAddressInfo(int64_t addrId,
-                     int32_t beginTxYmd, int32_t endTxYmd,
-                     int64_t beginTxId, int64_t endTxId,
-                     int64_t unconfirmedReceived, int64_t unconfirmedSent,
-                     int32_t lastConfirmedTxYmd, int64_t lastConfirmedTxId,
-                     int64_t totalReceived, int64_t totalSent,
-                     int64_t txCount, int64_t unconfirmedTxCount,
-                     const char *address);
-  LastestAddressInfo(const LastestAddressInfo &a);
+  AddressInfo(const int64_t lastUseIdx);
+  AddressInfo(const int32_t txCount, const int64_t received, const int64_t sent,
+              const int32_t unconfirmedTxCount, const int64_t unconfirmedReceived, const int64_t unconfirmedSent,
+              const int32_t unspentTxCount, const int32_t unspentTxIndex,
+              const int32_t lastConfirmedTxIdx,
+              const int64_t lastUseIdx);
+  AddressInfo(const AddressInfo &a);
 };
 
 class DBTxOutput {
@@ -161,65 +158,17 @@ public:
   ~TxLog2();
 
   string toString() const;
+  bool isEmpty();
 };
 
-
-///////////////////////////////  CacheManager  /////////////////////////////////
-// 若SSDB宕机，则丢弃数据
-class CacheManager {
-  atomic<bool> running_;
-  atomic<bool> runningThreadConsumer_;
-  atomic<bool> ssdbAlive_;
-
-  ssdb::Client *ssdb_;
-  string  SSDBHost_;
-  int32_t SSDBPort_;
-
-  mutex lock_;
-
-  // 待删除队列，临时
-  set<string> qkvTemp_;
-  set<string> qhashsetTempSet_;  // 辅助去重
-  vector<std::pair<string, string> > qhashsetTemp_;
-  // 待删除队列，正式
-  vector<string> qkv_;
-  vector<std::pair<string, string> > qhashset_;
-
-  // 待触发的URL列表
-  string dirURL_;
-  set<string>    qUrlTemp_;
-  vector<string> qUrl_;
-
-  void threadConsumer();
-
-  void flushURL(vector<string> &buf);
-
-public:
-  CacheManager(const string  SSDBHost, const int32_t SSDBPort, const string dirURL);
-  ~CacheManager();
-
-  // non-thread safe
-  void insertKV(const string &key);
-  void insertHashSet(const string &address, const string &tableName);
-
-  void commit();
-};
 
 ///////////////////////////////  AddressTxNode  /////////////////////////////////
 class AddressTxNode {
 public:
-  int32_t ymd_;  // 初始化、复制时使用 memcpy(), 保持 ymd_ 为第一个字段
-  int32_t txHeight_;
-  int64_t addressId_;
-  int64_t txId_;
-  int64_t totalReceived_;
-  int64_t balanceDiff_;
-  int64_t balanceFinal_;
-  int64_t idx_;
-  int32_t prevYmd_;
-  int32_t nextYmd_;
-  int64_t prevTxId_;
-  int64_t nextTxId_;
+  uint32_t txBlockTime_;  // 初始化、复制时使用 memcpy(), 保持 txBlockTime_ 为第一个字段
+  int32_t  txHeight_;
+  int64_t  balanceDiff_;
+  int32_t  idx_;
 
   AddressTxNode();
   AddressTxNode(const AddressTxNode &node);
@@ -255,18 +204,15 @@ public:
 class Parser {
 private:
   mutex lock_;
-  Condition changed_;
+  Condition newTxlogs_;
 
   atomic<bool> running_;
-  MySQLConnection dbExplorer_;
-
-  CacheManager *cache_;
-  bool cacheEnable_;
 
   int64_t unconfirmedTxsSize_;
   int32_t unconfirmedTxsCount_;
 
-  map<uint256/* tx hash */, map<int64_t/* addrID */, int64_t/* balance diff */> > addressBalanceCache_;
+  // kv
+  KVDB kvdb_;
 
   // 块最大时间戳
   BlockTimestamp blkTs_;
@@ -277,19 +223,33 @@ private:
   // notify
   string notifyFileLog2Producer_;
   Inotify inotify_;
-  thread watchNotifyThread_;
+  thread threadWatchNotify_;
 
   // 通知日志
   NotifyProducer *notifyProducer_;
-
   void threadWatchNotifyFile();
 
-  bool tryFetchTxLog2(class TxLog2 *txLog2, const int64_t lastId);
+  // API Httpd
+  APIServer apiServer_;
+
+  // 处理 txlogs
+  thread threadHandleTxlogs_;
+  void threadHandleTxlogs();
+
+  // 块识别
+  RecognizeBlock recognizeBlock_;
+  thread threadRecognizeBlock_;
+  void threadRecognizeBlock();
+
+  // 生成 txlogs
+  BoundedBuffer<TxLog2> txlogsBuffer_;
+  thread threadProduceTxlogs_;
+  void threadProduceTxlogs();
+
+  bool tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId, MySQLConnection &dbExplorer);
 
   int64_t getLastTxLog2Id();
   void updateLastTxlog2Id(const int64_t newId);
-
-  void checkTableAddressTxs(const uint32_t timestamp);
 
   // block
   void acceptBlock(TxLog2 *txLog2, string &blockHash);
@@ -301,55 +261,41 @@ private:
   void unconfirmTx(class TxLog2 *txLog2);
   void rejectTx   (class TxLog2 *txLog2);
 
-  // remove address cache in ssdb
-  void removeAddressCache(const map<int64_t, int64_t> &addressBalance,
-                          const int32_t ymd);
-  // remove txhash cache
-  void removeTxCache(const uint256 &txHash);
-
-  //
-  void _accpetTx_insertTxInputs(TxLog2 *txLog2, map<int64_t, int64_t> &addressBalance,
-                                int64_t &valueIn);
-  bool hasAccepted(class TxLog2 *txLog2);
+  // flush address info
+  void flushAddressInfo(const map<string, int64_t> &addressBalance);
 
   // 获取tx对应各个地址的余额变更情况
-  map<int64_t, int64_t> *_getTxAddressBalance(const int64_t txID,
-                                              const uint256 &txHash,
-                                              const CTransaction &tx);
-  void _setTxAddressBalance(class TxLog2 *txLog2, const map<int64_t, int64_t> &addressBalanceCache);
-
+  map<string, int64_t> getTxAddressBalance(const CTransaction &tx);
 
   // 操作 tx 的辅助函数
-  void _getAddressTxNode(const int64_t txId,
-                         const LastestAddressInfo *addr, AddressTxNode *node);
-  void _removeAddressTxNode(LastestAddressInfo *addr, AddressTxNode *node);
+  void _getAddressTxNode(const string &address, const uint256 &txhash,
+                         AddressTxNode *node);
+  void _removeAddressTxNode(const string &address, const int32_t idx,
+                            const uint256 &txhash, const int64_t balanceDiff,
+                            AddressInfo *addr);
 
-  void _rejectAddressTxs(class TxLog2 *txLog2, const map<int64_t, int64_t> &addressBalance);
+  void _rejectAddressTxs(class TxLog2 *txLog2, const map<string, int64_t> &addressBalance);
 
   // 确认交易节点 & 反确认
-  void _confirmAddressTxNode  (AddressTxNode *node, LastestAddressInfo *addr, const int32_t height);
-  void _unconfirmAddressTxNode(AddressTxNode *node, LastestAddressInfo *addr);
+  void _confirmAddressTxNode  (const string &address, AddressTxNode *node, AddressInfo *addr);
+  void _unconfirmAddressTxNode(const string &address, AddressTxNode *node, AddressInfo *addr);
 
   // 未确认交易池
   void addUnconfirmedTxPool   (class TxLog2 *txLog2);
   void removeUnconfirmedTxPool(class TxLog2 *txLog2);
 
   // 更新交易 / 节点的 YMD
-  void _updateTxNodeYmd(LastestAddressInfo *addr, AddressTxNode *node, const int32_t targetYmd);
+  void _updateTxNodeYmd(AddressInfo *addr, AddressTxNode *node, const int32_t targetYmd);
 
   // 交换地址交易节点
-  void _switchUnconfirmedAddressTxNode(LastestAddressInfo *addr,
-                                       AddressTxNode *prev, AddressTxNode *curr);
-  void _confirmTx_MoveToFirstUnconfirmed(LastestAddressInfo *addr, AddressTxNode *node);
-  void _rejectTx_MoveToLastUnconfirmed(LastestAddressInfo *addr, AddressTxNode *node);
+  void _switchTxNode(const string &address, const int32_t idx1, const int32_t idx2);
+  void _rejectTx_MoveToLastUnconfirmed(AddressInfo *addr, AddressTxNode *node);
 
   void writeLastProcessTxlogTime();
 
   // 写入通知日志文件
   void writeNotificationLogs(const map<int64_t, int64_t> &addressBalance, class TxLog2 *txLog2);
 
-  // block id 2 hash
-  uint256 blockId2Hash(const int64_t blockId);
 
 public:
   Parser();

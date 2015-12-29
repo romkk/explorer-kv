@@ -60,6 +60,7 @@ int main(int argc, char **argv) {
     newArgv[1] = (char*)testname.c_str();
   }
   Log::SetLevel(LOG_LEVEL_DEBUG);
+  Log::SetDevice(stdout);
   testing::InitGoogleTest(&argc, newArgv);
   
   Config::GConfig.parseConfig("unittest.conf", false);

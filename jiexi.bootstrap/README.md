@@ -1,5 +1,12 @@
 # Explorer - 解析器 - 初试化加速专用
 
+## 机器要求
+
+* 内存：64G以上
+  * 处理高度390930时，pre\_parser需要内存接近40G
+* CPU：8核以上
+
+
 ## 初始化时注意点
 
 1. raw block/tx等原始数据中不允许出现孤块，无法处理
@@ -9,15 +16,7 @@
 ### ubuntu 12.04 / 14.04
 
 ```
-# oh my zsh (optional)
-apt-get install zsh git
-wget --no-check-certificate http://install.ohmyz.sh -O - | sh
-
-# env
-apt-get install -y cmake build-essential autotools-dev libtool autoconf automake
-
-# pkgs
-apt-get install -y libboost-dev libboost-thread-dev libboost-system-dev libboost-regex-dev libboost-filesystem-dev openssl libssl-dev libmysqlclient-dev libcurl4-openssl-dev libgoogle-perftools-dev
+# 参考 jiexi/README.md 安装相关依赖库后，再进行编译
 
 #
 # build

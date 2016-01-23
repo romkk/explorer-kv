@@ -459,9 +459,6 @@ void Parser::threadHandleTxlogs() {
              txLog2.txHash_.ToString().c_str(), txLog2.createdAt_.c_str());
 
     if (txLog2.type_ == LOG2TYPE_TX_ACCEPT) {
-      //
-      // acceptTx() 时，当前向交易不存在，我们则删除掉当前 txlog2，并抛出异常。
-      //
       acceptTx(&txLog2);
     }
     else if (txLog2.type_ == LOG2TYPE_TX_CONFIRM) {

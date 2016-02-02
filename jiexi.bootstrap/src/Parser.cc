@@ -761,7 +761,7 @@ void PreParser::_saveBlock(const BlockInfo &b) {
   // 插入 14_{010timestamp}_{010height}
   {
     const string key = Strings::Format("%s%010u_%010d", KVDB_PREFIX_BLOCK_TIMESTAMP,
-                                       (uint32_t)blkTs_.getMaxTimestamp(), b.height_);
+                                       (uint32_t)b.currMaxTimestamp_, b.height_);
     gKVHandler->set(key, Strings::Format("%s", b.blockHash_.ToString().c_str()));
   }
 }

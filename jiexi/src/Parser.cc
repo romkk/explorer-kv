@@ -625,10 +625,10 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
   blockHash = blk.GetHash().ToString();
   LOG_INFO("accept block: %d, %s", txLog2->blkHeight_, blockHash.c_str());
 
-  // 插入数据至 table.0_blocks
+  // 插入块数据
   _insertBlock(kvdb_, blk, txLog2->blkHeight_, (int32_t)blkRawHex.length()/2, txLog2->maxBlkTimestamp_);
 
-  // 插入区块交易
+  // 插入块内交易数据
   _insertBlockTxs(kvdb_, blk);
 
   //
@@ -655,33 +655,6 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
   }
 }
 
-
-DBTxOutput getTxOutput(MySQLConnection &db, const int64_t txId, const int32_t position) {
-  MySQLResult res;
-  char **row;
-  string sql;
-  DBTxOutput o;
-
-  sql = Strings::Format("SELECT `value`,`spent_tx_id`,`spent_position`,`address`,`address_ids` "
-                        " FROM `tx_outputs_%04d` WHERE `tx_id`=%lld AND `position`=%d ",
-                        txId % 100, txId, position);
-  db.query(sql, res);
-  if (res.numRows() != 1) {
-    THROW_EXCEPTION_DBEX("can't find tx_outputs, txId: %lld, position: %d",
-                         txId, position);
-  }
-  row = res.nextRow();
-  
-  o.txId     = txId;
-  o.position = position;
-  o.value    = atoi64(row[0]);
-  o.spentTxId     = atoi64(row[1]);
-  o.spentPosition = atoi(row[2]);
-  o.address    = string(row[3]);
-  o.addressIds = string(row[4]);
-
-  return o;
-}
 
 // 获取地址信息
 static AddressInfo *_getAddressInfo(KVDB &kvdb, const string &address) {

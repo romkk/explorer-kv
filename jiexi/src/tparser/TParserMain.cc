@@ -124,16 +124,13 @@ int main(int argc, char **argv) {
 
   signal(SIGTERM, handler);
   signal(SIGINT,  handler);
-LOG_DEBUG("%s: %d", __FILE__, __LINE__);
+
   try {
-LOG_DEBUG("%s: %d", __FILE__, __LINE__);
     gParser = new Parser();
-LOG_DEBUG("%s: %d", __FILE__, __LINE__);
     if (!gParser->init()) {
       LOG_FATAL("Parser init failed");
       exit(1);
     }
-LOG_DEBUG("%s: %d", __FILE__, __LINE__);
 
     gParser->run();
 

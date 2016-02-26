@@ -131,11 +131,13 @@ void kv_output(evhtp_request_t *req, const string &queryId,
   apiResp.add_data(fb_data);
   fbb.Finish(apiResp.Finish());
 
+  // output
+  evbuffer_add(req->buffer_out, fbb.GetBufferPointer(), fbb.GetSize());
+
   // RequestID
   {
     evhtp_headers_add_header(req->headers_out,
                              evhtp_header_new("RequestID", queryId.c_str(), 1, 1));
-    evbuffer_add(req->buffer_out, fbb.GetBufferPointer(), fbb.GetSize());
   }
 
   // CheckSum-SHA256
@@ -328,7 +330,11 @@ void cb_kv(evhtp_request_t *req, void *ptr) {
   
   const auto it = gHandleFunctions.find(string(queryMethod));
   if (it != gHandleFunctions.end()) {
-    (*it->second)(req, params, queryId);;
+    (*it->second)(req, params, queryId);
+
+//    string status;
+//    gDB->status(&status);
+//    LOG_DEBUG("db status: %s", status.c_str());
     return;
   }
   
@@ -515,7 +521,7 @@ void APIHandler::getTx(const string &txHash, string &buf, int32_t verbose) {
 
 /////////////////////////////////// APIServer //////////////////////////////////
 
-APIServer::APIServer() {
+APIServer::APIServer(): running_(false) {
   listenHost_ = Config::GConfig.get("apiserver.listen.host", "0.0.0.0");
   listenPort_ = (int32_t)Config::GConfig.getInt("apiserver.listen.port", 8080);
   nThreads_   = (int32_t)Config::GConfig.getInt("apiserver.nthreads", 1);
@@ -588,6 +594,7 @@ void APIServer::init() {
 }
 
 void APIServer::run() {
+  running_ = true;
   LogScope ls("APIServer::run");
   assert(evbase_ != nullptr);
 
@@ -595,6 +602,9 @@ void APIServer::run() {
 }
 
 void APIServer::stop() {
+  if (!running_) { return; }
+  running_ = false;
+
   if (evbase_ == nullptr) { return; }
 
   LogScope ls("APIServer::stop");

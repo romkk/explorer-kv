@@ -67,10 +67,8 @@ KVDB::KVDB(const string &dbPath): db_(nullptr), kDBPath_(dbPath) {
 
   // initialize BlockBasedTableOptions
   auto cache1 = rocksdb::NewLRUCache(1 * 1024 * 1024 * 1024LL);
-  auto cache2 = rocksdb::NewLRUCache(1 * 1024 * 1024 * 1024LL);
   rocksdb::BlockBasedTableOptions bbt_opts;
   bbt_opts.block_cache = cache1;
-  bbt_opts.block_cache_compressed = cache2;
   bbt_opts.cache_index_and_filter_blocks = 0;
   bbt_opts.block_size = 32 * 1024;
   bbt_opts.format_version = 2;
@@ -217,6 +215,8 @@ void KVDB::rangeGT(const string &start, const string &end, const int32_t limit,
     // 检测数量
     if (keys.size() >= limit) { break; }
   }
+
+  delete it;
 }
 
 // [start, end]: start > end
@@ -249,6 +249,8 @@ void KVDB::rangeLT(const string &start, const string &end, const int32_t limit,
     // 检测数量
     if (keys.size() >= limit) { break; }
   }
+
+  delete it;
 }
 
 void KVDB::getPrevTxOutputs(const CTransaction &tx,

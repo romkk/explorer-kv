@@ -51,7 +51,7 @@ KVDB::KVDB(const string &dbPath): db_(nullptr), kDBPath_(dbPath) {
   options_.max_bytes_for_level_base = (size_t)1024 * 1024 * 1024;
   options_.num_levels = 6;
 
-  options_.write_buffer_size = (size_t)64 * 1024 * 1024;
+  options_.write_buffer_size = (size_t)128 * 1024 * 1024;
   options_.max_write_buffer_number  = 8;
 //  options_.disable_auto_compactions = true;
 //
@@ -66,11 +66,9 @@ KVDB::KVDB(const string &dbPath): db_(nullptr), kDBPath_(dbPath) {
 //  options_.memtable_factory.reset(new rocksdb::VectorRepFactory);
 
   // initialize BlockBasedTableOptions
-  auto cache1 = rocksdb::NewLRUCache(1 * 1024 * 1024 * 1024);
-  auto cache2 = rocksdb::NewLRUCache(1 * 1024 * 1024 * 1024);
+  auto cache1 = rocksdb::NewLRUCache(1 * 1024 * 1024 * 1024LL);
   rocksdb::BlockBasedTableOptions bbt_opts;
   bbt_opts.block_cache = cache1;
-  bbt_opts.block_cache_compressed = cache2;
   bbt_opts.cache_index_and_filter_blocks = 0;
   bbt_opts.block_size = 32 * 1024;
   bbt_opts.format_version = 2;
@@ -87,6 +85,21 @@ void KVDB::close() {
     delete db_;
     db_ = nullptr;
   }
+}
+
+void KVDB::status(string *s) {
+  s->clear();
+  std::string out;
+
+  // how much memory is being used by index and filter blocks
+  db_->GetProperty("rocksdb.estimate-table-readers-mem", &out);
+  *s += "index/filter: " + out;
+  out.clear();
+
+  // memtable size
+  db_->GetProperty("rocksdb.cur-size-all-mem-tables", &out);
+  *s += ", memtable: " + out;
+  out.clear();
 }
 
 void KVDB::open() {
@@ -202,6 +215,8 @@ void KVDB::rangeGT(const string &start, const string &end, const int32_t limit,
     // 检测数量
     if (keys.size() >= limit) { break; }
   }
+
+  delete it;
 }
 
 // [start, end]: start > end
@@ -234,6 +249,8 @@ void KVDB::rangeLT(const string &start, const string &end, const int32_t limit,
     // 检测数量
     if (keys.size() >= limit) { break; }
   }
+
+  delete it;
 }
 
 void KVDB::getPrevTxOutputs(const CTransaction &tx,

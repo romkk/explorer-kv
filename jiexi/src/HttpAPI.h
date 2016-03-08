@@ -61,6 +61,7 @@ public:
 };
 
 class APIServer {
+  atomic<bool> running_;
 	KVDB *kvdb_;
   string  listenHost_;
   int32_t listenPort_;

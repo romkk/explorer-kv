@@ -745,7 +745,7 @@ void PreParser::_saveBlock(const BlockInfo &b) {
   blkBuilder.add_tx_count(b.txCount_);
   blkBuilder.add_version(b.header_.nVersion);
   blkBuilder.add_is_orphan(false);
-  blkBuilder.add_curr_max_timestamp((uint32_t)blkTs_.getMaxTimestamp());
+  blkBuilder.add_curr_max_timestamp((uint32_t)b.currMaxTimestamp_);
   fbb.Finish(blkBuilder.Finish());
 
   // 11_{block_hash}, 需紧接 blockBuilder.Finish()
@@ -761,7 +761,7 @@ void PreParser::_saveBlock(const BlockInfo &b) {
   // 插入 14_{010timestamp}_{010height}
   {
     const string key = Strings::Format("%s%010u_%010d", KVDB_PREFIX_BLOCK_TIMESTAMP,
-                                       (uint32_t)blkTs_.getMaxTimestamp(), b.height_);
+                                       (uint32_t)b.currMaxTimestamp_, b.height_);
     gKVHandler->set(key, Strings::Format("%s", b.blockHash_.ToString().c_str()));
   }
 }
@@ -781,6 +781,7 @@ void PreParser::parseBlock(const CBlock &blk, const int32_t height, const int32_
   cur.rewardBlock_ = GetBlockValue(height, 0);
   cur.rewardFee_   = blk.vtx[0].GetValueOut() - cur.rewardBlock_;
   cur.txCount_ = (int32_t)blk.vtx.size();
+  cur.currMaxTimestamp_ = blkTs_.getMaxTimestamp();
 
   if (height > 0) {
     blockInfo_.nextBlockHash_ = cur.blockHash_;

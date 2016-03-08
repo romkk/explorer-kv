@@ -195,6 +195,7 @@ struct BlockInfo {
   int32_t txCount_;
   int64_t rewardBlock_;
   int64_t rewardFee_;
+  int64_t currMaxTimestamp_;
 
   BlockInfo() {
     memset((char *)&height_, 0, sizeof(struct BlockInfo));

@@ -65,6 +65,8 @@ public:
   void open();
   void close();
 
+  void status(string *s);
+
   void del(const string &key);
 
   void get(const string &key, string &value);

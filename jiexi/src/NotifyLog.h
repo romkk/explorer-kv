@@ -30,31 +30,25 @@
 
 
 /////////////////////////////////  NotifyItem  /////////////////////////////////
+// 定义参考： NOTIFY.md
 class NotifyItem {
-  int32_t type_;  // LOG2TYPE_TX_xxxx
-  bool isCoinbase_;
+public:
+  uint32_t timestamp_;
+  int32_t type_;
 
-  int64_t addressId_;
-  int64_t txId_;
-
-  string address_;
-  uint256 txhash_;
-
-  int64_t balanceDiff_;
-
-  int32_t  blkHeight_;     // block height
-  int64_t  blkId_;         // block ID
-  uint256  blkHash_;
+  int32_t height_;
+  int64_t amount_;
+  uint256 hash_;     // tx or block
+  char address_[36];
 
 public:
   NotifyItem();
-  NotifyItem(const int32_t type, bool isCoinbase, const int64_t addressId,
-             const int64_t txId, const string &address,
-             const uint256 txhash, int64_t balanceDiff,
-             const int32_t blkHeight, const int64_t  blkId, const uint256 &blkHash);
+  void loadtx(const int32_t type, const string &address,
+              const uint256 &hash, const int32_t height,  const int64_t amount);
+  void loadblock(const int32_t type, const uint256 &hash, const int32_t height);
 
   void reset();
-  string toStrLineWithTime() const;
+  string toStr() const;
   void parse(const string &line);
 };
 

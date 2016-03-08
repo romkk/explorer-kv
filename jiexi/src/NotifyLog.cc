@@ -17,6 +17,7 @@
  */
 
 #include "NotifyLog.h"
+#include "Util.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -27,70 +28,86 @@
 
 namespace fs = boost::filesystem;
 
-
 /////////////////////////////////  NotifyItem  /////////////////////////////////
 NotifyItem::NotifyItem() {
   reset();
 }
 
-NotifyItem::NotifyItem(const int32_t type, bool isCoinbase, const int64_t addressId,
-                       const int64_t txId, const string &address,
-                       const uint256 txhash, int64_t balanceDiff,
-                       const int32_t blkHeight, const int64_t blkId, const uint256 &blkHash) {
-  type_        = type;
-  isCoinbase_  = isCoinbase;
-  addressId_   = addressId;
-  txId_        = txId;
-  address_     = address;
-  txhash_      = txhash;
-  balanceDiff_ = balanceDiff;
+void NotifyItem::loadtx(const int32_t type, const string &address,
+                        const uint256 &hash, const int32_t height, const int64_t amount) {
+  reset();
+  timestamp_ = (uint32_t)time(nullptr);
+  type_   = type;
+  height_ = height;
+  amount_ = amount;
+  hash_   = hash;
+  snprintf(address_, sizeof(address_), "%s", address.c_str());
+}
 
-  blkHeight_ = blkHeight;
-  blkId_     = blkId;
-  blkHash_   = blkHash;
+void NotifyItem::loadblock(const int32_t type, const uint256 &hash, const int32_t height) {
+  reset();
+  timestamp_ = (uint32_t)time(nullptr);
+  type_   = type;
+  height_ = height;
+  hash_   = hash;
 }
 
 void NotifyItem::reset() {
-  type_        = 0;
-  isCoinbase_  = 0;
-  addressId_   = 0;
-  txId_        = 0;
-  address_     = "";
-  txhash_      = uint256();
-  balanceDiff_ = 0;
-
-  blkHeight_ = -1;
-  blkId_     = -1;
-  blkHash_   = uint256();
+  type_ = -1;
+  height_ = -1;
+  amount_ = 0;
+  hash_ = uint256();
+  memset(address_, 0, sizeof(address_));
 }
 
-string NotifyItem::toStrLineWithTime() const {
-  return Strings::Format("%s,%d,%d,%lld,%s,%lld,%s,%lld,%d,%lld,%s",
-                         date("%F %T").c_str(),
-                         type_, isCoinbase_ ? 1 : 0,
-                         addressId_, address_.c_str(),
-                         txId_, txhash_.ToString().c_str(), balanceDiff_,
-                         blkHeight_, blkId_, blkHash_.ToString().c_str());
+string NotifyItem::toStr() const {
+  // tx
+  if (type_ >= 20 && type_ <= 23) {
+    return Strings::Format("%s,%d,%s,%d,%s,%lld",
+                           date("%F %T", timestamp_).c_str(), type_, address_, height_,
+                           hash_.ToString().c_str(), amount_);
+  }
+  // block
+  else if (type_ >= 10 && type_ <= 11) {
+    return Strings::Format("%s,%d,%d,%s",
+                           date("%F %T", timestamp_).c_str(), type_, height_,
+                           hash_.ToString().c_str());
+  }
+
+  // should not be here
+  LOG_ERROR("[NotifyItem::toStr] unknown type");
+  return "";
 }
 
 void NotifyItem::parse(const string &line) {
   reset();
 
-  // 按照 ',' 切分，最多切8份
-  const vector<string> arr1 = split(line, ',', 11);
-  assert(arr1.size() == 11);
+  // 按照 ',' 切分
+  const vector<string> arr = split(line, ',', 6);
 
-  type_        = atoi(arr1[1].c_str());
-  isCoinbase_  = atoi(arr1[2].c_str()) != 0 ? 1 : 0;
-  addressId_   = atoi64(arr1[3].c_str());
-  address_     = arr1[4];
-  txId_        = atoi64(arr1[5].c_str());
-  txhash_      = uint256(arr1[6]);
-  balanceDiff_ = atoi64(arr1[7].c_str());
+  timestamp_ = (uint32_t)str2time(arr[0].c_str(), "%F %T");
+  type_ = atoi(arr[1].c_str());
 
-  blkHeight_   = atoi(arr1[8].c_str());
-  blkId_       = atoi64(arr1[9].c_str());
-  blkHash_     = uint256(arr1[10]);
+  // tx
+  if (type_ >= 20 && type_ <= 23) {
+    assert(arr.size() == 6);
+    snprintf(address_, sizeof(address_), "%s", arr[2].c_str());
+    height_ = atoi(arr[3].c_str());
+    hash_ = uint256(arr[4].c_str());
+    amount_ = atoll(arr[5].c_str());
+    return;
+  }
+
+  // block
+  if (type_ >= 10 && type_ <= 11) {
+    assert(arr.size() == 4);
+    height_ = atoi(arr[2].c_str());
+    hash_ = uint256(arr[3].c_str());
+    return;
+  }
+
+  // should not be here
+  LOG_ERROR("[NotifyItem::parse] unknown type");
 }
 
 

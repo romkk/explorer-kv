@@ -29,6 +29,15 @@
 #include <fstream>
 
 
+#define NOTIFY_EVENT_BLOCK_ACCEPT 10
+#define NOTIFY_EVENT_BLOCK_REJECT 11
+
+#define NOTIFY_EVENT_TX_ACCEPT    20
+#define NOTIFY_EVENT_TX_CONFIRM   21
+#define NOTIFY_EVENT_TX_UNCONFIRM 22
+#define NOTIFY_EVENT_TX_REJECT    23
+
+
 /////////////////////////////////  NotifyItem  /////////////////////////////////
 // 定义参考： NOTIFY.md
 class NotifyItem {

@@ -657,7 +657,14 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
   // 设置当前块高度
   currBlockHeight_ = txLog2->blkHeight_;
 
-
+  // 写入事件通知
+  {
+    string sbuf;
+    NotifyItem nitem;
+    nitem.loadblock(NOTIFY_EVENT_BLOCK_ACCEPT, blk.GetHash(), txLog2->blkHeight_);
+    sbuf.append(nitem.toStr() + "\n");
+    notifyProducer_->write(sbuf);
+  }
 }
 
 
@@ -842,16 +849,16 @@ void Parser::writeNotificationLogs(const map<string, int64_t> &addressBalance,
     int32_t type = 0;
     switch (txLog2->type_) {
       case LOG2TYPE_TX_ACCEPT:
-        type = 20;
+        type = NOTIFY_EVENT_TX_ACCEPT;
         break;
       case LOG2TYPE_TX_CONFIRM:
-        type = 21;
+        type = NOTIFY_EVENT_TX_CONFIRM;
         break;
       case LOG2TYPE_TX_UNCONFIRM:
-        type = 22;
+        type = NOTIFY_EVENT_TX_UNCONFIRM;
         break;
       case LOG2TYPE_TX_REJECT:
-        type = 23;
+        type = NOTIFY_EVENT_TX_REJECT;
         break;
       default:
         break;
@@ -1633,6 +1640,15 @@ void Parser::rejectBlock(TxLog2 *txLog2) {
 
   // 设置当前块高度
   currBlockHeight_ = txLog2->blkHeight_;
+
+  // 写入事件通知
+  {
+    string sbuf;
+    NotifyItem nitem;
+    nitem.loadblock(NOTIFY_EVENT_BLOCK_REJECT, blockHash, height);
+    sbuf.append(nitem.toStr() + "\n");
+    notifyProducer_->write(sbuf);
+  }
 }
 
 

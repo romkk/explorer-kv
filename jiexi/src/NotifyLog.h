@@ -58,7 +58,7 @@ public:
 
   void reset();
   string toStr() const;
-  void parse(const string &line);
+  bool parse(const string &line);
 };
 
 ///////////////////////////////  NotifyLogReader  ///////////////////////////////
@@ -75,6 +75,56 @@ public:
   bool isNewFileExist(int32_t currFileIndex);
   void tryRemoveOldFiles(int32_t currFileIndex);
 };
+
+///////////////////////////////////  Notify  ///////////////////////////////////
+class Notify {
+  atomic<bool> running_;
+  mutex lock_;
+
+  std::map<string, std::set<int32_t> > addressTable_;  // address -> [app_id, ...]
+  std::set<int32_t> appIds_;
+
+  // 上游生成日志，触发文件通知去消费
+  string iNotifyFile_;
+  Condition changed_;
+  Inotify inotify_;
+
+  // 通知事件日志相关
+  string logDir_;
+  int32_t logFileIndex_;
+  int64_t logFileOffset_;
+  NotifyLogReader logReader_;
+
+  MySQLConnection db_;
+
+  thread threadWatchNotify_;
+  thread threadConsumeNotifyLogs_;
+
+  void threadWatchNotify();
+  void threadConsumeNotifyLogs();
+
+  void loadAddressTableFromDB();
+
+  void handleBlockEvent(NotifyItem &item);
+  void handleTxEvent(NotifyItem &item);
+
+  void updateStatus();
+  void getStatus();
+
+public:
+  Notify();
+  ~Notify();
+
+  void init();
+  void setup();
+  void stop();
+
+  bool insertAddress(const int32_t appID, const char *address, bool sync2mysql=true);
+  bool removeAddress(const int32_t appID, const char *address);
+
+
+};
+
 
 ///////////////////////////////  NotifyProducer  ///////////////////////////////
 class NotifyProducer {

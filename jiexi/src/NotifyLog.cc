@@ -79,7 +79,7 @@ string NotifyItem::toStr() const {
   return "";
 }
 
-void NotifyItem::parse(const string &line) {
+bool NotifyItem::parse(const string &line) {
   reset();
 
   // 按照 ',' 切分
@@ -95,7 +95,7 @@ void NotifyItem::parse(const string &line) {
     height_ = atoi(arr[3].c_str());
     hash_ = uint256(arr[4].c_str());
     amount_ = atoll(arr[5].c_str());
-    return;
+    return true;
   }
 
   // block
@@ -103,11 +103,12 @@ void NotifyItem::parse(const string &line) {
     assert(arr.size() == 4);
     height_ = atoi(arr[2].c_str());
     hash_ = uint256(arr[3].c_str());
-    return;
+    return true;
   }
 
   // should not be here
   LOG_ERROR("[NotifyItem::parse] unknown type");
+  return false;
 }
 
 
@@ -121,7 +122,7 @@ NotifyProducer::NotifyProducer(const string &dir):
   dir_ = dir;
 
   // 通知文件
-  inotifyFile_ = dir_ + "/NOTIFY_NOTIFICATION_LOG";
+  inotifyFile_ = dir_ + "/NOTIFY_TPARSER_TO_NOTIFYD";
   {
     FILE *f = fopen(inotifyFile_.c_str(), "w");
     if (f == nullptr) {
@@ -225,6 +226,300 @@ void NotifyProducer::write(const string &lines) {
 }
 
 
+///////////////////////////////////  Notify  ///////////////////////////////////
+Notify::Notify(): running_(false),
+logDir_(Config::GConfig.get("notification.dir")),
+iNotifyFile_(Config::GConfig.get("notification.inotify.file")),
+db_(Config::GConfig.get("db.notifyd.uri")), logReader_(logDir_)
+{
+}
+
+Notify::~Notify() {
+  changed_.notify_all();
+
+  if (threadWatchNotify_.joinable()) {
+    threadWatchNotify_.join();
+  }
+  if (threadConsumeNotifyLogs_.joinable()) {
+    threadConsumeNotifyLogs_.join();
+  }
+}
+
+void Notify::init() {
+  // get last file status: index & offset
+  getStatus();
+}
+
+void Notify::setup() {
+  running_ = true;
+
+  // setup threads
+  threadWatchNotify_       = thread(&Notify::threadWatchNotify, this);
+  threadConsumeNotifyLogs_ = thread(&Notify::threadConsumeNotifyLogs, this);
+}
+
+void Notify::stop() {
+  LOG_INFO("stop notifyd...");
+  running_ = false;
+
+  inotify_.RemoveAll();
+  changed_.notify_all();
+}
+
+void Notify::loadAddressTableFromDB() {
+  MySQLResult res;
+  char **row;
+  string sql;
+
+  sql = "SELECT `app_id`,`address` FROM `app_subcribe`";
+  db_.query(sql, res);
+  if (res.numRows() == 0) {
+    LOG_WARN("empty table.app_subcribe");
+    return;
+  }
+
+  LOG_INFO("load %llu from table.app_subcribe", res.numRows());
+  while ((row = res.nextRow()) != nullptr) {
+    insertAddress(atoi(row[0]), row[1], false);
+  }
+}
+
+bool Notify::insertAddress(const int32_t appID, const char *address, bool sync2mysql) {
+  ScopeLock sl(lock_);
+  CBitcoinAddress bitcoinAddr(address);
+  if (!bitcoinAddr.IsValid()) {
+    return false;
+  }
+  const string a = bitcoinAddr.ToString();
+
+  if (addressTable_.find(a) != addressTable_.end() &&
+      addressTable_[a].find(appID) != addressTable_[a].end()) {
+    return false;  // already exist
+  }
+
+  // insert to memory first than insert to msyql
+  addressTable_[a].insert(appID);
+
+  const bool isAppIDExist = (appIds_.find(appID) != appIds_.end());
+  if (!isAppIDExist) {
+    appIds_.insert(appID);
+  }
+
+  // 首次从数据库加载时，无需执行下面部分
+  if (sync2mysql) {
+    string sql;
+    MySQLResult res;
+
+    // create table
+    if (!isAppIDExist) {
+      const string tName = Strings::Format("event_app_%d", appID);
+      sql = Strings::Format("SHOW TABLES LIKE '%s'", tName.c_str());
+      db_.query(sql, res);
+
+      if (res.numRows() == 0) {
+      	sql = Strings::Format("CREATE TABLE `%s` LIKE `meta_event_app`", tName.c_str());
+	      db_.updateOrThrowEx(sql);
+      }
+    }
+
+    // insert into db
+    const string now = date("%F %T");
+    sql = Strings::Format("INSERT INTO `app_subcribe` (`app_id`, `address`, "
+                          " `created_at`, `updated_at`) VALUES (%d, '%s', '%s', '%s');",
+                          appID, a.c_str(), now.c_str(), now.c_str());
+    db_.updateOrThrowEx(sql, 1);
+  }
+
+  return true;
+}
+
+bool Notify::removeAddress(const int32_t appID, const char *address) {
+  ScopeLock sl(lock_);
+  CBitcoinAddress bitcoinAddr(address);
+  if (!bitcoinAddr.IsValid()) {
+    return false;
+  }
+  const string a = bitcoinAddr.ToString();
+
+  if (addressTable_.find(a) == addressTable_.end() ||
+      addressTable_[a].find(appID) == addressTable_[a].end()) {
+    return false;  // not exist
+  }
+
+  // remove from memory first
+  addressTable_[string(address)].erase(appID);
+
+  // remove from mysql
+  string sql = Strings::Format("DELETE FROM `app_subcribe` WHERE `app_id`=%d AND `address`='%s'",
+                               appID, a.c_str());
+  db_.updateOrThrowEx(sql, 1);
+
+  return true;
+}
+
+void Notify::threadWatchNotify() {
+  try {
+    //
+    // IN_CLOSE_NOWRITE :
+    //     一个以只读方式打开的文件或目录被关闭
+    //     A file or directory that had been open read-only was closed.
+    // `cat FILE` 可触发该事件
+    //
+    InotifyWatch watch(iNotifyFile_, IN_CLOSE_NOWRITE);
+    inotify_.Add(watch);
+    LOG_INFO("watching notify file: %s", iNotifyFile_.c_str());
+
+    while (running_) {
+      inotify_.WaitForEvents();
+
+      size_t count = inotify_.GetEventCount();
+      while (count > 0) {
+        InotifyEvent event;
+        bool got_event = inotify_.GetEvent(&event);
+
+        if (got_event) {
+          string mask_str;
+          event.DumpTypes(mask_str);
+          LOG_DEBUG("get inotify event, mask: %s", mask_str.c_str());
+        }
+        count--;
+
+        // notify other threads
+        changed_.notify_all();
+      }
+    } /* /while */
+  } catch (InotifyException &e) {
+    THROW_EXCEPTION_DBEX("Inotify exception occured: %s", e.GetMessage().c_str());
+  }
+}
+
+void Notify::threadConsumeNotifyLogs() {
+  vector<string>  lines;
+  vector<int64_t> offsets;
+
+  while (running_) {
+    // 必须在读之前检测是否存在新文件，否则可能漏读
+    bool isNewFileExist = logReader_.isNewFileExist(logFileIndex_);
+
+    // 读取日志
+    logReader_.readLines(logFileIndex_, logFileOffset_, &lines, &offsets);
+    if (!running_) { break; }
+
+    // 已经存在新文件的情况下，未读取到，则表明需进行文件切换
+    if (isNewFileExist && lines.size() == 0) {
+      logFileIndex_++;
+      logFileOffset_ = 0;
+
+      continue;
+    }
+
+    if (lines.size() == 0) {
+      UniqueLock ul(lock_);
+      // 默认等待N毫秒，直至超时，中间有人触发，则立即continue读取记录
+      changed_.wait_for(ul, chrono::milliseconds(10*1000));
+      continue;
+    }
+
+    for (size_t i = 0; i < lines.size(); i++) {
+      ScopeLock sl(lock_);
+
+      const string &line = lines[i];
+      logFileOffset_ = offsets[i];
+
+      NotifyItem item;
+      if (!item.parse(line)) {
+        continue;
+      }
+      if (item.type_ == NOTIFY_EVENT_BLOCK_ACCEPT || item.type_ == NOTIFY_EVENT_BLOCK_REJECT) {
+        // handle block event
+        handleBlockEvent(item);
+      } else {
+        // handle tx event
+        handleTxEvent(item);
+      }
+
+      updateStatus();  // update log file index & offset
+
+    } /* /for */
+
+  } /* /while */
+}
+
+void Notify::handleBlockEvent(NotifyItem &item) {
+  string sql;
+
+  // 遍历所有appid，分别插入至不同的表中
+  for (const auto appId : appIds_) {
+    const string now = date("%F %T");
+    sql = Strings::Format("INSERT INTO `event_app_%d` (`type`, `hash`, `height`, "
+                          "     `address`, `amount`, `created_at`, `updated_at`) "
+                          " VALUES (%d, '%s', %d, '', 0, '%s', '%s');",
+                          appId,
+                          item.type_, item.hash_.ToString().c_str(), item.height_,
+                          now.c_str(), now.c_str());
+    db_.updateOrThrowEx(sql, 1);
+  }
+}
+
+void Notify::handleTxEvent(NotifyItem &item) {
+  string sql;
+
+  const auto it = addressTable_.find(string(item.address_));
+  if (it == addressTable_.end()) {
+    return;
+  }
+
+  for (const auto appId : it->second) {
+    const string now = date("%F %T");
+    sql = Strings::Format("INSERT INTO `event_app_%d` (`type`, `hash`, `height`, "
+                          "     `address`, `amount`, `created_at`, `updated_at`) "
+                          " VALUES (%d, '%s', %d, '%s', %lld, '%s', '%s');",
+                          appId,
+                          item.type_, item.hash_.ToString().c_str(), item.height_,
+                          item.address_, item.amount_,
+                          now.c_str(), now.c_str());
+    db_.updateOrThrowEx(sql, 1);
+  }
+}
+
+void Notify::updateStatus() {
+  string sql;
+
+  // INSERT INTO `meta_notifyd` (`key`, `value`, `created_at`, `updated_at`)
+  sql = Strings::Format("UPDATE `meta_notifyd` SET `value`='%d,%lld' "
+                        " WHERE `key`='notify.file.status' ",
+                        logFileIndex_, logFileOffset_);
+  db_.updateOrThrowEx(sql, 1);
+}
+
+void Notify::getStatus() {
+  char **row;
+  MySQLResult res;
+  string sql;
+  sql = "SELECT `value` FROM `meta_notifyd` WHERE `key`='notify.file.status' ";
+  db_.query(sql, res);
+
+  if (res.numRows() == 0) {
+    // not exist
+    const string now = date("%F %T");
+    sql = Strings::Format("INSERT INTO `meta_notifyd` (`key`, `value`, `created_at`, `updated_at`) "
+                          "VALUES ('notify.file.status', '0,0', '%s', '%s') ",
+                          now.c_str(), now.c_str());
+    db_.updateOrThrowEx(sql, 1);
+    logFileIndex_  = 0;
+    logFileOffset_ = 0;
+  }
+  else
+  {
+    // existed, get value
+    row = res.nextRow();
+    const string value = string(row[0]);
+    vector<string> arr = split(value, ',');
+    assert(arr.size() == 2);
+    logFileIndex_  = atoi(arr[0].c_str());
+    logFileOffset_ = atoll(arr[1].c_str());
+  }
+}
 
 
 /////////////////////////////////  NotifyItem  /////////////////////////////////
@@ -303,19 +598,3 @@ void NotifyLogReader::tryRemoveOldFiles(int32_t currFileIndex) {
     }
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

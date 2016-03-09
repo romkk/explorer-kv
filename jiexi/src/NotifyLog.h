@@ -61,19 +61,19 @@ public:
   void parse(const string &line);
 };
 
-///////////////////////////////  NotifyConsumer  ///////////////////////////////
-class NotifyConsumer {
-  int32_t fileIndex_;
-  int64_t fileOffset_;
+///////////////////////////////  NotifyLogReader  ///////////////////////////////
+class NotifyLogReader {
+  string logDir_;
   FILE *fileHandler_;
 
 public:
-  NotifyConsumer();
-  ~NotifyConsumer();
+  NotifyLogReader(string &logDir);
+  ~NotifyLogReader();
 
-  void init();
-  void run();
-  void stop();
+  void readLines(int32_t currFileIndex, int64_t currFileOffset,
+                 vector<string> *lines, vector<int64_t> *fileOffset);
+  bool isNewFileExist(int32_t currFileIndex);
+  void tryRemoveOldFiles(int32_t currFileIndex);
 };
 
 ///////////////////////////////  NotifyProducer  ///////////////////////////////

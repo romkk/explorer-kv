@@ -224,3 +224,98 @@ void NotifyProducer::write(const string &lines) {
   }
 }
 
+
+
+
+/////////////////////////////////  NotifyItem  /////////////////////////////////
+NotifyLogReader::NotifyLogReader(string &logDir):
+//fileIndex_(0), fileOffset_(0),
+fileHandler_(nullptr), logDir_(logDir)
+{}
+
+NotifyLogReader::~NotifyLogReader() {
+  if (fileHandler_ != nullptr) {
+    fclose(fileHandler_);
+    fileHandler_ = nullptr;
+  }
+}
+
+void NotifyLogReader::readLines(int32_t currFileIndex, int64_t currFileOffset,
+                                vector<string> *lines, vector<int64_t> *fileOffset) {
+  const string currFile = Strings::Format("%s/files/%d.log",
+                                          logDir_.c_str(), currFileIndex);
+  lines->clear();
+  fileOffset->clear();
+
+  //
+  // 打开文件并尝试读取新行
+  //
+  ifstream logStream(currFile);
+  if (!logStream.is_open()) {
+    THROW_EXCEPTION_DBEX("open file failure: %s", currFile.c_str());
+  }
+  logStream.seekg(currFileOffset);
+  string line;
+
+  while (getline(logStream, line)) {  // getline()读不到内容，则会关闭 ifstream
+    if (logStream.eof()) {
+      // eof 表示没有遇到 \n 就抵达文件尾部了，通常意味着未完全读取一行
+      // 读取完最后一行后，再读取一次，才会导致 eof() 为 true
+      break;
+    }
+
+    // offset肯定是同一个文件内的，不可能跨文件
+    lines->push_back(line);
+    fileOffset->push_back(logStream.tellg());
+
+    if (lines->size() > 500) {  // 每次最多处理500条日志
+      break;
+    }
+  } /* /while */
+
+  if (lines->size() > 0) {
+    LOG_DEBUG("load notify items: %lld", lines->size());
+    return;
+  }
+}
+
+bool NotifyLogReader::isNewFileExist(int32_t currFileIndex) {
+  const string nextFile = Strings::Format("%s/files/%d.log",
+                                          logDir_.c_str(), currFileIndex + 1);
+  return fs::exists(fs::path(nextFile));
+}
+
+void NotifyLogReader::tryRemoveOldFiles(int32_t currFileIndex) {
+  const int32_t keepLogNum = 100;  // 最多保留文件数量
+  int32_t fileIdx = currFileIndex - keepLogNum;
+
+  // 遍历，删除所有小序列号的文件
+  while (fileIdx >= 0) {
+    const string file = Strings::Format("%s/files/%d.log", logDir_.c_str(), fileIdx--);
+    if (!fs::exists(fs::path(file))) {
+      break;
+    }
+
+    // try delete
+    LOG_INFO("remove old log: %s", file.c_str());
+    if (!fs::remove(fs::path(file))) {
+      THROW_EXCEPTION_DBEX("remove old log failure: %s", file.c_str());
+    }
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -568,11 +568,11 @@ void Notify::handleBlockEvent(NotifyItem &item) {
   for (const auto appId : appIds_) {
     const string now = date("%F %T");
     sql = Strings::Format("INSERT INTO `event_app_%d` (`type`, `hash`, `height`, "
-                          "     `address`, `amount`, `created_at`, `updated_at`) "
+                          "     `address`, `amount`, `created_at`) "
                           " VALUES (%d, '%s', %d, '', 0, '%s', '%s');",
                           appId,
                           item.type_, item.hash_.ToString().c_str(), item.height_,
-                          now.c_str(), now.c_str());
+                          now.c_str());
     db_.updateOrThrowEx(sql, 1);
   }
 }
@@ -588,12 +588,11 @@ void Notify::handleTxEvent(NotifyItem &item) {
   for (const auto appId : it->second) {
     const string now = date("%F %T");
     sql = Strings::Format("INSERT INTO `event_app_%d` (`type`, `hash`, `height`, "
-                          "     `address`, `amount`, `created_at`, `updated_at`) "
-                          " VALUES (%d, '%s', %d, '%s', %lld, '%s', '%s');",
+                          "     `address`, `amount`, `created_at`) "
+                          " VALUES (%d, '%s', %d, '%s', %lld, '%s');",
                           appId,
                           item.type_, item.hash_.ToString().c_str(), item.height_,
-                          item.address_, item.amount_,
-                          now.c_str(), now.c_str());
+                          item.address_, item.amount_, now.c_str());
     db_.updateOrThrowEx(sql, 1);
   }
 }
@@ -602,9 +601,9 @@ void Notify::updateStatus() {
   string sql;
 
   // INSERT INTO `meta_notifyd` (`key`, `value`, `created_at`, `updated_at`)
-  sql = Strings::Format("UPDATE `meta_notifyd` SET `value`='%d,%lld' "
+  sql = Strings::Format("UPDATE `meta_notifyd` SET `value`='%d,%lld',`updated_at`='%s' "
                         " WHERE `key`='notify.file.status' ",
-                        logFileIndex_, logFileOffset_);
+                        logFileIndex_, logFileOffset_, date("%F %T").c_str());
   db_.updateOrThrowEx(sql, 1);
 }
 

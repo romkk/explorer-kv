@@ -358,6 +358,10 @@ Notify::~Notify() {
 }
 
 void Notify::init() {
+  if (!db_.ping()) {
+    THROW_EXCEPTION_DBEX("connect to db failure");
+  }
+
   // load address
   loadAddressTableFromDB();
 
@@ -546,23 +550,29 @@ void Notify::threadConsumeNotifyLogs() {
       if (!item.parse(line)) {
         continue;
       }
+      int cnt = 0;
       if (item.type_ == NOTIFY_EVENT_BLOCK_ACCEPT || item.type_ == NOTIFY_EVENT_BLOCK_REJECT) {
         // handle block event
-        handleBlockEvent(item);
+        cnt += handleBlockEvent(item);
       } else {
         // handle tx event
-        handleTxEvent(item);
+        cnt += handleTxEvent(item);
       }
 
-      updateStatus();  // update log file index & offset
+      // update log file index & offset
+      if (cnt > 0) {
+        // 小优化：如果没有捕获任何有效时间，则暂不记录入数据库，提高写入性能，并不影响数据
+        updateStatus();
+      }
 
     } /* /for */
 
   } /* /while */
 }
 
-void Notify::handleBlockEvent(NotifyItem &item) {
+int32_t Notify::handleBlockEvent(NotifyItem &item) {
   string sql;
+  int cnt = 0;
 
   // 遍历所有appid，分别插入至不同的表中
   for (const auto appId : appIds_) {
@@ -574,15 +584,18 @@ void Notify::handleBlockEvent(NotifyItem &item) {
                           item.type_, item.hash_.ToString().c_str(), item.height_,
                           now.c_str());
     db_.updateOrThrowEx(sql, 1);
+    cnt++;
   }
+  return cnt;
 }
 
-void Notify::handleTxEvent(NotifyItem &item) {
+int32_t Notify::handleTxEvent(NotifyItem &item) {
   string sql;
+  int cnt = 0;
 
   const auto it = addressTable_.find(string(item.address_));
   if (it == addressTable_.end()) {
-    return;
+    return 0;
   }
 
   for (const auto appId : it->second) {
@@ -594,7 +607,9 @@ void Notify::handleTxEvent(NotifyItem &item) {
                           item.type_, item.hash_.ToString().c_str(), item.height_,
                           item.address_, item.amount_, now.c_str());
     db_.updateOrThrowEx(sql, 1);
+    cnt++;
   }
+  return cnt;
 }
 
 void Notify::updateStatus() {

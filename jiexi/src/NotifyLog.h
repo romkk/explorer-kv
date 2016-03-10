@@ -106,8 +106,8 @@ class Notify {
 
   void loadAddressTableFromDB();
 
-  void handleBlockEvent(NotifyItem &item);
-  void handleTxEvent(NotifyItem &item);
+  int32_t handleBlockEvent(NotifyItem &item);
+  int32_t handleTxEvent(NotifyItem &item);
 
   void updateStatus();
   void getStatus();

@@ -28,6 +28,8 @@
 
 namespace fs = boost::filesystem;
 
+static Notify *gNotify = nullptr;
+
 /////////////////////////////////  NotifyItem  /////////////////////////////////
 NotifyItem::NotifyItem() {
   reset();
@@ -110,6 +112,116 @@ bool NotifyItem::parse(const string &line) {
   LOG_ERROR("[NotifyItem::parse] unknown type");
   return false;
 }
+
+/////////////////////////////////  NotifyHttpd  /////////////////////////////////
+void cb_address(evhtp_request_t * req, void * a) {
+  static string token = Config::GConfig.get("notification.httpd.token");
+  static string successResp = "{\"error_no\":0,\"error_msg\":\"\"}";
+
+  string resp;
+  const char *queryToken   = evhtp_kv_find(req->uri->query, "token");
+  const char *queryAppID   = evhtp_kv_find(req->uri->query, "appid");
+  const char *queryMethod  = evhtp_kv_find(req->uri->query, "method");
+  const char *queryAddress = evhtp_kv_find(req->uri->query, "address");
+  const int32_t appID = atoi(queryAppID);
+
+  do {
+    // invalid token
+    if (strcmp(queryToken, token.c_str()) != 0) {
+      resp = "{\"error_no\":10,\"error_msg\":\"invalid token\"}";
+      break;
+    }
+
+    // invalid appID
+    if (appID <= 0) {
+      resp = "{\"error_no\":11,\"error_msg\":\"invalid appid\"}";
+      break;
+    }
+
+    // insert address
+    if (strcmp(queryMethod, "insert") == 0) {
+      if (!gNotify->insertAddress(appID, queryAddress)) {
+        resp = "{\"error_no\":20,\"error_msg\":\"invalid address or already exist\"}";
+      } else {
+        resp = successResp;
+      }
+      break;
+    }
+
+    // remove address
+    if (strcmp(queryMethod, "delete") == 0) {
+      if (!gNotify->removeAddress(appID, queryAddress)) {
+        resp = "{\"error_no\":21,\"error_msg\":\"invalid address or not exist\"}";
+      } else {
+        resp = successResp;
+      }
+      break;
+    }
+
+    resp = "{\"error_no\":12,\"error_msg\":\"invalid method\"}";
+  } while(0);
+
+  evbuffer_add(req->buffer_out, resp.c_str(), resp.length());
+  evhtp_send_reply(req, EVHTP_RES_OK);
+}
+
+NotifyHttpd::NotifyHttpd(): running_(false), evbase_(nullptr), htp_(nullptr), nThreads_(4)
+{
+  listenHost_ = Config::GConfig.get("notification.httpd.host");
+  listenPort_ = (int32_t)Config::GConfig.getInt("notification.httpd.port");
+}
+
+NotifyHttpd::~NotifyHttpd() {
+}
+
+void NotifyHttpd::init() {
+  evbase_ = event_base_new();
+  htp_    = evhtp_new(evbase_, NULL);
+
+  int rc;
+  evhtp_set_cb(htp_, "/address",  cb_address, NULL);
+  evhtp_set_cb(htp_, "/address/", cb_address, NULL);
+
+  evhtp_use_threads(htp_, NULL, nThreads_, NULL);
+
+  rc = evhtp_bind_socket(htp_, listenHost_.c_str(), listenPort_, 1024);
+  if (rc == -1) {
+    THROW_EXCEPTION_DBEX("bind socket failure, host: %s, port: %d",
+                         listenHost_.c_str(), listenPort_);
+  }
+}
+
+void NotifyHttpd::setNotifyHandler(Notify *notify) {
+  gNotify = notify;
+}
+
+void NotifyHttpd::run() {
+  assert(evbase_ != nullptr);
+  running_ = true;
+
+  event_base_dispatch(evbase_);
+}
+
+void NotifyHttpd::stop() {
+  LogScope ls("APIServer::stop");
+
+  if (!running_) { return; }
+  running_ = false;
+
+  if (evbase_ == nullptr) { return; }
+
+  // stop event loop
+  event_base_loopbreak(evbase_);
+
+  // release resources
+  evhtp_unbind_socket(htp_);
+  evhtp_free(htp_);
+  event_base_free(evbase_);
+
+  evbase_ = nullptr;
+  htp_    = nullptr;
+}
+
 
 
 /////////////////////////////////  NotifyProducer  /////////////////////////////////
@@ -246,6 +358,9 @@ Notify::~Notify() {
 }
 
 void Notify::init() {
+  // load address
+  loadAddressTableFromDB();
+
   // get last file status: index & offset
   getStatus();
 }
@@ -261,6 +376,7 @@ void Notify::setup() {
 void Notify::stop() {
   LOG_INFO("stop notifyd...");
   running_ = false;
+  if (!running_) { return; }
 
   inotify_.RemoveAll();
   changed_.notify_all();

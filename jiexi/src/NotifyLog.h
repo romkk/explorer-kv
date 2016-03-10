@@ -28,6 +28,7 @@
 #include <iostream>
 #include <fstream>
 
+#include <evhtp.h>
 
 #define NOTIFY_EVENT_BLOCK_ACCEPT 10
 #define NOTIFY_EVENT_BLOCK_REJECT 11
@@ -121,8 +122,26 @@ public:
 
   bool insertAddress(const int32_t appID, const char *address, bool sync2mysql=true);
   bool removeAddress(const int32_t appID, const char *address);
+};
 
+/////////////////////////////////  NotifyHttpd  ////////////////////////////////
+class NotifyHttpd {
+  atomic<bool> running_;
+  string  listenHost_;
+  int32_t listenPort_;
 
+  evbase_t *evbase_;
+  evhtp_t  *htp_;
+  int32_t nThreads_;
+
+public:
+  NotifyHttpd();
+  ~NotifyHttpd();
+
+  void setNotifyHandler(Notify *notify);
+  void init();
+  void run();
+  void stop();
 };
 
 

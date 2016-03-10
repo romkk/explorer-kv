@@ -112,15 +112,15 @@ int main(int argc, char **argv) {
     Log::SetLevel((LogLevel)Config::GConfig.getInt("log.level", LOG_LEVEL_INFO));
   }
 
-//  // 打印bitcoin network防止配置错误。N秒钟的倒计时显示
-//  for (int i = 4; i >= 0; i--) {
-//    string s = Strings::Format("\rbitcoin network: %s, %02d...",
-//                               Config::GConfig.getBool("testnet", false) ? "testnet3" : "main",
-//                               i);
-//    fprintf(stdout, "%s", s.c_str());
-//    fflush(stdout);
-//    sleep(1);
-//  }
+  // 打印bitcoin network防止配置错误。N秒钟的倒计时显示
+  for (int i = 4; i >= 0; i--) {
+    string s = Strings::Format("\rbitcoin network: %s, %02d...",
+                               Config::GConfig.getBool("testnet", false) ? "testnet3" : "main",
+                               i);
+    fprintf(stdout, "%s", s.c_str());
+    fflush(stdout);
+    sleep(1);
+  }
 
   signal(SIGTERM, handler);
   signal(SIGINT,  handler);

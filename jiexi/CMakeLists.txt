@@ -63,6 +63,10 @@ file(GLOB TPARSER_SOURCES src/tparser/*.cc)
 add_executable(tparser ${TPARSER_SOURCES})
 target_link_libraries(tparser explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${TCMALLOC_LIBRARY} ${THRID_LIBRARIES})
 
+file(GLOB TPARSER_SOURCES src/tnotify/*.cc)
+add_executable(tnotify ${TPARSER_SOURCES})
+target_link_libraries(tnotify explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${TCMALLOC_LIBRARY} ${THRID_LIBRARIES})
+
 file(GLOB LOG1PRODUCER_SOURCES src/log1producer/*.cc)
 add_executable(log1producer ${LOG1PRODUCER_SOURCES})
 target_link_libraries(log1producer explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${TCMALLOC_LIBRARY} ${THRID_LIBRARIES})

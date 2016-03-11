@@ -209,7 +209,7 @@ void NotifyHttpd::run() {
 }
 
 void NotifyHttpd::stop() {
-  LogScope ls("APIServer::stop");
+  LogScope ls("NotifyHttpd::stop");
 
   if (!running_) { return; }
   running_ = false;
@@ -384,9 +384,10 @@ void Notify::setup() {
 }
 
 void Notify::stop() {
-  LOG_INFO("stop notifyd...");
-  running_ = false;
+  LogScope ls("stop notifyd");
+
   if (!running_) { return; }
+  running_ = false;
 
   inotify_.RemoveAll();
   changed_.notify_all();
@@ -443,7 +444,7 @@ bool Notify::insertAddress(const int32_t appID, const char *address, bool sync2m
       db_.query(sql, res);
 
       if (res.numRows() == 0) {
-      	sql = Strings::Format("CREATE TABLE `%s` LIKE `meta_event_app`", tName.c_str());
+      	sql = Strings::Format("CREATE TABLE `%s` LIKE `tpl_event_app`", tName.c_str());
 	      db_.updateOrThrowEx(sql);
       }
     }
@@ -522,6 +523,7 @@ void Notify::threadWatchNotify() {
 void Notify::threadConsumeNotifyLogs() {
   vector<string>  lines;
   vector<int64_t> offsets;
+  time_t lastWriteDBTime = 0;
 
   while (running_) {
     // 必须在读之前检测是否存在新文件，否则可能漏读
@@ -566,11 +568,11 @@ void Notify::threadConsumeNotifyLogs() {
       }
 
       // update log file index & offset
-      if (cnt > 0) {
-        // 小优化：如果没有捕获任何有效时间，则暂不记录入数据库，提高写入性能，并不影响数据
+      if (cnt > 0 || time(nullptr) > lastWriteDBTime + 3) {
+        // 小优化：如果没有捕获任何有效事件，则暂不记录入数据库（3秒以上再记录），提高写入性能，并不影响数据
         updateStatus();
+        lastWriteDBTime = time(nullptr);
       }
-
     } /* /for */
 
   } /* /while */
@@ -585,7 +587,7 @@ int32_t Notify::handleBlockEvent(NotifyItem &item) {
     const string now = date("%F %T");
     sql = Strings::Format("INSERT INTO `event_app_%d` (`type`, `hash`, `height`, "
                           "     `address`, `amount`, `created_at`) "
-                          " VALUES (%d, '%s', %d, '', 0, '%s', '%s');",
+                          " VALUES (%d, '%s', %d, '', 0, '%s');",
                           appId,
                           item.type_, item.hash_.ToString().c_str(), item.height_,
                           now.c_str());

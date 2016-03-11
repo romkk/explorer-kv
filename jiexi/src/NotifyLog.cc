@@ -132,22 +132,29 @@ void cb_address(evhtp_request_t * req, void * a) {
       break;
     }
 
+    // invalid address
+    CBitcoinAddress bitcoinAddr(queryAddress);
+    if (!bitcoinAddr.IsValid()) {
+      resp = "{\"error_no\":11,\"error_msg\":\"invalid address\"}";
+      break;
+    }
+
     // invalid token
     if (strcmp(queryToken, token.c_str()) != 0) {
-      resp = "{\"error_no\":11,\"error_msg\":\"invalid token\"}";
+      resp = "{\"error_no\":12,\"error_msg\":\"invalid token\"}";
       break;
     }
 
     // invalid appID
     if (appID <= 0) {
-      resp = "{\"error_no\":12,\"error_msg\":\"invalid appid\"}";
+      resp = "{\"error_no\":13,\"error_msg\":\"invalid appid\"}";
       break;
     }
 
     // insert address
     if (strcmp(queryMethod, "insert") == 0) {
       if (!gNotify->insertAddress(appID, queryAddress)) {
-        resp = "{\"error_no\":20,\"error_msg\":\"invalid address or already exist\"}";
+        resp = "{\"error_no\":20,\"error_msg\":\"address already exist\"}";
       } else {
         resp = successResp;
       }
@@ -157,14 +164,14 @@ void cb_address(evhtp_request_t * req, void * a) {
     // remove address
     if (strcmp(queryMethod, "delete") == 0) {
       if (!gNotify->removeAddress(appID, queryAddress)) {
-        resp = "{\"error_no\":21,\"error_msg\":\"invalid address or not exist\"}";
+        resp = "{\"error_no\":21,\"error_msg\":\"address is not exist\"}";
       } else {
         resp = successResp;
       }
       break;
     }
 
-    resp = "{\"error_no\":13,\"error_msg\":\"invalid method\"}";
+    resp = "{\"error_no\":14,\"error_msg\":\"invalid method\"}";
   } while(0);
 
   evbuffer_add(req->buffer_out, resp.c_str(), resp.length());

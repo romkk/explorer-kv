@@ -588,6 +588,7 @@ void Notify::threadConsumeNotifyLogs() {
 int32_t Notify::handleBlockEvent(NotifyItem &item) {
   string sql;
   int cnt = 0;
+  const int64_t kMaxCount = 3000000;  // 每张表最大允许数量，多50万条时进行触发
 
   // 遍历所有appid，分别插入至不同的表中
   for (const auto appId : appIds_) {
@@ -600,6 +601,29 @@ int32_t Notify::handleBlockEvent(NotifyItem &item) {
                           now.c_str());
     db_.updateOrThrowEx(sql, 1);
     cnt++;
+
+    //
+    // 检测数量，超出后进行删除。这是一个低频操作，所以放在块相关操作中进行检测。
+    //
+    MySQLResult res;
+    char **row = nullptr;
+    // ID都连续的
+    sql = Strings::Format("SELECT IFNULL(MIN(`id`), 0) AS `min_id`, IFNULL(MAX(`id`), 0) as `max_id`"
+                          " FROM `event_app_%d`", appId);
+    db_.query(sql, res);
+    assert(res.numRows() == 1);
+    row = res.nextRow();
+    const int64_t min_id = atoi(row[0]);
+    const int64_t max_id = atoi(row[1]);
+    assert(max_id >= min_id);
+
+    // 多50万条时进行触发
+    if (max_id > min_id + kMaxCount + 500000) {
+      sql = Strings::Format("DELETE FROM `event_app_%d` WHERE `id` < %lld ",
+                            appId, max_id - kMaxCount);
+      uint64_t delCnt = db_.update(sql);
+      LOG_INFO("delete table.event_app_%d items: %llu", appId, delCnt);
+    }
   }
   return cnt;
 }

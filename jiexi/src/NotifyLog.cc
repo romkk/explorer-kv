@@ -123,18 +123,24 @@ void cb_address(evhtp_request_t * req, void * a) {
   const char *queryAppID   = evhtp_kv_find(req->uri->query, "appid");
   const char *queryMethod  = evhtp_kv_find(req->uri->query, "method");
   const char *queryAddress = evhtp_kv_find(req->uri->query, "address");
-  const int32_t appID = atoi(queryAppID);
+  const int32_t appID = (queryAppID == nullptr ? 0 : atoi(queryAppID));
 
   do {
+    // invalid params
+    if (!queryAppID || !queryToken || !queryMethod || !queryAddress) {
+      resp = "{\"error_no\":10,\"error_msg\":\"invalid params\"}";
+      break;
+    }
+
     // invalid token
     if (strcmp(queryToken, token.c_str()) != 0) {
-      resp = "{\"error_no\":10,\"error_msg\":\"invalid token\"}";
+      resp = "{\"error_no\":11,\"error_msg\":\"invalid token\"}";
       break;
     }
 
     // invalid appID
     if (appID <= 0) {
-      resp = "{\"error_no\":11,\"error_msg\":\"invalid appid\"}";
+      resp = "{\"error_no\":12,\"error_msg\":\"invalid appid\"}";
       break;
     }
 
@@ -158,7 +164,7 @@ void cb_address(evhtp_request_t * req, void * a) {
       break;
     }
 
-    resp = "{\"error_no\":12,\"error_msg\":\"invalid method\"}";
+    resp = "{\"error_no\":13,\"error_msg\":\"invalid method\"}";
   } while(0);
 
   evbuffer_add(req->buffer_out, resp.c_str(), resp.length());

@@ -134,6 +134,8 @@ class NotifyHttpd {
   evhtp_t  *htp_;
   int32_t nThreads_;
 
+  MySQLConnection db_;
+
 public:
   NotifyHttpd();
   ~NotifyHttpd();

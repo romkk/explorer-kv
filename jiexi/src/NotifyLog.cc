@@ -29,6 +29,7 @@
 namespace fs = boost::filesystem;
 
 static Notify *gNotify = nullptr;
+static MySQLConnection *gNotifyDB_ = nullptr;
 
 /////////////////////////////////  NotifyItem  /////////////////////////////////
 NotifyItem::NotifyItem() {
@@ -128,26 +129,26 @@ void cb_address(evhtp_request_t * req, void * a) {
   do {
     // invalid params
     if (!queryAppID || !queryToken || !queryMethod || !queryAddress) {
-      resp = "{\"error_no\":10,\"error_msg\":\"invalid params\"}";
+      resp = "{\"error_no\":1,\"error_msg\":\"invalid params\"}";
       break;
     }
 
     // invalid address
     CBitcoinAddress bitcoinAddr(queryAddress);
     if (!bitcoinAddr.IsValid()) {
-      resp = "{\"error_no\":11,\"error_msg\":\"invalid address\"}";
+      resp = "{\"error_no\":1,\"error_msg\":\"invalid address\"}";
       break;
     }
 
     // invalid token
     if (strcmp(queryToken, token.c_str()) != 0) {
-      resp = "{\"error_no\":12,\"error_msg\":\"invalid token\"}";
+      resp = "{\"error_no\":1,\"error_msg\":\"invalid token\"}";
       break;
     }
 
     // invalid appID
     if (appID <= 0) {
-      resp = "{\"error_no\":13,\"error_msg\":\"invalid appid\"}";
+      resp = "{\"error_no\":1,\"error_msg\":\"invalid appid\"}";
       break;
     }
 
@@ -171,17 +172,96 @@ void cb_address(evhtp_request_t * req, void * a) {
       break;
     }
 
-    resp = "{\"error_no\":14,\"error_msg\":\"invalid method\"}";
+    resp = "{\"error_no\":1,\"error_msg\":\"invalid method\"}";
   } while(0);
 
   evbuffer_add(req->buffer_out, resp.c_str(), resp.length());
   evhtp_send_reply(req, EVHTP_RES_OK);
 }
 
-NotifyHttpd::NotifyHttpd(): running_(false), evbase_(nullptr), htp_(nullptr), nThreads_(4)
+static bool _isAPPEventTableExist(const int32_t appID) {
+  string sql = Strings::Format("SHOW TABLES LIKE 'event_app_%d'", appID);
+  MySQLResult res;
+
+  gNotifyDB_->query(sql, res);
+
+  if (res.numRows() == 1) {
+    return true;
+  }
+  return false;
+}
+
+void cb_pull_events(evhtp_request_t * req, void * a) {
+  static string token = Config::GConfig.get("notification.httpd.token");
+  static std::set<int32_t> tableIndex;
+
+  const char *queryToken  = evhtp_kv_find(req->uri->query, "token");
+  const char *queryAppID  = evhtp_kv_find(req->uri->query, "appid");
+  const char *queryOffset = evhtp_kv_find(req->uri->query, "offset");
+  const int32_t appID  = (queryAppID == nullptr ? 0  : atoi(queryAppID));
+  const int64_t offset = (queryOffset == nullptr ? 0 : atoll(queryOffset));
+
+  string resp;
+  do {
+    // invalid params
+    if (!queryAppID || !queryToken || !queryOffset) {
+      resp = "{\"error_no\":1,\"error_msg\":\"invalid params\"}";
+      break;
+    }
+
+    // invalid token
+    if (strcmp(queryToken, token.c_str()) != 0) {
+      resp = "{\"error_no\":1,\"error_msg\":\"invalid token\"}";
+      break;
+    }
+
+    // check if table exist
+    if (tableIndex.find(appID) == tableIndex.end()) {
+      if (_isAPPEventTableExist(appID)) {
+        tableIndex.insert(appID);
+      } else {
+        resp = "{\"error_no\":30,\"error_msg\":\"app events table is not exist\"}";
+        break;
+      }
+    }
+
+    //
+    // fetch items
+    //
+    MySQLResult res;
+    string sql;
+    char **row;
+    sql = Strings::Format("SELECT `id`,`type`,`hash`,`height`,`address`,"
+                          " `amount`,`created_at` FROM `event_app_%d`"
+                          " WHERE `id` > %lld ORDER BY `id` ASC LIMIT 1000",
+                          appID, offset);
+    if (gNotifyDB_->query(sql, res) == false || res.numRows() == 0) {
+      resp = "{\"error_no\":30,\"error_msg\":\"app events table is empty\"}";
+      break;
+    }
+
+    resp.reserve(1*1024*1024);
+    resp += "{\"error_no\":0,\"error_msg\":\"\",\"results\":[";
+    while ((row = res.nextRow()) != nullptr) {
+      resp += Strings::Format("{\"id\":%s,\"type\":%s,\"hash\":\"%s\",\"height\":%s,"
+                              "\"address\":\"%s\",\"amount\":%s,\"created_at\":\"%s\"},",
+                              row[0], row[1], row[2], row[3], row[4], row[5], row[6]);
+    }
+    resp.resize(resp.size() - 1);  // remove last ','
+    resp += "]}";
+  } while(0);
+
+  evbuffer_add(req->buffer_out, resp.c_str(), resp.length());
+  evhtp_send_reply(req, EVHTP_RES_OK);
+}
+
+NotifyHttpd::NotifyHttpd(): running_(false), evbase_(nullptr), htp_(nullptr), nThreads_(4),
+db_(Config::GConfig.get("db.notifyd.uri"))
 {
   listenHost_ = Config::GConfig.get("notification.httpd.host");
   listenPort_ = (int32_t)Config::GConfig.getInt("notification.httpd.port");
+
+  gNotifyDB_ = &db_;
 }
 
 NotifyHttpd::~NotifyHttpd() {
@@ -192,8 +272,14 @@ void NotifyHttpd::init() {
   htp_    = evhtp_new(evbase_, NULL);
 
   int rc;
+
+  // callback: address
   evhtp_set_cb(htp_, "/address",  cb_address, NULL);
   evhtp_set_cb(htp_, "/address/", cb_address, NULL);
+
+  // callback: pull events
+  evhtp_set_cb(htp_, "/pullevents",  cb_pull_events, NULL);
+  evhtp_set_cb(htp_, "/pullevents/", cb_pull_events, NULL);
 
   evhtp_use_threads(htp_, NULL, nThreads_, NULL);
 

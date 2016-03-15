@@ -71,7 +71,7 @@ http://127.1:7900/address?token=TESTNET3_DEV_pOE9Sx8&appid=2&method=delete&addre
 拉取通知消息URL：
 
 ```
-http://<host>:<port>/pullevents/?appid=<app_id>&offset=<offset>
+http://<host>:<port>/pullevents/?token=<token>&appid=<app_id>&offset=<offset>
 ```
 
 `offset`为上次获取的最大ID值，本次结果将显示大于此值的数据。目前每次最大返回`1000 `条数据。

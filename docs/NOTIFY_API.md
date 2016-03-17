@@ -79,7 +79,7 @@ http://<host>:<port>/pullevents/?token=<token>&appid=<app_id>&offset=<offset>
 示例：
 
 ```
-http://127.1:7900/pullevents?token=TESTNET3_DEV_pOE9Sx8&appid\=1&offset=1374
+http://127.1:7900/pullevents?token=TESTNET3_DEV_pOE9Sx8&appid=1&offset=1374
 ```
 
 返回：

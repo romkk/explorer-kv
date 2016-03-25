@@ -214,9 +214,6 @@ private:
   // kv
   KVDB kvdb_;
 
-  // 块最大时间戳
-  BlockTimestamp blkTs_;
-
   // 交易信息(id, hex等）缓存
   TxInfoCache txInfoCache_;
 
@@ -225,9 +222,12 @@ private:
   Inotify inotify_;
   thread threadWatchNotify_;
 
-  // 通知日志
+  // 事件通知系统的日志
   NotifyProducer *notifyProducer_;
+  // 达到此高度后才允许通知日志输出，-1表示无限制。防止启动时追快造成短时间内大量生成大量通知事件
+  int32_t notifyBeginHeight_;
   void threadWatchNotifyFile();
+  int32_t currBlockHeight_;
 
   // API Httpd
   APIServer apiServer_;
@@ -294,7 +294,8 @@ private:
   void writeLastProcessTxlogTime();
 
   // 写入通知日志文件
-  void writeNotificationLogs(const map<int64_t, int64_t> &addressBalance, class TxLog2 *txLog2);
+  bool isWriteNotificationLogs();
+  void writeNotificationLogs(const map<string, int64_t> &addressBalance, class TxLog2 *txLog2);
 
 
 public:

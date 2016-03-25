@@ -17,6 +17,7 @@
  */
 
 #include "NotifyLog.h"
+#include "Util.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -27,71 +28,302 @@
 
 namespace fs = boost::filesystem;
 
+static Notify *gNotify = nullptr;
+static mutex gLock;  // 给检测表是否存在加锁
 
 /////////////////////////////////  NotifyItem  /////////////////////////////////
 NotifyItem::NotifyItem() {
   reset();
 }
 
-NotifyItem::NotifyItem(const int32_t type, bool isCoinbase, const int64_t addressId,
-                       const int64_t txId, const string &address,
-                       const uint256 txhash, int64_t balanceDiff,
-                       const int32_t blkHeight, const int64_t blkId, const uint256 &blkHash) {
-  type_        = type;
-  isCoinbase_  = isCoinbase;
-  addressId_   = addressId;
-  txId_        = txId;
-  address_     = address;
-  txhash_      = txhash;
-  balanceDiff_ = balanceDiff;
+void NotifyItem::loadtx(const int32_t type, const string &address,
+                        const uint256 &hash, const int32_t height, const int64_t amount) {
+  reset();
+  timestamp_ = (uint32_t)time(nullptr);
+  type_   = type;
+  height_ = height;
+  amount_ = amount;
+  hash_   = hash;
+  snprintf(address_, sizeof(address_), "%s", address.c_str());
+}
 
-  blkHeight_ = blkHeight;
-  blkId_     = blkId;
-  blkHash_   = blkHash;
+void NotifyItem::loadblock(const int32_t type, const uint256 &hash, const int32_t height) {
+  reset();
+  timestamp_ = (uint32_t)time(nullptr);
+  type_   = type;
+  height_ = height;
+  hash_   = hash;
 }
 
 void NotifyItem::reset() {
-  type_        = 0;
-  isCoinbase_  = 0;
-  addressId_   = 0;
-  txId_        = 0;
-  address_     = "";
-  txhash_      = uint256();
-  balanceDiff_ = 0;
-
-  blkHeight_ = -1;
-  blkId_     = -1;
-  blkHash_   = uint256();
+  type_ = -1;
+  height_ = -1;
+  amount_ = 0;
+  hash_ = uint256();
+  memset(address_, 0, sizeof(address_));
 }
 
-string NotifyItem::toStrLineWithTime() const {
-  return Strings::Format("%s,%d,%d,%lld,%s,%lld,%s,%lld,%d,%lld,%s",
-                         date("%F %T").c_str(),
-                         type_, isCoinbase_ ? 1 : 0,
-                         addressId_, address_.c_str(),
-                         txId_, txhash_.ToString().c_str(), balanceDiff_,
-                         blkHeight_, blkId_, blkHash_.ToString().c_str());
+string NotifyItem::toStr() const {
+  // tx
+  if (type_ >= 20 && type_ <= 23) {
+    return Strings::Format("%s,%d,%s,%d,%s,%lld",
+                           date("%F %T", timestamp_).c_str(), type_, address_, height_,
+                           hash_.ToString().c_str(), amount_);
+  }
+  // block
+  else if (type_ >= 10 && type_ <= 11) {
+    return Strings::Format("%s,%d,%d,%s",
+                           date("%F %T", timestamp_).c_str(), type_, height_,
+                           hash_.ToString().c_str());
+  }
+
+  // should not be here
+  LOG_ERROR("[NotifyItem::toStr] unknown type");
+  return "";
 }
 
-void NotifyItem::parse(const string &line) {
+bool NotifyItem::parse(const string &line) {
   reset();
 
-  // 按照 ',' 切分，最多切8份
-  const vector<string> arr1 = split(line, ',', 11);
-  assert(arr1.size() == 11);
+  // 按照 ',' 切分
+  const vector<string> arr = split(line, ',', 6);
 
-  type_        = atoi(arr1[1].c_str());
-  isCoinbase_  = atoi(arr1[2].c_str()) != 0 ? 1 : 0;
-  addressId_   = atoi64(arr1[3].c_str());
-  address_     = arr1[4];
-  txId_        = atoi64(arr1[5].c_str());
-  txhash_      = uint256(arr1[6]);
-  balanceDiff_ = atoi64(arr1[7].c_str());
+  timestamp_ = (uint32_t)str2time(arr[0].c_str(), "%F %T");
+  type_ = atoi(arr[1].c_str());
 
-  blkHeight_   = atoi(arr1[8].c_str());
-  blkId_       = atoi64(arr1[9].c_str());
-  blkHash_     = uint256(arr1[10]);
+  // tx
+  if (type_ >= 20 && type_ <= 23) {
+    assert(arr.size() == 6);
+    snprintf(address_, sizeof(address_), "%s", arr[2].c_str());
+    height_ = atoi(arr[3].c_str());
+    hash_ = uint256(arr[4].c_str());
+    amount_ = atoll(arr[5].c_str());
+    return true;
+  }
+
+  // block
+  if (type_ >= 10 && type_ <= 11) {
+    assert(arr.size() == 4);
+    height_ = atoi(arr[2].c_str());
+    hash_ = uint256(arr[3].c_str());
+    return true;
+  }
+
+  // should not be here
+  LOG_ERROR("[NotifyItem::parse] unknown type");
+  return false;
 }
+
+/////////////////////////////////  NotifyHttpd  /////////////////////////////////
+void cb_address(evhtp_request_t * req, void * a) {
+  static string token = Config::GConfig.get("notification.httpd.token");
+  static string successResp = "{\"error_no\":0,\"error_msg\":\"\"}";
+
+  string resp;
+  const char *queryToken   = evhtp_kv_find(req->uri->query, "token");
+  const char *queryAppID   = evhtp_kv_find(req->uri->query, "appid");
+  const char *queryMethod  = evhtp_kv_find(req->uri->query, "method");
+  const char *queryAddress = evhtp_kv_find(req->uri->query, "address");
+  const int32_t appID = (queryAppID == nullptr ? 0 : atoi(queryAppID));
+
+  do {
+    // invalid params
+    if (!queryAppID || !queryToken || !queryMethod || !queryAddress) {
+      resp = "{\"error_no\":1,\"error_msg\":\"invalid params\"}";
+      break;
+    }
+
+    // invalid address
+    CBitcoinAddress bitcoinAddr(queryAddress);
+    if (!bitcoinAddr.IsValid()) {
+      resp = "{\"error_no\":1,\"error_msg\":\"invalid address\"}";
+      break;
+    }
+
+    // invalid token
+    if (strcmp(queryToken, token.c_str()) != 0) {
+      resp = "{\"error_no\":1,\"error_msg\":\"invalid token\"}";
+      break;
+    }
+
+    // invalid appID
+    if (appID <= 0) {
+      resp = "{\"error_no\":1,\"error_msg\":\"invalid appid\"}";
+      break;
+    }
+
+    // insert address
+    if (strcmp(queryMethod, "insert") == 0) {
+      if (!gNotify->insertAddress(appID, queryAddress)) {
+        resp = "{\"error_no\":20,\"error_msg\":\"address already exist\"}";
+      } else {
+        resp = successResp;
+      }
+      break;
+    }
+
+    // remove address
+    if (strcmp(queryMethod, "delete") == 0) {
+      if (!gNotify->removeAddress(appID, queryAddress)) {
+        resp = "{\"error_no\":21,\"error_msg\":\"address is not exist\"}";
+      } else {
+        resp = successResp;
+      }
+      break;
+    }
+
+    resp = "{\"error_no\":1,\"error_msg\":\"invalid method\"}";
+  } while(0);
+
+  evbuffer_add(req->buffer_out, resp.c_str(), resp.length());
+  evhtp_send_reply(req, EVHTP_RES_OK);
+}
+
+static bool _isAPPEventTableExist(const int32_t appID, MySQLConnection *db) {
+  string sql = Strings::Format("SHOW TABLES LIKE 'event_app_%d'", appID);
+  MySQLResult res;
+
+  db->query(sql, res);
+  if (res.numRows() == 1) {
+    return true;
+  }
+  return false;
+}
+
+void cb_pull_events(evhtp_request_t * req, void * a) {
+  static string token = Config::GConfig.get("notification.httpd.token");
+  static std::set<int32_t> tableIndex;
+
+  const char *queryToken  = evhtp_kv_find(req->uri->query, "token");
+  const char *queryAppID  = evhtp_kv_find(req->uri->query, "appid");
+  const char *queryOffset = evhtp_kv_find(req->uri->query, "offset");
+  const int32_t appID  = (queryAppID == nullptr ? 0  : atoi(queryAppID));
+  const int64_t offset = (queryOffset == nullptr ? 0 : atoll(queryOffset));
+
+  string resp;
+  do {
+    // invalid params
+    if (!queryAppID || !queryToken || !queryOffset) {
+      resp = "{\"error_no\":1,\"error_msg\":\"invalid params\"}";
+      break;
+    }
+
+    // invalid token
+    if (strcmp(queryToken, token.c_str()) != 0) {
+      resp = "{\"error_no\":1,\"error_msg\":\"invalid token\"}";
+      break;
+    }
+
+    // 因为该函数可能是多线程调用，直接新建数据库连接代替每个线程一个连接
+    MySQLConnection db(Config::GConfig.get("db.notifyd.uri"));
+    db.open();
+
+    // check if table exist
+    {
+      ScopeLock sl(gLock);
+      if (tableIndex.find(appID) == tableIndex.end()) {
+        if (_isAPPEventTableExist(appID, &db)) {
+          tableIndex.insert(appID);
+        } else {
+          resp = "{\"error_no\":30,\"error_msg\":\"app events table is not exist\"}";
+          break;
+        }
+      }
+    }
+
+    //
+    // 拉取数据库记录，
+    //
+    MySQLResult res;
+    string sql;
+    char **row;
+    sql = Strings::Format("SELECT `id`,`type`,`hash`,`height`,`address`,"
+                          " `amount`,`created_at` FROM `event_app_%d`"
+                          " WHERE `id` > %lld ORDER BY `id` ASC LIMIT 1000",
+                          appID, offset);
+    if (db.query(sql, res) == false || res.numRows() == 0) {
+      resp = "{\"error_no\":30,\"error_msg\":\"app events table is empty\"}";
+      break;
+    }
+
+    resp.reserve(1*1024*1024);
+    resp += "{\"error_no\":0,\"error_msg\":\"\",\"results\":[";
+    while ((row = res.nextRow()) != nullptr) {
+      resp += Strings::Format("{\"id\":%s,\"type\":%s,\"hash\":\"%s\",\"height\":%s,"
+                              "\"address\":\"%s\",\"amount\":%s,\"created_at\":\"%s\"},",
+                              row[0], row[1], row[2], row[3], row[4], row[5], row[6]);
+    }
+    resp.resize(resp.size() - 1);  // remove last ','
+    resp += "]}";
+  } while(0);
+
+  evbuffer_add(req->buffer_out, resp.c_str(), resp.length());
+  evhtp_send_reply(req, EVHTP_RES_OK);
+}
+
+NotifyHttpd::NotifyHttpd(): running_(false), evbase_(nullptr), htp_(nullptr), nThreads_(4)
+{
+  listenHost_ = Config::GConfig.get("notification.httpd.host");
+  listenPort_ = (int32_t)Config::GConfig.getInt("notification.httpd.port");
+}
+
+NotifyHttpd::~NotifyHttpd() {
+}
+
+void NotifyHttpd::init() {
+  evbase_ = event_base_new();
+  htp_    = evhtp_new(evbase_, NULL);
+
+  int rc;
+
+  // callback: address
+  evhtp_set_cb(htp_, "/address",  cb_address, NULL);
+  evhtp_set_cb(htp_, "/address/", cb_address, NULL);
+
+  // callback: pull events
+  evhtp_set_cb(htp_, "/pullevents",  cb_pull_events, NULL);
+  evhtp_set_cb(htp_, "/pullevents/", cb_pull_events, NULL);
+
+  evhtp_use_threads(htp_, NULL, nThreads_, NULL);
+
+  rc = evhtp_bind_socket(htp_, listenHost_.c_str(), listenPort_, 1024);
+  if (rc == -1) {
+    THROW_EXCEPTION_DBEX("bind socket failure, host: %s, port: %d",
+                         listenHost_.c_str(), listenPort_);
+  }
+}
+
+void NotifyHttpd::setNotifyHandler(Notify *notify) {
+  gNotify = notify;
+}
+
+void NotifyHttpd::run() {
+  assert(evbase_ != nullptr);
+  running_ = true;
+
+  event_base_dispatch(evbase_);
+}
+
+void NotifyHttpd::stop() {
+  LogScope ls("NotifyHttpd::stop");
+
+  if (!running_) { return; }
+  running_ = false;
+
+  if (evbase_ == nullptr) { return; }
+
+  // stop event loop
+  event_base_loopbreak(evbase_);
+
+  // release resources
+  evhtp_unbind_socket(htp_);
+  evhtp_free(htp_);
+  event_base_free(evbase_);
+
+  evbase_ = nullptr;
+  htp_    = nullptr;
+}
+
 
 
 /////////////////////////////////  NotifyProducer  /////////////////////////////////
@@ -104,7 +336,7 @@ NotifyProducer::NotifyProducer(const string &dir):
   dir_ = dir;
 
   // 通知文件
-  inotifyFile_ = dir_ + "/NOTIFY_NOTIFICATION_LOG";
+  inotifyFile_ = dir_ + "/NOTIFY_TPARSER_TO_NOTIFYD";
   {
     FILE *f = fopen(inotifyFile_.c_str(), "w");
     if (f == nullptr) {
@@ -207,3 +439,420 @@ void NotifyProducer::write(const string &lines) {
   }
 }
 
+
+///////////////////////////////////  Notify  ///////////////////////////////////
+Notify::Notify(): running_(false),
+logDir_(Config::GConfig.get("notification.dir")),
+iNotifyFile_(Config::GConfig.get("notification.inotify.file")),
+db_(Config::GConfig.get("db.notifyd.uri")), logReader_(logDir_)
+{
+}
+
+Notify::~Notify() {
+  changed_.notify_all();
+
+  if (threadWatchNotify_.joinable()) {
+    threadWatchNotify_.join();
+  }
+  if (threadConsumeNotifyLogs_.joinable()) {
+    threadConsumeNotifyLogs_.join();
+  }
+}
+
+void Notify::init() {
+  if (!db_.ping()) {
+    THROW_EXCEPTION_DBEX("connect to db failure");
+  }
+
+  // load address
+  loadAddressTableFromDB();
+
+  // get last file status: index & offset
+  getStatus();
+}
+
+void Notify::setup() {
+  running_ = true;
+
+  // setup threads
+  threadWatchNotify_       = thread(&Notify::threadWatchNotify, this);
+  threadConsumeNotifyLogs_ = thread(&Notify::threadConsumeNotifyLogs, this);
+}
+
+void Notify::stop() {
+  LogScope ls("stop notifyd");
+
+  if (!running_) { return; }
+  running_ = false;
+
+  inotify_.RemoveAll();
+  changed_.notify_all();
+}
+
+void Notify::loadAddressTableFromDB() {
+  MySQLResult res;
+  char **row;
+  string sql;
+
+  sql = "SELECT `app_id`,`address` FROM `app_subcribe`";
+  db_.query(sql, res);
+  if (res.numRows() == 0) {
+    LOG_WARN("empty table.app_subcribe");
+    return;
+  }
+
+  LOG_INFO("load %llu from table.app_subcribe", res.numRows());
+  while ((row = res.nextRow()) != nullptr) {
+    insertAddress(atoi(row[0]), row[1], false);
+  }
+}
+
+bool Notify::insertAddress(const int32_t appID, const char *address, bool sync2mysql) {
+  ScopeLock sl(lock_);
+  CBitcoinAddress bitcoinAddr(address);
+  if (!bitcoinAddr.IsValid()) {
+    return false;
+  }
+  const string a = bitcoinAddr.ToString();
+
+  if (addressTable_.find(a) != addressTable_.end() &&
+      addressTable_[a].find(appID) != addressTable_[a].end()) {
+    return false;  // already exist
+  }
+
+  // insert to memory first than insert to msyql
+  addressTable_[a].insert(appID);
+
+  const bool isAppIDExist = (appIds_.find(appID) != appIds_.end());
+  if (!isAppIDExist) {
+    appIds_.insert(appID);
+  }
+
+  // 首次从数据库加载时，无需执行下面部分
+  if (sync2mysql) {
+    string sql;
+    MySQLResult res;
+
+    // create table
+    if (!isAppIDExist) {
+      const string tName = Strings::Format("event_app_%d", appID);
+      sql = Strings::Format("SHOW TABLES LIKE '%s'", tName.c_str());
+      db_.query(sql, res);
+
+      if (res.numRows() == 0) {
+      	sql = Strings::Format("CREATE TABLE `%s` LIKE `tpl_event_app`", tName.c_str());
+	      db_.updateOrThrowEx(sql);
+      }
+    }
+
+    // insert into db
+    const string now = date("%F %T");
+    sql = Strings::Format("INSERT INTO `app_subcribe` (`app_id`, `address`, "
+                          " `created_at`, `updated_at`) VALUES (%d, '%s', '%s', '%s');",
+                          appID, a.c_str(), now.c_str(), now.c_str());
+    db_.updateOrThrowEx(sql, 1);
+  }
+
+  return true;
+}
+
+bool Notify::removeAddress(const int32_t appID, const char *address) {
+  ScopeLock sl(lock_);
+  CBitcoinAddress bitcoinAddr(address);
+  if (!bitcoinAddr.IsValid()) {
+    return false;
+  }
+  const string a = bitcoinAddr.ToString();
+
+  if (addressTable_.find(a) == addressTable_.end() ||
+      addressTable_[a].find(appID) == addressTable_[a].end()) {
+    return false;  // not exist
+  }
+
+  // remove from memory first
+  addressTable_[string(address)].erase(appID);
+
+  // remove from mysql
+  string sql = Strings::Format("DELETE FROM `app_subcribe` WHERE `app_id`=%d AND `address`='%s'",
+                               appID, a.c_str());
+  db_.updateOrThrowEx(sql, 1);
+
+  return true;
+}
+
+void Notify::threadWatchNotify() {
+  try {
+    //
+    // IN_CLOSE_NOWRITE :
+    //     一个以只读方式打开的文件或目录被关闭
+    //     A file or directory that had been open read-only was closed.
+    // `cat FILE` 可触发该事件
+    //
+    InotifyWatch watch(iNotifyFile_, IN_CLOSE_NOWRITE);
+    inotify_.Add(watch);
+    LOG_INFO("watching notify file: %s", iNotifyFile_.c_str());
+
+    while (running_) {
+      inotify_.WaitForEvents();
+
+      size_t count = inotify_.GetEventCount();
+      while (count > 0) {
+        InotifyEvent event;
+        bool got_event = inotify_.GetEvent(&event);
+
+        if (got_event) {
+          string mask_str;
+          event.DumpTypes(mask_str);
+          LOG_DEBUG("get inotify event, mask: %s", mask_str.c_str());
+        }
+        count--;
+
+        // notify other threads
+        changed_.notify_all();
+      }
+    } /* /while */
+  } catch (InotifyException &e) {
+    THROW_EXCEPTION_DBEX("Inotify exception occured: %s", e.GetMessage().c_str());
+  }
+}
+
+void Notify::threadConsumeNotifyLogs() {
+  vector<string>  lines;
+  vector<int64_t> offsets;
+  time_t lastWriteDBTime = 0;
+
+  while (running_) {
+    // 必须在读之前检测是否存在新文件，否则可能漏读
+    bool isNewFileExist = logReader_.isNewFileExist(logFileIndex_);
+
+    // 读取日志
+    logReader_.readLines(logFileIndex_, logFileOffset_, &lines, &offsets);
+    if (!running_) { break; }
+
+    // 已经存在新文件的情况下，未读取到，则表明需进行文件切换
+    if (isNewFileExist && lines.size() == 0) {
+      logFileIndex_++;
+      logFileOffset_ = 0;
+
+      continue;
+    }
+
+    if (lines.size() == 0) {
+      UniqueLock ul(lock_);
+      // 默认等待N毫秒，直至超时，中间有人触发，则立即continue读取记录
+      changed_.wait_for(ul, chrono::milliseconds(10*1000));
+      continue;
+    }
+
+    for (size_t i = 0; i < lines.size(); i++) {
+      ScopeLock sl(lock_);
+
+      const string &line = lines[i];
+      logFileOffset_ = offsets[i];
+
+      NotifyItem item;
+      if (!item.parse(line)) {
+        continue;
+      }
+      int cnt = 0;
+      if (item.type_ == NOTIFY_EVENT_BLOCK_ACCEPT || item.type_ == NOTIFY_EVENT_BLOCK_REJECT) {
+        // handle block event
+        cnt += handleBlockEvent(item);
+      } else {
+        // handle tx event
+        cnt += handleTxEvent(item);
+      }
+
+      // update log file index & offset
+      if (cnt > 0 || time(nullptr) > lastWriteDBTime + 3) {
+        // 小优化：如果没有捕获任何有效事件，则暂不记录入数据库（3秒以上再记录），提高写入性能，并不影响数据
+        updateStatus();
+        lastWriteDBTime = time(nullptr);
+      }
+    } /* /for */
+
+  } /* /while */
+}
+
+int32_t Notify::handleBlockEvent(NotifyItem &item) {
+  string sql;
+  int cnt = 0;
+  const int64_t kMaxCount = 3000000;  // 每张表最大允许数量，多50万条时进行触发
+
+  // 遍历所有appid，分别插入至不同的表中
+  for (const auto appId : appIds_) {
+    const string now = date("%F %T");
+    sql = Strings::Format("INSERT INTO `event_app_%d` (`type`, `hash`, `height`, "
+                          "     `address`, `amount`, `created_at`) "
+                          " VALUES (%d, '%s', %d, '', 0, '%s');",
+                          appId,
+                          item.type_, item.hash_.ToString().c_str(), item.height_,
+                          now.c_str());
+    db_.updateOrThrowEx(sql, 1);
+    cnt++;
+
+    //
+    // 检测数量，超出后进行删除。这是一个低频操作，所以放在块相关操作中进行检测。
+    //
+    MySQLResult res;
+    char **row = nullptr;
+    // ID都连续的
+    sql = Strings::Format("SELECT IFNULL(MIN(`id`), 0) AS `min_id`, IFNULL(MAX(`id`), 0) as `max_id`"
+                          " FROM `event_app_%d`", appId);
+    db_.query(sql, res);
+    assert(res.numRows() == 1);
+    row = res.nextRow();
+    const int64_t min_id = atoi(row[0]);
+    const int64_t max_id = atoi(row[1]);
+    assert(max_id >= min_id);
+
+    // 多50万条时进行触发
+    if (max_id > min_id + kMaxCount + 500000) {
+      sql = Strings::Format("DELETE FROM `event_app_%d` WHERE `id` < %lld ",
+                            appId, max_id - kMaxCount);
+      uint64_t delCnt = db_.update(sql);
+      LOG_INFO("delete table.event_app_%d items: %llu", appId, delCnt);
+    }
+  }
+  return cnt;
+}
+
+int32_t Notify::handleTxEvent(NotifyItem &item) {
+  string sql;
+  int cnt = 0;
+
+  const auto it = addressTable_.find(string(item.address_));
+  if (it == addressTable_.end()) {
+    return 0;
+  }
+
+  for (const auto appId : it->second) {
+    const string now = date("%F %T");
+    sql = Strings::Format("INSERT INTO `event_app_%d` (`type`, `hash`, `height`, "
+                          "     `address`, `amount`, `created_at`) "
+                          " VALUES (%d, '%s', %d, '%s', %lld, '%s');",
+                          appId,
+                          item.type_, item.hash_.ToString().c_str(), item.height_,
+                          item.address_, item.amount_, now.c_str());
+    db_.updateOrThrowEx(sql, 1);
+    cnt++;
+  }
+  return cnt;
+}
+
+void Notify::updateStatus() {
+  string sql;
+
+  // INSERT INTO `meta_notifyd` (`key`, `value`, `created_at`, `updated_at`)
+  sql = Strings::Format("UPDATE `meta_notifyd` SET `value`='%d,%lld',`updated_at`='%s' "
+                        " WHERE `key`='notify.file.status' ",
+                        logFileIndex_, logFileOffset_, date("%F %T").c_str());
+  db_.updateOrThrowEx(sql, 1);
+}
+
+void Notify::getStatus() {
+  char **row;
+  MySQLResult res;
+  string sql;
+  sql = "SELECT `value` FROM `meta_notifyd` WHERE `key`='notify.file.status' ";
+  db_.query(sql, res);
+
+  if (res.numRows() == 0) {
+    // not exist
+    const string now = date("%F %T");
+    sql = Strings::Format("INSERT INTO `meta_notifyd` (`key`, `value`, `created_at`, `updated_at`) "
+                          "VALUES ('notify.file.status', '0,0', '%s', '%s') ",
+                          now.c_str(), now.c_str());
+    db_.updateOrThrowEx(sql, 1);
+    logFileIndex_  = 0;
+    logFileOffset_ = 0;
+  }
+  else
+  {
+    // existed, get value
+    row = res.nextRow();
+    const string value = string(row[0]);
+    vector<string> arr = split(value, ',');
+    assert(arr.size() == 2);
+    logFileIndex_  = atoi(arr[0].c_str());
+    logFileOffset_ = atoll(arr[1].c_str());
+  }
+}
+
+
+/////////////////////////////////  NotifyItem  /////////////////////////////////
+NotifyLogReader::NotifyLogReader(string &logDir):
+//fileIndex_(0), fileOffset_(0),
+fileHandler_(nullptr), logDir_(logDir)
+{}
+
+NotifyLogReader::~NotifyLogReader() {
+  if (fileHandler_ != nullptr) {
+    fclose(fileHandler_);
+    fileHandler_ = nullptr;
+  }
+}
+
+void NotifyLogReader::readLines(int32_t currFileIndex, int64_t currFileOffset,
+                                vector<string> *lines, vector<int64_t> *fileOffset) {
+  const string currFile = Strings::Format("%s/files/%d.log",
+                                          logDir_.c_str(), currFileIndex);
+  lines->clear();
+  fileOffset->clear();
+
+  //
+  // 打开文件并尝试读取新行
+  //
+  ifstream logStream(currFile);
+  if (!logStream.is_open()) {
+    THROW_EXCEPTION_DBEX("open file failure: %s", currFile.c_str());
+  }
+  logStream.seekg(currFileOffset);
+  string line;
+
+  while (getline(logStream, line)) {  // getline()读不到内容，则会关闭 ifstream
+    if (logStream.eof()) {
+      // eof 表示没有遇到 \n 就抵达文件尾部了，通常意味着未完全读取一行
+      // 读取完最后一行后，再读取一次，才会导致 eof() 为 true
+      break;
+    }
+
+    // offset肯定是同一个文件内的，不可能跨文件
+    lines->push_back(line);
+    fileOffset->push_back(logStream.tellg());
+
+    if (lines->size() > 500) {  // 每次最多处理500条日志
+      break;
+    }
+  } /* /while */
+
+  if (lines->size() > 0) {
+    LOG_DEBUG("load notify items: %lld", lines->size());
+    return;
+  }
+}
+
+bool NotifyLogReader::isNewFileExist(int32_t currFileIndex) {
+  const string nextFile = Strings::Format("%s/files/%d.log",
+                                          logDir_.c_str(), currFileIndex + 1);
+  return fs::exists(fs::path(nextFile));
+}
+
+void NotifyLogReader::tryRemoveOldFiles(int32_t currFileIndex) {
+  const int32_t keepLogNum = 100;  // 最多保留文件数量
+  int32_t fileIdx = currFileIndex - keepLogNum;
+
+  // 遍历，删除所有小序列号的文件
+  while (fileIdx >= 0) {
+    const string file = Strings::Format("%s/files/%d.log", logDir_.c_str(), fileIdx--);
+    if (!fs::exists(fs::path(file))) {
+      break;
+    }
+
+    // try delete
+    LOG_INFO("remove old log: %s", file.c_str());
+    if (!fs::remove(fs::path(file))) {
+      THROW_EXCEPTION_DBEX("remove old log failure: %s", file.c_str());
+    }
+  }
+}

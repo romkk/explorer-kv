@@ -2,7 +2,19 @@ cmake_minimum_required (VERSION 2.6)
 
 project (explorer)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
-set(CMAKE_BUILD_TYPE Release)
+
+#
+# cmake -DCMAKE_BUILD_TYPE=Debug ..
+# cmake -DCMAKE_BUILD_TYPE=Release ..
+#
+message("CMAKE_BUILD_TYPE = ${CMAKE_BUILD_TYPE}")
+IF(CMAKE_BUILD_TYPE MATCHES Debug)
+  message("Debug build.")
+ELSEIF(CMAKE_BUILD_TYPE MATCHES Release)
+  message("Release build.")
+ELSE()
+  message("Some other build type.")
+ENDIF()
 
 set(CMAKE_CXX_COMPILER "g++")
 set(CMAKE_C_COMPILER "gcc")
@@ -50,6 +62,10 @@ add_library(explorer STATIC ${LIB_SOURCES})
 file(GLOB TPARSER_SOURCES src/tparser/*.cc)
 add_executable(tparser ${TPARSER_SOURCES})
 target_link_libraries(tparser explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${TCMALLOC_LIBRARY} ${THRID_LIBRARIES})
+
+file(GLOB TPARSER_SOURCES src/tnotify/*.cc)
+add_executable(tnotify ${TPARSER_SOURCES})
+target_link_libraries(tnotify explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${TCMALLOC_LIBRARY} ${THRID_LIBRARIES})
 
 file(GLOB LOG1PRODUCER_SOURCES src/log1producer/*.cc)
 add_executable(log1producer ${LOG1PRODUCER_SOURCES})

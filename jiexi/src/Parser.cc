@@ -261,8 +261,7 @@ void TxInfoCache::getTxInfo(MySQLConnection &db,
 
 /////////////////////////////////  Parser  ///////////////////////////////////
 Parser::Parser(): running_(true), unconfirmedTxsSize_(0), unconfirmedTxsCount_(0),
-kvdb_(Config::GConfig.get("rocksdb.path", "")),
-blkTs_(2016), notifyProducer_(nullptr), txlogsBuffer_(200),
+kvdb_(Config::GConfig.get("rocksdb.path", "")), notifyProducer_(nullptr), currBlockHeight_(-1), txlogsBuffer_(200),
 recognizeBlock_(Config::GConfig.get("pools.json", ""), &kvdb_)
 {
   notifyFileLog2Producer_ = Config::GConfig.get("notify.log2producer.file");
@@ -278,6 +277,7 @@ recognizeBlock_(Config::GConfig.get("pools.json", ""), &kvdb_)
     if (*(std::prev(dir.end())) == '/') {  // remove last '/'
       dir.resize(dir.length() - 1);
     }
+    notifyBeginHeight_ = Config::GConfig.getInt("notification.begin.height", -1);
     notifyProducer_ = new NotifyProducer(dir);
     notifyProducer_->init();
   }
@@ -653,6 +653,18 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
                                        txLog2->maxBlkTimestamp_, txLog2->blkHeight_);
     kvdb_.set(key, Strings::Format("%s", blk.GetHash().ToString().c_str()));
   }
+
+  // 设置当前块高度
+  currBlockHeight_ = txLog2->blkHeight_;
+
+  // 写入事件通知
+  {
+    string sbuf;
+    NotifyItem nitem;
+    nitem.loadblock(NOTIFY_EVENT_BLOCK_ACCEPT, blk.GetHash(), txLog2->blkHeight_);
+    sbuf.append(nitem.toStr() + "\n");
+    notifyProducer_->write(sbuf);
+  }
 }
 
 
@@ -813,28 +825,48 @@ void Parser::removeUnconfirmedTxPool(class TxLog2 *txLog2) {
   }
 }
 
+bool Parser::isWriteNotificationLogs() {
+  if (notifyProducer_ == nullptr ||
+      (currBlockHeight_ != -1 && notifyBeginHeight_ != -1 && currBlockHeight_ < notifyBeginHeight_)) {
+    // 当前高度未达到时，不启动事件通知
+    return false;
+  }
+  return true;
+}
+
 // 写入通知日志文件
-void Parser::writeNotificationLogs(const map<int64_t, int64_t> &addressBalance,
+void Parser::writeNotificationLogs(const map<string, int64_t> &addressBalance,
                                    class TxLog2 *txLog2) {
-//  static string buffer;
-//  if (notifyProducer_ == nullptr) {
-//    return;
-//  }
-//
-//  buffer.clear();
-//  for (auto it : addressBalance) {
-//    const int64_t addrID      = it.first;
-//    const int64_t balanceDiff = it.second;
-//    AddressInfo *addr = _getAddressInfo(dbExplorer_, addrID);
-//
-//    NotifyItem item(txLog2->type_, txLog2->tx_.IsCoinBase(),
-//                    addr->addrId_, txLog2->txId_, addr->addressStr_,
-//                    txLog2->txHash_, balanceDiff,
-//                    txLog2->blkHeight_, txLog2->blkId_,
-//                    (txLog2->blkId_ > 0 ? blockId2Hash(txLog2->blkId_) : uint256()));
-//    buffer.append(item.toStrLineWithTime() + "\n");
-//  }
-//  notifyProducer_->write(buffer);
+  static string buffer;
+  static NotifyItem item;
+
+  if (!isWriteNotificationLogs()) {
+    return;
+  }
+
+  buffer.clear();
+  for (auto it : addressBalance) {
+    int32_t type = 0;
+    switch (txLog2->type_) {
+      case LOG2TYPE_TX_ACCEPT:
+        type = NOTIFY_EVENT_TX_ACCEPT;
+        break;
+      case LOG2TYPE_TX_CONFIRM:
+        type = NOTIFY_EVENT_TX_CONFIRM;
+        break;
+      case LOG2TYPE_TX_UNCONFIRM:
+        type = NOTIFY_EVENT_TX_UNCONFIRM;
+        break;
+      case LOG2TYPE_TX_REJECT:
+        type = NOTIFY_EVENT_TX_REJECT;
+        break;
+      default:
+        break;
+    }
+    item.loadtx(type, it.first, txLog2->txHash_, txLog2->blkHeight_, it.second);
+    buffer.append(item.toStr() + "\n");
+  }
+  notifyProducer_->write(buffer);
 }
 
 // 插入交易的raw hex
@@ -1193,11 +1225,11 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
 //  // insert tx raw hex，实际插入binary data，减小一半体积
 //  _acceptTx_insertRawHex(kvdb_, txLog2->txHex_, txLog2->txHash_);
 
-  // remove unspent，移除未花费交易，扣减计数器
-  _acceptTx_removeUnspentOutputs(kvdb_, txLog2->txHash_, tx, prevTxOutputs);
-
-  // insert spent txs, 插入前向交易的花费记录
   if (!txLog2->tx_.IsCoinBase()) {
+    // remove unspent，移除未花费交易，扣减计数器
+    _acceptTx_removeUnspentOutputs(kvdb_, txLog2->txHash_, tx, prevTxOutputs);
+
+    // insert spent txs, 插入前向交易的花费记录
     _acceptTx_insertSpendTxs(kvdb_, txLog2->txHash_, tx);
   }
 
@@ -1225,7 +1257,7 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   addUnconfirmedTxPool(txLog2);
 
   // notification logs
-//  writeNotificationLogs(addressBalance, txLog2);
+  writeNotificationLogs(addressBalance, txLog2);
 }
 
 void Parser::flushAddressInfo(const map<string, int64_t> &addressBalance) {
@@ -1413,6 +1445,9 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
 
   // 处理未确认计数器和记录
   removeUnconfirmedTxPool(txLog2);
+
+  // notification logs
+  writeNotificationLogs(addressBalance, txLog2);
 }
 
 // unconfirm tx (address node)
@@ -1494,8 +1529,8 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
   // 处理未确认计数器和记录
   addUnconfirmedTxPool(txLog2);
 
-//  // notification logs
-//  writeNotificationLogs(*addressBalance, txLog2);
+  // notification logs
+  writeNotificationLogs(addressBalance, txLog2);
 }
 
 // 移除一个字符串（64，哈希）
@@ -1601,6 +1636,18 @@ void Parser::rejectBlock(TxLog2 *txLog2) {
       prevBlock->mutable_next_block_hash()->Mutate(i, '0');
     }
     kvdb_.set(prevBlkKey, value);
+  }
+
+  // 设置当前块高度
+  currBlockHeight_ = txLog2->blkHeight_;
+
+  // 写入事件通知
+  {
+    string sbuf;
+    NotifyItem nitem;
+    nitem.loadblock(NOTIFY_EVENT_BLOCK_REJECT, blockHash, height);
+    sbuf.append(nitem.toStr() + "\n");
+    notifyProducer_->write(sbuf);
   }
 }
 
@@ -1772,9 +1819,9 @@ void Parser::rejectTx(class TxLog2 *txLog2) {
 
   // 处理未确认计数器和记录
   removeUnconfirmedTxPool(txLog2);
-//
-//  // notification logs
-////  writeNotificationLogs(addressBalance, txLog2);
+
+  // notification logs
+  writeNotificationLogs(addressBalance, txLog2);
 }
 
 // 获取上次 txlog2 的进度ID

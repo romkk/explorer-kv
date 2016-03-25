@@ -28,50 +28,122 @@
 #include <iostream>
 #include <fstream>
 
+#include <evhtp.h>
+
+#define NOTIFY_EVENT_BLOCK_ACCEPT 10
+#define NOTIFY_EVENT_BLOCK_REJECT 11
+
+#define NOTIFY_EVENT_TX_ACCEPT    20
+#define NOTIFY_EVENT_TX_CONFIRM   21
+#define NOTIFY_EVENT_TX_UNCONFIRM 22
+#define NOTIFY_EVENT_TX_REJECT    23
+
 
 /////////////////////////////////  NotifyItem  /////////////////////////////////
+// 定义参考： NOTIFY.md
 class NotifyItem {
-  int32_t type_;  // LOG2TYPE_TX_xxxx
-  bool isCoinbase_;
+public:
+  uint32_t timestamp_;
+  int32_t type_;
 
-  int64_t addressId_;
-  int64_t txId_;
-
-  string address_;
-  uint256 txhash_;
-
-  int64_t balanceDiff_;
-
-  int32_t  blkHeight_;     // block height
-  int64_t  blkId_;         // block ID
-  uint256  blkHash_;
+  int32_t height_;
+  int64_t amount_;
+  uint256 hash_;     // tx or block
+  char address_[36];
 
 public:
   NotifyItem();
-  NotifyItem(const int32_t type, bool isCoinbase, const int64_t addressId,
-             const int64_t txId, const string &address,
-             const uint256 txhash, int64_t balanceDiff,
-             const int32_t blkHeight, const int64_t  blkId, const uint256 &blkHash);
+  void loadtx(const int32_t type, const string &address,
+              const uint256 &hash, const int32_t height,  const int64_t amount);
+  void loadblock(const int32_t type, const uint256 &hash, const int32_t height);
 
   void reset();
-  string toStrLineWithTime() const;
-  void parse(const string &line);
+  string toStr() const;
+  bool parse(const string &line);
 };
 
-///////////////////////////////  NotifyConsumer  ///////////////////////////////
-class NotifyConsumer {
-  int32_t fileIndex_;
-  int64_t fileOffset_;
+///////////////////////////////  NotifyLogReader  ///////////////////////////////
+class NotifyLogReader {
+  string logDir_;
   FILE *fileHandler_;
 
 public:
-  NotifyConsumer();
-  ~NotifyConsumer();
+  NotifyLogReader(string &logDir);
+  ~NotifyLogReader();
 
+  void readLines(int32_t currFileIndex, int64_t currFileOffset,
+                 vector<string> *lines, vector<int64_t> *fileOffset);
+  bool isNewFileExist(int32_t currFileIndex);
+  void tryRemoveOldFiles(int32_t currFileIndex);
+};
+
+///////////////////////////////////  Notify  ///////////////////////////////////
+class Notify {
+  atomic<bool> running_;
+  mutex lock_;
+
+  std::map<string, std::set<int32_t> > addressTable_;  // address -> [app_id, ...]
+  std::set<int32_t> appIds_;
+
+  // 上游生成日志，触发文件通知去消费
+  string iNotifyFile_;
+  Condition changed_;
+  Inotify inotify_;
+
+  // 通知事件日志相关
+  string logDir_;
+  int32_t logFileIndex_;
+  int64_t logFileOffset_;
+  NotifyLogReader logReader_;
+
+  MySQLConnection db_;
+
+  thread threadWatchNotify_;
+  thread threadConsumeNotifyLogs_;
+
+  void threadWatchNotify();
+  void threadConsumeNotifyLogs();
+
+  void loadAddressTableFromDB();
+
+  int32_t handleBlockEvent(NotifyItem &item);
+  int32_t handleTxEvent(NotifyItem &item);
+
+  void updateStatus();
+  void getStatus();
+
+public:
+  Notify();
+  ~Notify();
+
+  void init();
+  void setup();
+  void stop();
+
+  bool insertAddress(const int32_t appID, const char *address, bool sync2mysql=true);
+  bool removeAddress(const int32_t appID, const char *address);
+};
+
+/////////////////////////////////  NotifyHttpd  ////////////////////////////////
+class NotifyHttpd {
+  atomic<bool> running_;
+  string  listenHost_;
+  int32_t listenPort_;
+
+  evbase_t *evbase_;
+  evhtp_t  *htp_;
+  int32_t nThreads_;
+
+public:
+  NotifyHttpd();
+  ~NotifyHttpd();
+
+  void setNotifyHandler(Notify *notify);
   void init();
   void run();
   void stop();
 };
+
 
 ///////////////////////////////  NotifyProducer  ///////////////////////////////
 class NotifyProducer {

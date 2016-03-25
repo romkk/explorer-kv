@@ -29,7 +29,7 @@
 namespace fs = boost::filesystem;
 
 static Notify *gNotify = nullptr;
-static MySQLConnection *gNotifyDB_ = nullptr;
+static mutex gLock;  // 给检测表是否存在加锁
 
 /////////////////////////////////  NotifyItem  /////////////////////////////////
 NotifyItem::NotifyItem() {
@@ -179,12 +179,11 @@ void cb_address(evhtp_request_t * req, void * a) {
   evhtp_send_reply(req, EVHTP_RES_OK);
 }
 
-static bool _isAPPEventTableExist(const int32_t appID) {
+static bool _isAPPEventTableExist(const int32_t appID, MySQLConnection *db) {
   string sql = Strings::Format("SHOW TABLES LIKE 'event_app_%d'", appID);
   MySQLResult res;
 
-  gNotifyDB_->query(sql, res);
-
+  db->query(sql, res);
   if (res.numRows() == 1) {
     return true;
   }
@@ -215,18 +214,25 @@ void cb_pull_events(evhtp_request_t * req, void * a) {
       break;
     }
 
+    // 因为该函数可能是多线程调用，直接新建数据库连接代替每个线程一个连接
+    MySQLConnection db(Config::GConfig.get("db.notifyd.uri"));
+    db.open();
+
     // check if table exist
-    if (tableIndex.find(appID) == tableIndex.end()) {
-      if (_isAPPEventTableExist(appID)) {
-        tableIndex.insert(appID);
-      } else {
-        resp = "{\"error_no\":30,\"error_msg\":\"app events table is not exist\"}";
-        break;
+    {
+      ScopeLock sl(gLock);
+      if (tableIndex.find(appID) == tableIndex.end()) {
+        if (_isAPPEventTableExist(appID, &db)) {
+          tableIndex.insert(appID);
+        } else {
+          resp = "{\"error_no\":30,\"error_msg\":\"app events table is not exist\"}";
+          break;
+        }
       }
     }
 
     //
-    // fetch items
+    // 拉取数据库记录，
     //
     MySQLResult res;
     string sql;
@@ -235,7 +241,7 @@ void cb_pull_events(evhtp_request_t * req, void * a) {
                           " `amount`,`created_at` FROM `event_app_%d`"
                           " WHERE `id` > %lld ORDER BY `id` ASC LIMIT 1000",
                           appID, offset);
-    if (gNotifyDB_->query(sql, res) == false || res.numRows() == 0) {
+    if (db.query(sql, res) == false || res.numRows() == 0) {
       resp = "{\"error_no\":30,\"error_msg\":\"app events table is empty\"}";
       break;
     }
@@ -255,13 +261,10 @@ void cb_pull_events(evhtp_request_t * req, void * a) {
   evhtp_send_reply(req, EVHTP_RES_OK);
 }
 
-NotifyHttpd::NotifyHttpd(): running_(false), evbase_(nullptr), htp_(nullptr), nThreads_(4),
-db_(Config::GConfig.get("db.notifyd.uri"))
+NotifyHttpd::NotifyHttpd(): running_(false), evbase_(nullptr), htp_(nullptr), nThreads_(4)
 {
   listenHost_ = Config::GConfig.get("notification.httpd.host");
   listenPort_ = (int32_t)Config::GConfig.getInt("notification.httpd.port");
-
-  gNotifyDB_ = &db_;
 }
 
 NotifyHttpd::~NotifyHttpd() {

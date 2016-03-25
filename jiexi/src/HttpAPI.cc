@@ -63,7 +63,6 @@ void dbPut2Resp(const vector<string> &keys, const vector<string> &values, APIRes
     if (keyPrefixInt >= 0 && keyPrefixInt < gKeyTypes.size() && gKeyTypes[keyPrefixInt] != nullptr) {
       resp.types_[i] = string(gKeyTypes[keyPrefixInt]);
     }
-    assert(values[i].size() != 0);
 
     resp.offset_[i] = (int32_t)resp.data_.size();
     resp.length_[i] = (int32_t)values[i].size();

@@ -70,6 +70,8 @@ rpcthreads=32
 
 # docker 网络通常是私有网段 172.xxx.xxx.xxx，若非默认，请自行调整
 rpcallowip=172.17.0.0/16
+rpcallowip=192.168.0.0/16
+rpcallowip=10.0.0.0/24
 ```
 
 参数项： `customlogdir`，请勿放在 `bitcoin.conf` 中，会导致 main 和 testnet3 写同一个目录，尽量放到 bitcoind 的启动命令里:

@@ -54,7 +54,6 @@ void Log1::parse(const string &line) {
 
   // 按照 ',' 切分，最多切三份
   const vector<string> arr1 = split(line, ',', 3);
-  assert(arr1.size() == 3);
 
   // type
   const int32_t type = atoi(arr1[1].c_str());

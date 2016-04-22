@@ -56,15 +56,20 @@ cp ../test/unittest.conf .
 ## 部署
 ### logrotate.d
 
-假设日志目录为：`/work/Explorer/jiexi/build/supervise_tparser/tparser.log`，则 logrotate.d 的配置文件为：
+假设日志目录为：`/work/Explorer/jiexi/build/*.log`，则 logrotate.d 的配置文件如下，支持指定多个日志路径。
 
 ```
-$ cat /etc/logrotate.d/tparser
-/work/Explorer/jiexi/build/supervise_tparser/tparser.log {
+$ cat /etc/logrotate.d/tparser-main
+/work/Explorer/jiexi/build/*.log
+/work/Explorer/jiexi/build/other_path/other.log
+{
     daily
-    rotate 14
-    missingok
+    rotate 7
+    compress
     copytruncate
+    nocreate
+    delaycompress
+    notifempty
 }
 ```
 

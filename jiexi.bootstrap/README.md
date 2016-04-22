@@ -78,3 +78,12 @@ cp ../tools/bootstrap.sh .
 ```
 ./pre_parser -c tparser.bootstrap.conf -l tparser.log
 ```
+
+### 初始化v3数据库
+
+```
+cd Explorer/install
+./generate_initialize_sql.sh > v3_initialize.sql
+# 创建表
+mysql -h xxx -u xxxx -p explorer_v3_main_db < v3_initialize.sql
+```

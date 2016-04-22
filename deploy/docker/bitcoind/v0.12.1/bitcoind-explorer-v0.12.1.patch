@@ -45,7 +45,7 @@ diff -uNr bitcoin-0.12.1/src/init.cpp bitcoin-0.12.1-explorer/src/init.cpp
  }
 diff -uNr bitcoin-0.12.1/src/main.cpp bitcoin-0.12.1-explorer/src/main.cpp
 --- bitcoin-0.12.1/src/main.cpp	2016-04-11 19:01:43.000000000 +0800
-+++ bitcoin-0.12.1-explorer/src/main.cpp	2016-04-21 10:37:23.000000000 +0800
++++ bitcoin-0.12.1-explorer/src/main.cpp	2016-04-22 19:13:17.000000000 +0800
 @@ -14,6 +14,7 @@
  #include "consensus/consensus.h"
  #include "consensus/merkle.h"
@@ -71,7 +71,7 @@ diff -uNr bitcoin-0.12.1/src/main.cpp bitcoin-0.12.1-explorer/src/main.cpp
  {
      AssertLockHeld(cs_main);
      if (pfMissingInputs)
-@@ -1186,6 +1188,13 @@
+@@ -1186,6 +1188,20 @@
              return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient priority");
          }
  
@@ -82,10 +82,17 @@ diff -uNr bitcoin-0.12.1/src/main.cpp bitcoin-0.12.1-explorer/src/main.cpp
 +                             REJECT_INSUFFICIENTFEE, "insufficient fee(2000)");
 +        }
 +
++        // tx size greater than 10000, must have enough fees
++        if (nSize > 10000 && nFees < ::minRelayTxFee.GetFee(nSize)*2) {
++            return state.DoS(0, error("AcceptToMemoryPool: not enough fees %s, size: %u, %d < %d",
++                                      hash.ToString(), nSize, nFees, ::minRelayTxFee.GetFee(nSize)*2),
++                             REJECT_INSUFFICIENTFEE, "insufficient fee(10000)");
++        }
++
          // Continuously rate-limit free (really, very-low-fee) transactions
          // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
          // be annoying or make others' transactions take longer to confirm.
-@@ -1423,14 +1432,19 @@
+@@ -1423,14 +1439,19 @@
  
      SyncWithWallets(tx, NULL);
  
@@ -107,7 +114,7 @@ diff -uNr bitcoin-0.12.1/src/main.cpp bitcoin-0.12.1-explorer/src/main.cpp
      if (!res) {
          BOOST_FOREACH(const uint256& hashTx, vHashTxToUncache)
              pcoinsTip->Uncache(hashTx);
-@@ -2574,6 +2588,21 @@
+@@ -2574,6 +2595,21 @@
        DateTimeStrFormat("%Y-%m-%d %H:%M:%S", chainActive.Tip()->GetBlockTime()),
        Checkpoints::GuessVerificationProgress(chainParams.Checkpoints(), chainActive.Tip()), pcoinsTip->DynamicMemoryUsage() * (1.0 / (1<<20)), pcoinsTip->GetCacheSize());
  
@@ -129,7 +136,7 @@ diff -uNr bitcoin-0.12.1/src/main.cpp bitcoin-0.12.1-explorer/src/main.cpp
      cvBlockChange.notify_all();
  
      // Check the version of the last 100 blocks to see if we need to upgrade:
-@@ -5003,7 +5032,7 @@
+@@ -5003,7 +5039,7 @@
          pfrom->setAskFor.erase(inv.hash);
          mapAlreadyAskedFor.erase(inv);
  
@@ -138,7 +145,7 @@ diff -uNr bitcoin-0.12.1/src/main.cpp bitcoin-0.12.1-explorer/src/main.cpp
          {
              mempool.check(pcoinsTip);
              RelayTransaction(tx);
-@@ -5037,7 +5066,7 @@
+@@ -5037,7 +5073,7 @@
  
                      if (setMisbehaving.count(fromPeer))
                          continue;

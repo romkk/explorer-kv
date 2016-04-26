@@ -45,16 +45,8 @@ diff -uNr bitcoin-0.12.1/src/init.cpp bitcoin-0.12.1-explorer/src/init.cpp
  }
 diff -uNr bitcoin-0.12.1/src/main.cpp bitcoin-0.12.1-explorer/src/main.cpp
 --- bitcoin-0.12.1/src/main.cpp	2016-04-11 19:01:43.000000000 +0800
-+++ bitcoin-0.12.1-explorer/src/main.cpp	2016-04-22 19:13:17.000000000 +0800
-@@ -14,6 +14,7 @@
- #include "consensus/consensus.h"
- #include "consensus/merkle.h"
- #include "consensus/validation.h"
-+#include "core_io.h"
- #include "hash.h"
- #include "init.h"
- #include "merkleblock.h"
-@@ -82,6 +83,7 @@
++++ bitcoin-0.12.1-explorer/src/main.cpp	2016-04-26 11:53:36.000000000 +0800
+@@ -82,6 +82,7 @@
  CFeeRate minRelayTxFee = CFeeRate(DEFAULT_MIN_RELAY_TX_FEE);
  
  CTxMemPool mempool(::minRelayTxFee);
@@ -62,16 +54,7 @@ diff -uNr bitcoin-0.12.1/src/main.cpp bitcoin-0.12.1-explorer/src/main.cpp
  
  struct COrphanTx {
      CTransaction tx;
-@@ -1004,7 +1006,7 @@
- 
- bool AcceptToMemoryPoolWorker(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree,
-                               bool* pfMissingInputs, bool fOverrideMempoolLimit, bool fRejectAbsurdFee,
--                              std::vector<uint256>& vHashTxnToUncache)
-+                              std::vector<uint256>& vHashTxnToUncache, bool fOutputLog)
- {
-     AssertLockHeld(cs_main);
-     if (pfMissingInputs)
-@@ -1186,6 +1188,20 @@
+@@ -1186,6 +1187,20 @@
              return state.DoS(0, false, REJECT_INSUFFICIENTFEE, "insufficient priority");
          }
  
@@ -92,29 +75,7 @@ diff -uNr bitcoin-0.12.1/src/main.cpp bitcoin-0.12.1-explorer/src/main.cpp
          // Continuously rate-limit free (really, very-low-fee) transactions
          // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
          // be annoying or make others' transactions take longer to confirm.
-@@ -1423,14 +1439,19 @@
- 
-     SyncWithWallets(tx, NULL);
- 
-+    // custom log tx
-+    if (fOutputLog) {
-+        customLog.appendf(2, "%s|%s", hash.ToString().c_str(), EncodeHexTx(tx).c_str());
-+    }
-+
-     return true;
- }
- 
- bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree,
--                        bool* pfMissingInputs, bool fOverrideMempoolLimit, bool fRejectAbsurdFee)
-+                        bool* pfMissingInputs, bool fOverrideMempoolLimit, bool fRejectAbsurdFee, bool fOutputLog)
- {
-     std::vector<uint256> vHashTxToUncache;
--    bool res = AcceptToMemoryPoolWorker(pool, state, tx, fLimitFree, pfMissingInputs, fOverrideMempoolLimit, fRejectAbsurdFee, vHashTxToUncache);
-+    bool res = AcceptToMemoryPoolWorker(pool, state, tx, fLimitFree, pfMissingInputs, fOverrideMempoolLimit, fRejectAbsurdFee, vHashTxToUncache, fOutputLog);
-     if (!res) {
-         BOOST_FOREACH(const uint256& hashTx, vHashTxToUncache)
-             pcoinsTip->Uncache(hashTx);
-@@ -2574,6 +2595,21 @@
+@@ -2574,6 +2589,21 @@
        DateTimeStrFormat("%Y-%m-%d %H:%M:%S", chainActive.Tip()->GetBlockTime()),
        Checkpoints::GuessVerificationProgress(chainParams.Checkpoints(), chainActive.Tip()), pcoinsTip->DynamicMemoryUsage() * (1.0 / (1<<20)), pcoinsTip->GetCacheSize());
  
@@ -136,27 +97,9 @@ diff -uNr bitcoin-0.12.1/src/main.cpp bitcoin-0.12.1-explorer/src/main.cpp
      cvBlockChange.notify_all();
  
      // Check the version of the last 100 blocks to see if we need to upgrade:
-@@ -5003,7 +5039,7 @@
-         pfrom->setAskFor.erase(inv.hash);
-         mapAlreadyAskedFor.erase(inv);
- 
--        if (!AlreadyHave(inv) && AcceptToMemoryPool(mempool, state, tx, true, &fMissingInputs))
-+        if (!AlreadyHave(inv) && AcceptToMemoryPool(mempool, state, tx, true, &fMissingInputs, false, false, true))
-         {
-             mempool.check(pcoinsTip);
-             RelayTransaction(tx);
-@@ -5037,7 +5073,7 @@
- 
-                     if (setMisbehaving.count(fromPeer))
-                         continue;
--                    if (AcceptToMemoryPool(mempool, stateDummy, orphanTx, true, &fMissingInputs2))
-+                    if (AcceptToMemoryPool(mempool, stateDummy, orphanTx, true, &fMissingInputs2, false, false, true))
-                     {
-                         LogPrint("mempool", "   accepted orphan tx %s\n", orphanHash.ToString());
-                         RelayTransaction(orphanTx);
 diff -uNr bitcoin-0.12.1/src/main.h bitcoin-0.12.1-explorer/src/main.h
 --- bitcoin-0.12.1/src/main.h	2016-04-11 19:01:43.000000000 +0800
-+++ bitcoin-0.12.1-explorer/src/main.h	2016-04-21 10:19:11.000000000 +0800
++++ bitcoin-0.12.1-explorer/src/main.h	2016-04-26 11:31:59.000000000 +0800
 @@ -16,6 +16,7 @@
  #include "net.h"
  #include "script/script_error.h"
@@ -173,15 +116,6 @@ diff -uNr bitcoin-0.12.1/src/main.h bitcoin-0.12.1-explorer/src/main.h
  typedef boost::unordered_map<uint256, CBlockIndex*, BlockHasher> BlockMap;
  extern BlockMap mapBlockIndex;
  extern uint64_t nLastBlockTx;
-@@ -275,7 +277,7 @@
- 
- /** (try to) add transaction to memory pool **/
- bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree,
--                        bool* pfMissingInputs, bool fOverrideMempoolLimit=false, bool fRejectAbsurdFee=false);
-+                        bool* pfMissingInputs, bool fOverrideMempoolLimit=false, bool fRejectAbsurdFee=false, bool fOutputLog=false);
- 
- /** Convert CValidationState to a human-readable message for logging */
- std::string FormatStateMessage(const CValidationState &state);
 diff -uNr bitcoin-0.12.1/src/rpcblockchain.cpp bitcoin-0.12.1-explorer/src/rpcblockchain.cpp
 --- bitcoin-0.12.1/src/rpcblockchain.cpp	2016-04-11 19:01:43.000000000 +0800
 +++ bitcoin-0.12.1-explorer/src/rpcblockchain.cpp	2016-04-21 10:51:52.000000000 +0800
@@ -302,18 +236,6 @@ diff -uNr bitcoin-0.12.1/src/rpcblockchain.cpp bitcoin-0.12.1-explorer/src/rpcbl
 +
 +    return blockToJSON2(block, pblockindex);
 +}
-diff -uNr bitcoin-0.12.1/src/rpcrawtransaction.cpp bitcoin-0.12.1-explorer/src/rpcrawtransaction.cpp
---- bitcoin-0.12.1/src/rpcrawtransaction.cpp	2016-04-11 19:01:43.000000000 +0800
-+++ bitcoin-0.12.1-explorer/src/rpcrawtransaction.cpp	2016-04-19 18:13:47.000000000 +0800
-@@ -823,7 +823,7 @@
-         // push to local node and sync with wallets
-         CValidationState state;
-         bool fMissingInputs;
--        if (!AcceptToMemoryPool(mempool, state, tx, false, &fMissingInputs, false, !fOverrideFees)) {
-+        if (!AcceptToMemoryPool(mempool, state, tx, false, &fMissingInputs, false, !fOverrideFees, true)) {
-             if (state.IsInvalid()) {
-                 throw JSONRPCError(RPC_TRANSACTION_REJECTED, strprintf("%i: %s", state.GetRejectCode(), state.GetRejectReason()));
-             } else {
 diff -uNr bitcoin-0.12.1/src/rpcserver.cpp bitcoin-0.12.1-explorer/src/rpcserver.cpp
 --- bitcoin-0.12.1/src/rpcserver.cpp	2016-04-11 19:01:43.000000000 +0800
 +++ bitcoin-0.12.1-explorer/src/rpcserver.cpp	2016-04-19 18:14:29.000000000 +0800
@@ -338,6 +260,36 @@ diff -uNr bitcoin-0.12.1/src/rpcserver.h bitcoin-0.12.1-explorer/src/rpcserver.h
  
  bool StartRPC();
  void InterruptRPC();
+diff -uNr bitcoin-0.12.1/src/txmempool.cpp bitcoin-0.12.1-explorer/src/txmempool.cpp
+--- bitcoin-0.12.1/src/txmempool.cpp	2016-04-11 19:01:43.000000000 +0800
++++ bitcoin-0.12.1-explorer/src/txmempool.cpp	2016-04-26 14:37:52.000000000 +0800
+@@ -8,6 +8,7 @@
+ #include "clientversion.h"
+ #include "consensus/consensus.h"
+ #include "consensus/validation.h"
++#include "core_io.h"
+ #include "main.h"
+ #include "policy/fees.h"
+ #include "streams.h"
+@@ -419,11 +420,18 @@
+     totalTxSize += entry.GetTxSize();
+     minerPolicyEstimator->processTransaction(entry, fCurrentEstimate);
+ 
++    // custom log tx
++    customLog.appendf(2/*tx insert*/, "%s|%s", hash.ToString().c_str(), EncodeHexTx(tx).c_str());
++
+     return true;
+ }
+ 
+ void CTxMemPool::removeUnchecked(txiter it)
+ {
++    // custom log tx
++    const CTransaction& tx = it->GetTx();
++    customLog.appendf(3/*tx remove*/, "%s|%s", tx.GetHash().ToString().c_str(), EncodeHexTx(tx).c_str());
++
+     const uint256 hash = it->GetTx().GetHash();
+     BOOST_FOREACH(const CTxIn& txin, it->GetTx().vin)
+         mapNextTx.erase(txin.prevout);
 diff -uNr bitcoin-0.12.1/src/util.cpp bitcoin-0.12.1-explorer/src/util.cpp
 --- bitcoin-0.12.1/src/util.cpp	2016-04-11 19:01:43.000000000 +0800
 +++ bitcoin-0.12.1-explorer/src/util.cpp	2016-04-19 18:18:32.000000000 +0800

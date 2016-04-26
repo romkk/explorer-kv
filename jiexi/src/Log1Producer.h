@@ -41,7 +41,7 @@ class Log1 {
 
 public:
   enum {
-    TYPE_BLOCK = 1, TYPE_TX = 2, TYPE_CLEAR_MEMTXS = 3
+    TYPE_BLOCK = 1, TYPE_ACCEPT_TX = 2, TYPE_CLEAR_MEMTXS = 3, TYPE_REMOVE_TX = 4
   };
 
   int32_t type_;
@@ -53,9 +53,13 @@ public:
   ~Log1();
 
   void parse(const string &line);
-  bool isTx();
+
+  bool isAcceptTx();
+  bool isRemoveTx();
+
   bool isBlock();
   bool isClearMemtxs();
+
   const CBlock &getBlock();
   const CTransaction &getTx();
   string toString();
@@ -110,9 +114,10 @@ class Log1Producer {
   int32_t log0FileIndex_;
   int64_t log0FileOffset_;
   time_t  log0BeginFileLastModifyTime_;
+  string  log0StatusFile_;
 
   void writeLog1(const int32_t type, const string &line);
-  void writeLog1Tx   (const CTransaction &tx);
+  void writeLog1Tx   (const int32_t type, const CTransaction &tx);
   void writeLog1Block(const int32_t height, const CBlock &blk);
 
   void tryRemoveOldLog0();  // 移除旧的log0日志
@@ -126,7 +131,9 @@ class Log1Producer {
 
   // log1 同步上目前的进度，总是先同步上bitcoind，再同步log0
   void syncBitcoind();  // 同步 bitcoind(RPC)
-  void syncLog0();      // 同步 log0
+
+  void writeLog0IdxOffset();
+  void getLog0IdxOffset();
 
 public:
   Log1Producer();

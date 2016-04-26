@@ -179,7 +179,8 @@ class Log2Producer {
   void tryRemoveOldLog1();  // 移除旧的 log1 日志
   void tryReadLog1(vector<string> &lines, vector<int64_t> &offset);
 
-  void handleTx(Log1 &log1Item);
+  void handleTxAccept(Log1 &log1Item);
+  void handleTxReject(Log1 &log1Item);
 
   void handleBlock(Log1 &log1Item);
   void handleBlockAccept  (Log1 &log1Item);

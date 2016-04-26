@@ -627,7 +627,7 @@ void Log2Producer::stop() {
   changed_.notify_all();
 }
 
-void Log2Producer::handleTx(Log1 &log1Item) {
+void Log2Producer::handleTxAccept(Log1 &log1Item) {
   //
   // 接收新的交易
   //
@@ -657,6 +657,35 @@ void Log2Producer::handleTx(Log1 &log1Item) {
                         " %d, -1, -1, %lld, '%s', '%s', '%s');",
                         LOG2TYPE_TX_ACCEPT,
                         blkTs_.getMaxTimestamp(),  // 设置为前面最大的块时间戳
+                        hash.ToString().c_str(),
+                        nowStr.c_str(), nowStr.c_str());
+
+  db_.execute("START TRANSACTION");
+  db_.updateOrThrowEx(sql, 1);
+  memRepo_.syncToDB(db_);
+  updateLog1FileStatus();
+  db_.execute("COMMIT");
+}
+
+void Log2Producer::handleTxReject(Log1 &log1Item) {
+  //
+  // bitcoind应该会计算好交易的关联性，这里不再计算关联性，直接移除单笔交易
+  //
+  string sql;
+  const CTransaction &tx = log1Item.getTx();
+  const uint256 hash = tx.GetHash();
+  LOG_INFO("process tx(-): %s", hash.ToString().c_str());
+
+  const string nowStr = date("%F %T");
+  memRepo_.removeTx(hash);
+
+  // 写 txlogs2
+  sql = Strings::Format("INSERT INTO `0_txlogs2` (`batch_id`, `type`, `block_height`, "
+                        " `block_id`,`max_block_timestamp`,`tx_hash`,`created_at`,`updated_at`) "
+                        " VALUES ("
+                        " (SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `0_txlogs2` as t1), "
+                        " %d, -1, -1, 0, '%s', '%s', '%s');",
+                        LOG2TYPE_TX_REJECT,
                         hash.ToString().c_str(),
                         nowStr.c_str(), nowStr.c_str());
 
@@ -1028,9 +1057,13 @@ void Log2Producer::run() {
       Log1 log1Item;
       log1Item.parse(line);
 
-      // Tx
-      if (log1Item.isTx()) {
-        handleTx(log1Item);
+      // Tx: accept
+      if (log1Item.isAcceptTx()) {
+        handleTxAccept(log1Item);
+      }
+      // Tx: remove, 并不一定是真正的reject，只是表示从 bitcoind mempool 移除交易
+      else if (log1Item.isRemoveTx()) {
+        handleTxReject(log1Item);
       }
       // Block
       else if (log1Item.isBlock()) {

@@ -20,6 +20,7 @@
 #include "MySQLConnection.h"
 
 #include <iomanip>
+#include <fstream>
 #include <string>
 #include <sstream>
 #include <vector>
@@ -400,4 +401,29 @@ std::string escapeJson(const std::string &s) {
     }
   }
   return o.str();
+}
+
+bool fileGetContents(const string &fname, string &content) {
+  std::ifstream fIn;
+  fIn.open(fname.c_str(), std::ios::in);
+  if (!fIn) {
+    return false;
+  }
+
+  stringstream ss;
+  ss << fIn.rdbuf();
+  content = ss.str();
+
+  return true;
+}
+
+bool filePutContents(const string &fname, const string &content, bool append) {
+  std::ofstream fOut;
+  fOut.open(fname.c_str(), append ? std::ios::app : std::ios::out);
+  if (!fOut) {
+    return false;
+  }
+  fOut << content;
+  fOut.close();
+  return true;
 }

@@ -328,7 +328,7 @@ void Log1Producer::init() {
   fileGetContents(log0BeginTimeFile1, log0BeginTimeDir1);
   LOG_INFO("log0BeginTimeFile(log1dir): %s", log0BeginTimeDir1.c_str());
 
-  if (log0BeginTimeDir1 != log0BeginTimeFile0) {
+  if (log0BeginTimeDir0 != log0BeginTimeDir1) {
     isLog0Changed = true;
     LOG_WARN("log0 files has been changed");
   }
@@ -337,21 +337,31 @@ void Log1Producer::init() {
   initLog1();
 
   if (isLog0Changed) {
-    // 2. 写入一条回撤指令，会令log2producer reject掉当前所有未确认交易
+    // 1. 写入一条回撤指令，会令log2producer reject掉当前所有未确认交易
     writeLog1(Log1::TYPE_CLEAR_MEMTXS, "");
 
-    // 3. 读取 log0_dir/files/0.log 最新高度/块，利用RPC命令同步至此高度
+    // 2. 读取 log0_dir/files/0.log 最新高度/块，利用RPC命令同步至此高度
     // log0FileIndex_, log0FileOffset_ 会更新
     syncBitcoind();
 
-    // 4. 更新 log0 的时间, 更新 log0 idx & offset
+    // 3. 更新 log0 的时间, 更新 log0 idx & offset
     filePutContents(log0BeginTimeFile1, log0BeginTimeDir0);
     writeLog0IdxOffset();
   }
   else
   {
     // 继续上次的进度
+    // 说明 bitcoin 并未重启，那么继续消费即可
     getLog0IdxOffset();
+  }
+
+  try {
+    fs::path beginFile(Strings::Format("%s/BEGIN", log0Dir_.c_str()));
+    log0BeginFileLastModifyTime_ = fs::last_write_time(beginFile);
+  }
+  catch (boost::filesystem::filesystem_error &e)
+  {
+    THROW_EXCEPTION_DBEX("can't get log0 begin file last modify time: %s", e.what());
   }
 
   LOG_INFO("start log0file info, idx: %d, offset: %lld ", log0FileIndex_, log0FileOffset_);

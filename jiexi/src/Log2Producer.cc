@@ -118,6 +118,22 @@ uint256 MemTxRepository::getSpentEndTx(const CTransaction &tx) {
   return tx.GetHash();
 }
 
+// 移除某个交易，当有子交易时，则先移除子交易
+void MemTxRepository::removeTxAndChildTx(const CTransaction &tx,
+                                         vector<uint256> &removedHashes) {
+  const uint256 txhash = tx.GetHash();
+  while (1) {
+    // 获取已经花费的交易链的末端交易，并移除之
+    auto removeTxhash = getSpentEndTx(tx);
+    removeTx(removeTxhash);
+    removedHashes.push_back(removeTxhash);
+
+    if (txhash == removeTxhash) {
+      break;  // 移除的就是自己，则退出
+    }
+  }
+}
+
 // 返回移除的交易Hash
 uint256 MemTxRepository::removeTx() {
   assert(size() > 0);
@@ -669,31 +685,38 @@ void Log2Producer::handleTxAccept(Log1 &log1Item) {
 
 void Log2Producer::handleTxReject(Log1 &log1Item) {
   //
-  // bitcoind应该会计算好交易的关联性，这里不再计算关联性，直接移除单笔交易
+  // 删除的时候，我们先删除子交易，然后再删除自己，所以可能出现删除多笔交易的情况
+  // bitcoind-v0.12.1 删除交易时，并不能严格按照依赖关系排序
   //
   string sql;
   const CTransaction &tx = log1Item.getTx();
   const uint256 hash = tx.GetHash();
   LOG_INFO("process tx(-): %s", hash.ToString().c_str());
 
+  if (!memRepo_.isExist(hash)) {
+    LOG_WARN("tx is not exist in mempool: %s", hash.ToString().c_str());
+    return;
+  }
+
+  vector<uint256> removeHashes;
+  memRepo_.removeTxAndChildTx(tx, removeHashes);
+
+  // 批量删除
+  vector<string> values;
   const string nowStr = date("%F %T");
-  memRepo_.removeTx(hash);
+  for (auto &it : removeHashes) {
+    string item = Strings::Format("-1,%d,-1,-1,0,'%s','%s','%s'",
+                                  LOG2TYPE_TX_REJECT,
+                                  it.ToString().c_str(),
+                                  nowStr.c_str(), nowStr.c_str());
+    values.push_back(item);
+  }
 
-  // 写 txlogs2
-  sql = Strings::Format("INSERT INTO `0_txlogs2` (`batch_id`, `type`, `block_height`, "
-                        " `block_id`,`max_block_timestamp`,`tx_hash`,`created_at`,`updated_at`) "
-                        " VALUES ("
-                        " (SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `0_txlogs2` as t1), "
-                        " %d, -1, -1, 0, '%s', '%s', '%s');",
-                        LOG2TYPE_TX_REJECT,
-                        hash.ToString().c_str(),
-                        nowStr.c_str(), nowStr.c_str());
+  // 插入本批次数据
+  multiInsert(db_, "0_txlogs2", kTableTxlogs2Fields_, values);
 
-  db_.execute("START TRANSACTION");
-  db_.updateOrThrowEx(sql, 1);
-  memRepo_.syncToDB(db_);
-  updateLog1FileStatus();
-  db_.execute("COMMIT");
+  // 提交本批数据
+  commitBatch(values.size());
 }
 
 void Log2Producer::handleBlockAccept(Log1 &log1Item) {

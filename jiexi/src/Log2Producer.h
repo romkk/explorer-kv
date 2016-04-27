@@ -112,6 +112,9 @@ public:
   void removeTx (const uint256 &hash);
   void removeTxs(const vector<uint256> &txhashs);
 
+  // 移除某个交易，当有子交易时，则先移除子交易
+  void removeTxAndChildTx(const CTransaction &tx, vector<uint256> &removedHashes);
+
   // 同步至DB
   void syncToDB(MySQLConnection &db);
   // 忽略未同步数据

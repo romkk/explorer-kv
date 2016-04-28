@@ -652,6 +652,11 @@ void Log2Producer::handleTxAccept(Log1 &log1Item) {
   const uint256 hash = tx.GetHash();
   LOG_INFO("process tx(+): %s", hash.ToString().c_str());
 
+  if (memRepo_.isExist(hash)) {
+    LOG_WARN("tx is already exist in mempool: %s", hash.ToString().c_str());
+    return;
+  }
+
   vector<uint256> conflictTxs;
   const string nowStr = date("%F %T");
   const bool res = memRepo_.addTx(tx);
@@ -1087,7 +1092,7 @@ void Log2Producer::run() {
       if (log1Item.isAcceptTx()) {
         handleTxAccept(log1Item);
       }
-      // Tx: remove, 并不一定是真正的reject，只是表示从 bitcoind mempool 移除交易
+      // Tx: remove
       else if (log1Item.isRemoveTx()) {
         handleTxReject(log1Item);
       }

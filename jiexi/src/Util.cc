@@ -194,13 +194,13 @@ int64_t insertRawBlock(MySQLConnection &db, const CBlock &blk, const int32_t hei
   const uint256 blockHash = blk.GetHash();
 
   // check is exist
-  sql = Strings::Format("SELECT `id`,`block_hash` FROM `0_raw_blocks` "
+  sql = Strings::Format("SELECT `id`,`block_hash`,`block_height` FROM `0_raw_blocks` "
                         " WHERE `block_hash` = '%s' ",
                         blockHash.ToString().c_str());
   db.query(sql, res);
   if (res.numRows() == 1) {
     row = res.nextRow();
-    assert(atoi(row[1]) == height);
+    assert(atoi(row[2]) == height);
     return atoi64(row[0]);
   }
 

@@ -464,7 +464,11 @@ void Log1Producer::initLog1() {
       }
     } /* /for */
   }
-  assert(chain_.size() >= 1);
+
+  if (chain_.size() == 0) {
+    THROW_EXCEPTION_DBEX("can't find any blocks in log1 files, if you are first run log1producer "
+                         "please remove log1dir and mkdir again");
+  }
 
   LOG_INFO("log1 begin block: %d, %s", chain_.getCurHeight(),
            chain_.getCurHash().ToString().c_str());
@@ -727,7 +731,11 @@ void Log1Producer::syncBitcoind() {
              chain_.getCurHeight(), chain_.getCurHash().ToString().c_str());
   }
 
-  assert(chain_.getCurHeight() <= log0FirstLineHeight);
+  if (chain_.getCurHeight() > log0FirstLineHeight) {
+    THROW_EXCEPTION_DBEX("chain_.getCurHeight(): %d is higher than log0FirstLineHeight: %d, "
+                         "please restart bitcoind to make sure log0FirstLineHeight is higher than %d",
+                         chain_.getCurHeight(), log0FirstLineHeight, chain_.getCurHeight());
+  }
 
   //
   // 第二步，从一致块高度开始，每次加一，向前追，直至与 log0FirstLineHeight 高度一致

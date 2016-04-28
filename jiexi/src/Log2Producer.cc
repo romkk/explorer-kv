@@ -698,6 +698,9 @@ void Log2Producer::handleTxReject(Log1 &log1Item) {
     return;
   }
 
+  // 插入row txs
+  insertRawTx(db_, tx);
+
   vector<uint256> removeHashes;
   memRepo_.removeTxAndChildTx(tx, removeHashes);
 

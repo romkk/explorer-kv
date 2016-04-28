@@ -1916,13 +1916,25 @@ bool Parser::tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId,
   }
 
   // 清理旧记录: 保留200万条已经消费过的记录，每2万条触发清理一次
-  if (txLog2->id_ > 200*10000 && txLog2->id_ % 20000 == 0) {
+  const int64_t kKeepNum = 200*10000;
+  if (txLog2->id_ > kKeepNum && txLog2->id_ % 20000 == 0) {
     string delSql = Strings::Format("DELETE FROM `0_txlogs2` WHERE `id` < %lld",
-                                    txLog2->id_ - 200*10000);
-    const size_t delRowNum = dbExplorer.update(delSql);
+                                    txLog2->id_ - kKeepNum);
+    size_t delRowNum = dbExplorer.update(delSql);
     LOG_INFO("delete expired txlogs2 items: %llu", delRowNum);
 
-    // TODO: 清理表: table.raw_txs_xxxx, table.0_raw_blocks
+    // 清理表: table.0_row_blocks,  144*30=4,320
+    delSql = "DELETE FROM `0_raw_blocks` WHERE `id` < "
+    " (SELECT * FROM (SELECT (IFNULL(max(`id`), 0) - 4320) as `max_id` FROM `0_raw_blocks`) AS `t1`)";
+    delRowNum = dbExplorer.update(sql);
+    LOG_INFO("delete 0_raw_blocks items: %llu", delRowNum);
+
+    // TODO 清理表: table.raw_txs_xxxx
+    // 目前可以采用手动清理：
+    //  1. 停止 log1producer
+    //  2. 保证 log2producer 已经完全消费log1之后，停止 log2producer
+    //  3. 等待tparser，等完全消费了log2后，手动清空所有表： table.raw_txs_xxxx
+    //  4. 启动log1producer，启动log2producer
   }
 
   return true;

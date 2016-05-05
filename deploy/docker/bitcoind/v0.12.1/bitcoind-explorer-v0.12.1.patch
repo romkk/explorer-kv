@@ -45,7 +45,7 @@ diff -uNr bitcoin-0.12.1/src/init.cpp bitcoin-0.12.1-explorer/src/init.cpp
  }
 diff -uNr bitcoin-0.12.1/src/main.cpp bitcoin-0.12.1-explorer/src/main.cpp
 --- bitcoin-0.12.1/src/main.cpp	2016-04-11 19:01:43.000000000 +0800
-+++ bitcoin-0.12.1-explorer/src/main.cpp	2016-04-26 11:53:36.000000000 +0800
++++ bitcoin-0.12.1-explorer/src/main.cpp	2016-05-05 12:13:35.000000000 +0800
 @@ -82,6 +82,7 @@
  CFeeRate minRelayTxFee = CFeeRate(DEFAULT_MIN_RELAY_TX_FEE);
  
@@ -97,6 +97,23 @@ diff -uNr bitcoin-0.12.1/src/main.cpp bitcoin-0.12.1-explorer/src/main.cpp
      cvBlockChange.notify_all();
  
      // Check the version of the last 100 blocks to see if we need to upgrade:
+@@ -2645,11 +2675,16 @@
+         // ignore validation errors in resurrected transactions
+         list<CTransaction> removed;
+         CValidationState stateDummy;
++        // 1. log2producer回退块时，自动将块交易放入内存池，所以这里无需输出日志
++        // 2. bitcoind在生成块之前就输出交易重进内存日志，会导致log2producer错误（需先看到块回退日志）
++        // 不输出交易重进内存池日志, 函数DisconnectTip()是带全局锁的，这里操作是安全的
++        mempool.isOutputAddCustomLog = false;
+         if (tx.IsCoinBase() || !AcceptToMemoryPool(mempool, stateDummy, tx, false, NULL, true)) {
+             mempool.remove(tx, removed, true);
+         } else if (mempool.exists(tx.GetHash())) {
+             vHashUpdate.push_back(tx.GetHash());
+         }
++        mempool.isOutputAddCustomLog = true;  // 重置为true
+     }
+     // AcceptToMemoryPool/addUnchecked all assume that new mempool entries have
+     // no in-mempool children, which is generally not true when adding
 diff -uNr bitcoin-0.12.1/src/main.h bitcoin-0.12.1-explorer/src/main.h
 --- bitcoin-0.12.1/src/main.h	2016-04-11 19:01:43.000000000 +0800
 +++ bitcoin-0.12.1-explorer/src/main.h	2016-04-26 11:31:59.000000000 +0800
@@ -262,7 +279,7 @@ diff -uNr bitcoin-0.12.1/src/rpcserver.h bitcoin-0.12.1-explorer/src/rpcserver.h
  void InterruptRPC();
 diff -uNr bitcoin-0.12.1/src/txmempool.cpp bitcoin-0.12.1-explorer/src/txmempool.cpp
 --- bitcoin-0.12.1/src/txmempool.cpp	2016-04-11 19:01:43.000000000 +0800
-+++ bitcoin-0.12.1-explorer/src/txmempool.cpp	2016-04-28 18:39:16.000000000 +0800
++++ bitcoin-0.12.1-explorer/src/txmempool.cpp	2016-05-05 12:07:10.000000000 +0800
 @@ -8,6 +8,7 @@
  #include "clientversion.h"
  #include "consensus/consensus.h"
@@ -276,23 +293,25 @@ diff -uNr bitcoin-0.12.1/src/txmempool.cpp bitcoin-0.12.1-explorer/src/txmempool
  
  CTxMemPool::CTxMemPool(const CFeeRate& _minReasonableRelayFee) :
 -    nTransactionsUpdated(0)
-+    isOutputCustomLog(true), nTransactionsUpdated(0)
++    isOutputRemoveCustomLog(true), isOutputAddCustomLog(true), nTransactionsUpdated(0)
  {
      _clear(); //lock free clear
  
-@@ -419,11 +420,20 @@
+@@ -419,11 +420,22 @@
      totalTxSize += entry.GetTxSize();
      minerPolicyEstimator->processTransaction(entry, fCurrentEstimate);
  
-+    // custom log tx
-+    customLog.appendf(2/*tx insert*/, "%s|%s", hash.ToString().c_str(), EncodeHexTx(tx).c_str());
++    if (isOutputAddCustomLog) {
++        // custom log tx
++        customLog.appendf(2/*tx insert*/, "%s|%s", hash.ToString().c_str(), EncodeHexTx(tx).c_str());
++    }
 +
      return true;
  }
  
  void CTxMemPool::removeUnchecked(txiter it)
  {
-+    if (isOutputCustomLog) {
++    if (isOutputRemoveCustomLog) {
 +        // custom log tx
 +        const CTransaction& tx = it->GetTx();
 +        customLog.appendf(4/*tx remove*/, "%s|%s", tx.GetHash().ToString().c_str(), EncodeHexTx(tx).c_str());
@@ -301,32 +320,40 @@ diff -uNr bitcoin-0.12.1/src/txmempool.cpp bitcoin-0.12.1-explorer/src/txmempool
      const uint256 hash = it->GetTx().GetHash();
      BOOST_FOREACH(const CTxIn& txin, it->GetTx().vin)
          mapNextTx.erase(txin.prevout);
-@@ -500,7 +510,14 @@
+@@ -500,7 +512,14 @@
          BOOST_FOREACH(txiter it, setAllRemoves) {
              removed.push_back(it->GetTx());
          }
 +        if (!fRecursive) {
 +            // 当不需要递归移除（移除子孙交易）时，说明是新块到来，所以不输出reject日志
 +            // 注意(warning)：当前仅有新块到来时fRecursive=false，升级bitcoind时，请再次确认
-+            // RemoveStaged() 是带锁的，所以这里通过isOutputCustomLog来控制是安全的
-+            isOutputCustomLog = false;
++            // RemoveStaged() 是带锁的，所以这里通过isOutputRemoveCustomLog来控制是安全的
++            isOutputRemoveCustomLog = false;
 +        }
          RemoveStaged(setAllRemoves);
-+        isOutputCustomLog = true;
++        isOutputRemoveCustomLog = true;
      }
  }
  
 diff -uNr bitcoin-0.12.1/src/txmempool.h bitcoin-0.12.1-explorer/src/txmempool.h
 --- bitcoin-0.12.1/src/txmempool.h	2016-04-11 19:01:43.000000000 +0800
-+++ bitcoin-0.12.1-explorer/src/txmempool.h	2016-04-28 18:26:00.000000000 +0800
++++ bitcoin-0.12.1-explorer/src/txmempool.h	2016-05-05 12:08:32.000000000 +0800
 @@ -354,6 +354,7 @@
  class CTxMemPool
  {
  private:
-+    bool isOutputCustomLog;  // flag that control if output the custom logs
++    bool isOutputRemoveCustomLog;  // flag that control if output the custom logs when remove txs
      uint32_t nCheckFrequency; //! Value n means that n times in 2^32 we check.
      unsigned int nTransactionsUpdated;
      CBlockPolicyEstimator* minerPolicyEstimator;
+@@ -370,6 +371,7 @@
+     void trackPackageRemoved(const CFeeRate& rate);
+ 
+ public:
++    bool isOutputAddCustomLog;  // flag that control if output the custom logs when add txs
+ 
+     static const int ROLLING_FEE_HALFLIFE = 60 * 60 * 12; // public only for testing
+ 
 diff -uNr bitcoin-0.12.1/src/util.cpp bitcoin-0.12.1-explorer/src/util.cpp
 --- bitcoin-0.12.1/src/util.cpp	2016-04-11 19:01:43.000000000 +0800
 +++ bitcoin-0.12.1-explorer/src/util.cpp	2016-04-19 18:18:32.000000000 +0800

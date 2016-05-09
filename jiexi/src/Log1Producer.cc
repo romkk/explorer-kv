@@ -127,7 +127,7 @@ bool Log1::isRemoveTx() {
 }
 
 string Log1::toString() {
-  if (type_ == TYPE_ACCEPT_TX) {
+  if (type_ == TYPE_ACCEPT_TX || type_ == TYPE_REMOVE_TX) {
     return Strings::Format("(tx: %s)", getTx().GetHash().ToString().c_str());
   }
   else if (type_ == TYPE_BLOCK) {

@@ -10,8 +10,8 @@ mkdir jiexi.bootstrap.testnet3
 cd jiexi.bootstrap.testnet3
 
 # 拷贝一些脚本
-cp ../jiexi.bootstrap/build/bootstrap.sh .
-cp ../jiexi.bootstrap/build/block_importer.sh .
+cp ../jiexi.bootstrap/tools/bootstrap.sh .
+cp ../jiexi.bootstrap/tools/block_importer.sh .
 
 # 创建可执行程序链接
 ln -s ../jiexi.bootstrap/build/compactdb

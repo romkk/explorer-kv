@@ -41,6 +41,28 @@ cp ../test/unittest.conf .
 
 ## 运行
 
+### 生成原始块数据
+
+```
+cd build
+cp ../tools/block_importer.sh .
+cp ../tools/bootstrap.sh .
+
+# 修改 tparser.bootstrap.conf 配置
+# 修改 block_importer.sh 脚本中最大高度配置
+./block_importer.sh
+```
+
+### 初始化
+
+下面几个步骤可以直接执行：
+
+```
+./bootstrap.sh
+```
+
+**或分步执行**
+
 第一步，需要初始化`address`和`transaction`，分别对应程序：`pre_addr`, `pre_tx`。这两个初始化程序可同时运行（内存必须64G以上）。
 
 ```
@@ -55,4 +77,13 @@ cp ../test/unittest.conf .
 
 ```
 ./pre_parser -c tparser.bootstrap.conf -l tparser.log
+```
+
+### 初始化v3数据库
+
+```
+cd Explorer/install
+./generate_initialize_sql.sh > v3_initialize.sql
+# 创建表
+mysql -h xxx -u xxxx -p explorer_v3_main_db < v3_initialize.sql
 ```

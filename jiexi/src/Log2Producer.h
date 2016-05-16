@@ -112,6 +112,9 @@ public:
   void removeTx (const uint256 &hash);
   void removeTxs(const vector<uint256> &txhashs);
 
+  // 移除某个交易，当有子交易时，则先移除子交易
+  void removeTxAndChildTx(const CTransaction &tx, vector<uint256> &removedHashes);
+
   // 同步至DB
   void syncToDB(MySQLConnection &db);
   // 忽略未同步数据
@@ -179,7 +182,8 @@ class Log2Producer {
   void tryRemoveOldLog1();  // 移除旧的 log1 日志
   void tryReadLog1(vector<string> &lines, vector<int64_t> &offset);
 
-  void handleTx(Log1 &log1Item);
+  void handleTxAccept(Log1 &log1Item);
+  void handleTxReject(Log1 &log1Item);
 
   void handleBlock(Log1 &log1Item);
   void handleBlockAccept  (Log1 &log1Item);

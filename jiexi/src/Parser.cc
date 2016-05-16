@@ -1864,38 +1864,40 @@ void Parser::threadProduceTxlogs() {
 
 bool Parser::tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId,
                                   MySQLConnection &dbExplorer) {
-  MySQLResult res;
-  char **row = nullptr;
-  string sql;
+  {
+    MySQLResult res;
+    char **row = nullptr;
+    string sql;
 
-  // batch_id 为 -1 表示最后的临时记录
-  sql = Strings::Format(" SELECT `id`,`type`,`block_height`,`block_id`, "
-                        " `max_block_timestamp`, `tx_hash`,`created_at` "
-                        " FROM `0_txlogs2` "
-                        " WHERE `id` > %lld AND `batch_id` <> -1 ORDER BY `id` ASC LIMIT 1 ",
-                        lastId);
+    // batch_id 为 -1 表示最后的临时记录
+    sql = Strings::Format(" SELECT `id`,`type`,`block_height`,`block_id`, "
+                          " `max_block_timestamp`, `tx_hash`,`created_at` "
+                          " FROM `0_txlogs2` "
+                          " WHERE `id` > %lld AND `batch_id` <> -1 ORDER BY `id` ASC LIMIT 1 ",
+                          lastId);
 
-  dbExplorer.query(sql, res);
-  if (res.numRows() == 0) {
-    return false;
-  }
-  row = res.nextRow();
+    dbExplorer.query(sql, res);
+    if (res.numRows() == 0) {
+      return false;
+    }
+    row = res.nextRow();
 
-  txLog2->id_           = atoi64(row[0]);
-  txLog2->type_         = atoi(row[1]);
-  txLog2->blkHeight_    = atoi(row[2]);
-  txLog2->blkId_        = atoi64(row[3]);
-  txLog2->maxBlkTimestamp_ = (uint32_t)atoi64(row[4]);
-  txLog2->ymd_          = atoi(date("%Y%m%d", txLog2->maxBlkTimestamp_).c_str());
-  txLog2->txHash_       = uint256(row[5]);
-  txLog2->createdAt_    = string(row[6]);
+    txLog2->id_           = atoi64(row[0]);
+    txLog2->type_         = atoi(row[1]);
+    txLog2->blkHeight_    = atoi(row[2]);
+    txLog2->blkId_        = atoi64(row[3]);
+    txLog2->maxBlkTimestamp_ = (uint32_t)atoi64(row[4]);
+    txLog2->ymd_          = atoi(date("%Y%m%d", txLog2->maxBlkTimestamp_).c_str());
+    txLog2->txHash_       = uint256(row[5]);
+    txLog2->createdAt_    = string(row[6]);
 
-  if (!(txLog2->type_ == LOG2TYPE_TX_ACCEPT    ||
-        txLog2->type_ == LOG2TYPE_TX_CONFIRM   ||
-        txLog2->type_ == LOG2TYPE_TX_UNCONFIRM ||
-        txLog2->type_ == LOG2TYPE_TX_REJECT)) {
-    LOG_FATAL("invalid type: %d", txLog2->type_);
-    return false;
+    if (!(txLog2->type_ == LOG2TYPE_TX_ACCEPT    ||
+          txLog2->type_ == LOG2TYPE_TX_CONFIRM   ||
+          txLog2->type_ == LOG2TYPE_TX_UNCONFIRM ||
+          txLog2->type_ == LOG2TYPE_TX_REJECT)) {
+      LOG_FATAL("invalid type: %d", txLog2->type_);
+      return false;
+    }
   }
 
   //
@@ -1916,13 +1918,25 @@ bool Parser::tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId,
   }
 
   // 清理旧记录: 保留200万条已经消费过的记录，每2万条触发清理一次
-  if (txLog2->id_ > 200*10000 && txLog2->id_ % 20000 == 0) {
+  const int64_t kKeepNum = 200*10000;
+  if (txLog2->id_ > kKeepNum && txLog2->id_ % 20000 == 0) {
     string delSql = Strings::Format("DELETE FROM `0_txlogs2` WHERE `id` < %lld",
-                                    txLog2->id_ - 200*10000);
-    const size_t delRowNum = dbExplorer.update(delSql);
+                                    txLog2->id_ - kKeepNum);
+    size_t delRowNum = dbExplorer.update(delSql);
     LOG_INFO("delete expired txlogs2 items: %llu", delRowNum);
 
-    // TODO: 清理表: table.raw_txs_xxxx, table.0_raw_blocks
+    // 清理表: table.0_row_blocks,  144*30=4,320
+    delSql = "DELETE FROM `0_raw_blocks` WHERE `id` < "
+    " (SELECT * FROM (SELECT (IFNULL(max(`id`), 0) - 4320) as `max_id` FROM `0_raw_blocks`) AS `t1`)";
+    delRowNum = dbExplorer.update(delSql);
+    LOG_INFO("delete 0_raw_blocks items: %llu", delRowNum);
+
+    // TODO 清理表: table.raw_txs_xxxx
+    // 目前可以采用手动清理：
+    //  1. 停止 log1producer
+    //  2. 保证 log2producer 已经完全消费log1之后，停止 log2producer
+    //  3. 等待tparser，等完全消费了log2后，手动清空所有表： table.raw_txs_xxxx
+    //  4. 启动log1producer，启动log2producer
   }
 
   return true;

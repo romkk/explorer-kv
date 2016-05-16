@@ -62,6 +62,9 @@ string UrlDecode(const char *str);
 
 std::string escapeJson(const std::string &s);
 
+bool fileGetContents(const string &fname, string &content);
+bool filePutContents(const string &fname, const string &content, bool append=false);
+
 ////////////////////////////////  BoundedBuffer  ////////////////////////////////
 template <class T>
 class BoundedBuffer {

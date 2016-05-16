@@ -56,16 +56,33 @@ cp ../test/unittest.conf .
 ## 部署
 ### logrotate.d
 
-假设日志目录为：`/work/Explorer/jiexi/build/supervise_tparser/tparser.log`，则 logrotate.d 的配置文件为：
+假设日志目录为：`/work/Explorer/jiexi/build/*.log`，则 logrotate.d 的配置文件如下，支持指定多个日志路径。
 
 ```
-$ cat /etc/logrotate.d/tparser
-/work/Explorer/jiexi/build/supervise_tparser/tparser.log {
+$ cat /etc/logrotate.d/tparser-main
+/work/Explorer/jiexi/build/*.log
+/work/Explorer/jiexi/build/other_path/other.log
+{
     daily
-    rotate 14
-    missingok
+    rotate 7
+    compress
     copytruncate
+    nocreate
+    delaycompress
+    notifempty
 }
 ```
 
 testnet3 配置类似，请自行复制一份修改日志路径即可。
+
+
+## 运行
+
+v3依然采用的数据库，来存放txlogs记录，由于table.raw\_txs\_xxxx特殊情况，需要手动清理：
+
+1. 停止 log1producer
+2. 保证 log2producer 已经完全消费log1之后，停止 log2producer
+3. 等待tparser，等完全消费了log2后，手动清空所有表： table.raw\_txs\_xxxx
+4. 启动log1producer，启动log2producer
+
+之所以采用上述步骤，是因为log2producer在插入每条txlogs日志时，会保障对应的rawtx一定存在。需要设置数据库容量报警，防止空间不够，此步骤可以每3个月执行一次。

@@ -54,7 +54,6 @@ void Log1::parse(const string &line) {
 
   // 按照 ',' 切分，最多切三份
   const vector<string> arr1 = split(line, ',', 3);
-  assert(arr1.size() == 3);
 
   // type
   const int32_t type = atoi(arr1[1].c_str());
@@ -74,12 +73,13 @@ void Log1::parse(const string &line) {
     content_     = arr2[1] + arr2[2];
     type_        = type;
   }
-  /* tx */
-  else if (type == TYPE_TX) {
+  /* tx accept / remove */
+  else if (type == TYPE_ACCEPT_TX || type == TYPE_REMOVE_TX) {
     assert(arr2.size() == 2);
     content_ = arr2[0] + arr2[1];
     type_    = type;
-  } else {
+  }
+  else {
     THROW_EXCEPTION_DBEX("[Log1::parse] invalid log1 type(%d)", type);
   }
 }
@@ -110,8 +110,8 @@ const CTransaction &Log1::getTx() {
   return tx_;
 }
 
-bool Log1::isTx() {
-  return type_ == TYPE_TX ? true : false;
+bool Log1::isAcceptTx() {
+  return type_ == TYPE_ACCEPT_TX ? true : false;
 }
 
 bool Log1::isBlock() {
@@ -122,8 +122,12 @@ bool Log1::isClearMemtxs() {
   return type_ == TYPE_CLEAR_MEMTXS ? true : false;
 }
 
+bool Log1::isRemoveTx() {
+  return type_ == TYPE_REMOVE_TX ? true : false;
+}
+
 string Log1::toString() {
-  if (type_ == TYPE_TX) {
+  if (type_ == TYPE_ACCEPT_TX || type_ == TYPE_REMOVE_TX) {
     return Strings::Format("(tx: %s)", getTx().GetHash().ToString().c_str());
   }
   else if (type_ == TYPE_BLOCK) {
@@ -237,6 +241,8 @@ Log1Producer::Log1Producer() : log1LockFd_(-1), log1FileHandler_(nullptr),
     log0Dir_.resize(log0Dir_.length() - 1);
   }
 
+  log0StatusFile_ = Strings::Format("%s/LOG0_STATUS", log1Dir_.c_str());
+
   notifyFileLog2Producer_ = log1Dir_ + "/NOTIFY_LOG1_TO_LOG2";
   notifyFileLog0_ = log0Dir_ + "/NOTIFY_LOG1PRODUCER";
 
@@ -301,19 +307,64 @@ void Log1Producer::init() {
   }
 
   //
-  // 1. 初始化 log1
+  // 检测 log0 是否发生变化？
+  // 1. 没有变化: 继续上次执行的地方，继续消费 log0 日志
+  // 2. 已经变化：
+  //      2.1 清理本系统txlog2的mempool，写清理指令
+  //      2.2 读取 log0 的首个文件首行(必然是一个块），若本地链的高度不一致，则同步
+  //      2.3 从 log0 的第二行开始进行消费
   //
+
+  bool isLog0Changed = false;
+
+  // 检测 log0 是否发生变化？
+  const string log0BeginTimeFile0 = Strings::Format("%s/BEGIN", log0Dir_.c_str());
+  string log0BeginTimeDir0;
+  fileGetContents(log0BeginTimeFile0, log0BeginTimeDir0);
+  LOG_INFO("log0BeginTimeFile(log0dir): %s", log0BeginTimeDir0.c_str());
+
+  const string log0BeginTimeFile1 = Strings::Format("%s/LOG0_BEGIN_TIME", log1Dir_.c_str());
+  string log0BeginTimeDir1;
+  fileGetContents(log0BeginTimeFile1, log0BeginTimeDir1);
+  LOG_INFO("log0BeginTimeFile(log1dir): %s", log0BeginTimeDir1.c_str());
+
+  if (log0BeginTimeDir0 != log0BeginTimeDir1) {
+    isLog0Changed = true;
+    LOG_WARN("log0 files has been changed");
+  }
+
+  // 初始化 log1，构建出最近的链
   initLog1();
 
-  //
-  // 2. 与 bitcoind 同步
-  //
-  syncBitcoind();
+  if (isLog0Changed) {
+    // 1. 写入一条回撤指令，会令log2producer reject掉当前所有未确认交易
+    writeLog1(Log1::TYPE_CLEAR_MEMTXS, "");
 
-  //
-  // 3. 与 log0 同步 (同步即初试化)
-  //
-  syncLog0();
+    // 2. 读取 log0_dir/files/0.log 最新高度/块，利用RPC命令同步至此高度
+    // log0FileIndex_, log0FileOffset_ 会更新
+    syncBitcoind();
+
+    // 3. 更新 log0 的时间, 更新 log0 idx & offset
+    filePutContents(log0BeginTimeFile1, log0BeginTimeDir0);
+    writeLog0IdxOffset();
+  }
+  else
+  {
+    // 继续上次的进度
+    // 说明 bitcoin 并未重启，那么继续消费即可
+    getLog0IdxOffset();
+  }
+
+  try {
+    fs::path beginFile(Strings::Format("%s/BEGIN", log0Dir_.c_str()));
+    log0BeginFileLastModifyTime_ = fs::last_write_time(beginFile);
+  }
+  catch (boost::filesystem::filesystem_error &e)
+  {
+    THROW_EXCEPTION_DBEX("can't get log0 begin file last modify time: %s", e.what());
+  }
+
+  LOG_INFO("start log0file info, idx: %d, offset: %lld ", log0FileIndex_, log0FileOffset_);
 }
 
 void Log1Producer::threadWatchNotifyFile() {
@@ -413,7 +464,11 @@ void Log1Producer::initLog1() {
       }
     } /* /for */
   }
-  assert(chain_.size() >= 1);
+
+  if (chain_.size() == 0) {
+    THROW_EXCEPTION_DBEX("can't find any blocks in log1 files, if you are first run log1producer "
+                         "please remove log1dir and mkdir again");
+  }
 
   LOG_INFO("log1 begin block: %d, %s", chain_.getCurHeight(),
            chain_.getCurHash().ToString().c_str());
@@ -495,118 +550,118 @@ static int32_t _bitcoind_getBestHeight(BitcoinRpc &bitcoind) {
   return r["result"]["blocks"].int32();
 }
 
-static void _bitcoind_getrawtransaction(BitcoinRpc &bitcoind, const uint256 &hash, CTransaction &tx, bool verbose) {
-  const string request = Strings::Format("{\"id\":1,\"method\":\"getrawtransaction\",\"params\":[\"%s\", %d]}",
-                                         hash.ToString().c_str(), verbose ? 1 : 0);
-  string response;
-  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
-  if (ret != 0) {
-    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
-  }
-  vector<string> strArr = split(response, '"', 5);
-  assert(strArr.size() == 5);
-  if (!DecodeHexTx(tx, strArr[3])) {
-    LOG_ERROR("rpc request : %s", request.c_str());
-    LOG_ERROR("rpc response: %s", response.c_str());
-    THROW_EXCEPTION_DBEX("decode tx failure, hex: %s", strArr[3].c_str());
-  }
-}
-
-// 获取内存交易列表，并根据交易之间的关联性排好序
-static void _bitcoind_getmempool_txs(BitcoinRpc &bitcoind, vector<CTransaction> &txs) {
-  string request;
-  string response;
-  JsonNode r;
-  map<uint256, set<uint256> > allTxhash;
-
-  vector<uint256> sortedTxs;  // 按照依赖顺序已经排好序的交易
-  set<uint256> sortedTxsSet;
-
-  //
-  // getrawmempool
-  //
-  request = Strings::Format("{\"id\":1,\"method\":\"getrawmempool\",\"params\":[true]}");
-  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
-  if (ret != 0) {
-    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
-  }
-  r.reset();
-  JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
-  if (r["error"].type() != Utilities::JS::type::Undefined &&
-      r["error"].type() == Utilities::JS::type::Obj) {
-    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, code: %d, error: %s",
-                         r["error"]["code"].int32(),
-                         r["error"]["message"].str().c_str());
-  }
-
-  for (auto node : r["result"].array()) {
-    const string hashStr = std::string(node.key_start(),node.key_end());
-    allTxhash[uint256(hashStr)] = set<uint256>();
-
-    for (auto dependTx : node["depends"].array()) {
-      allTxhash[uint256(hashStr)].insert(uint256(dependTx.str()));
-    }
-  }
-
-  // 循环遍历
-  // 最多循环次数： allTxhash.size()
-  while (1) {
-    const size_t lastSize = sortedTxs.size();
-
-    assert(sortedTxs.size() == sortedTxsSet.size());
-    if (sortedTxs.size() == allTxhash.size()) {
-      break;  // 所有交易均已经存放至vector中
-    }
-
-    for (auto it = allTxhash.begin(); it != allTxhash.end(); ) {
-      // alias
-      const uint256 &hash         = it->first;
-      const set<uint256> &depends = it->second;
-
-      // 没有依赖关系的直接推入
-      if (depends.size() == 0) {
-        sortedTxs.push_back(hash);
-        sortedTxsSet.insert(hash);
-        allTxhash.erase(it++);
-
-        continue;
-      }
-
-      // 判断依赖交易是否存在
-      bool allDependsExist = true;
-      for (auto dependTx : depends) {
-        if (sortedTxsSet.find(dependTx) == sortedTxsSet.end()) {
-          allDependsExist = false;
-          break;
-        }
-      }
-      if (allDependsExist) {
-        sortedTxs.push_back(hash);
-        sortedTxsSet.insert(hash);
-        allTxhash.erase(it++);
-      } else {
-        it++;
-      }
-    }
-
-    if (lastSize == sortedTxs.size()) {
-      LOG_INFO("no more txs, sorted: %llu, all: %llu", sortedTxs.size(), allTxhash.size());
-      break;
-    }
-  }
-  LOG_INFO("getrawmempool size: %llu", sortedTxs.size());
-
-  //
-  // getrawtransaction
-  //
-  txs.clear();
-  txs.reserve(sortedTxs.size());
-  for (auto hash : sortedTxs) {
-    CTransaction tx;
-    _bitcoind_getrawtransaction(bitcoind, hash, tx, 0);
-    txs.push_back(tx);
-  }
-}
+//static void _bitcoind_getrawtransaction(BitcoinRpc &bitcoind, const uint256 &hash, CTransaction &tx, bool verbose) {
+//  const string request = Strings::Format("{\"id\":1,\"method\":\"getrawtransaction\",\"params\":[\"%s\", %d]}",
+//                                         hash.ToString().c_str(), verbose ? 1 : 0);
+//  string response;
+//  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
+//  if (ret != 0) {
+//    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
+//  }
+//  vector<string> strArr = split(response, '"', 5);
+//  assert(strArr.size() == 5);
+//  if (!DecodeHexTx(tx, strArr[3])) {
+//    LOG_ERROR("rpc request : %s", request.c_str());
+//    LOG_ERROR("rpc response: %s", response.c_str());
+//    THROW_EXCEPTION_DBEX("decode tx failure, hex: %s", strArr[3].c_str());
+//  }
+//}
+//
+//// 获取内存交易列表，并根据交易之间的关联性排好序
+//static void _bitcoind_getmempool_txs(BitcoinRpc &bitcoind, vector<CTransaction> &txs) {
+//  string request;
+//  string response;
+//  JsonNode r;
+//  map<uint256, set<uint256> > allTxhash;
+//
+//  vector<uint256> sortedTxs;  // 按照依赖顺序已经排好序的交易
+//  set<uint256> sortedTxsSet;
+//
+//  //
+//  // getrawmempool
+//  //
+//  request = Strings::Format("{\"id\":1,\"method\":\"getrawmempool\",\"params\":[true]}");
+//  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
+//  if (ret != 0) {
+//    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
+//  }
+//  r.reset();
+//  JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
+//  if (r["error"].type() != Utilities::JS::type::Undefined &&
+//      r["error"].type() == Utilities::JS::type::Obj) {
+//    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, code: %d, error: %s",
+//                         r["error"]["code"].int32(),
+//                         r["error"]["message"].str().c_str());
+//  }
+//
+//  for (auto node : r["result"].array()) {
+//    const string hashStr = std::string(node.key_start(),node.key_end());
+//    allTxhash[uint256(hashStr)] = set<uint256>();
+//
+//    for (auto dependTx : node["depends"].array()) {
+//      allTxhash[uint256(hashStr)].insert(uint256(dependTx.str()));
+//    }
+//  }
+//
+//  // 循环遍历
+//  // 最多循环次数： allTxhash.size()
+//  while (1) {
+//    const size_t lastSize = sortedTxs.size();
+//
+//    assert(sortedTxs.size() == sortedTxsSet.size());
+//    if (sortedTxs.size() == allTxhash.size()) {
+//      break;  // 所有交易均已经存放至vector中
+//    }
+//
+//    for (auto it = allTxhash.begin(); it != allTxhash.end(); ) {
+//      // alias
+//      const uint256 &hash         = it->first;
+//      const set<uint256> &depends = it->second;
+//
+//      // 没有依赖关系的直接推入
+//      if (depends.size() == 0) {
+//        sortedTxs.push_back(hash);
+//        sortedTxsSet.insert(hash);
+//        allTxhash.erase(it++);
+//
+//        continue;
+//      }
+//
+//      // 判断依赖交易是否存在
+//      bool allDependsExist = true;
+//      for (auto dependTx : depends) {
+//        if (sortedTxsSet.find(dependTx) == sortedTxsSet.end()) {
+//          allDependsExist = false;
+//          break;
+//        }
+//      }
+//      if (allDependsExist) {
+//        sortedTxs.push_back(hash);
+//        sortedTxsSet.insert(hash);
+//        allTxhash.erase(it++);
+//      } else {
+//        it++;
+//      }
+//    }
+//
+//    if (lastSize == sortedTxs.size()) {
+//      LOG_INFO("no more txs, sorted: %llu, all: %llu", sortedTxs.size(), allTxhash.size());
+//      break;
+//    }
+//  }
+//  LOG_INFO("getrawmempool size: %llu", sortedTxs.size());
+//
+//  //
+//  // getrawtransaction
+//  //
+//  txs.clear();
+//  txs.reserve(sortedTxs.size());
+//  for (auto hash : sortedTxs) {
+//    CTransaction tx;
+//    _bitcoind_getrawtransaction(bitcoind, hash, tx, 0);
+//    txs.push_back(tx);
+//  }
+//}
 
 void Log1Producer::syncBitcoind() {
   if (!running_) { return; }
@@ -620,6 +675,28 @@ void Log1Producer::syncBitcoind() {
   // 第二步，从一致块高度开始，每次加一，向前追，直至与bitcoind高度一致
   //
   BitcoinRpc bitcoind(Config::GConfig.get("bitcoind.uri"));
+
+  int32_t log0FirstLineHeight = -1;
+  uint256 log0FirstLineHash;
+
+  // 读取 log0 0.log 首行
+  {
+    ifstream fin(Strings::Format("%s/files/0.log", log0Dir_.c_str()));
+    string line;
+    Log1 log0Item;  // log0 里记录的也是log1格式
+    if (!getline(fin, line)) {
+      THROW_EXCEPTION_DBEX("read log0 first line failure");
+    }
+    log0Item.parse(line);
+    if (!log0Item.isBlock()) {
+      THROW_EXCEPTION_DBEX("log0 first line is NOT block");
+    }
+    log0FirstLineHeight = log0Item.blockHeight_;
+    log0FirstLineHash   = log0Item.getBlock().GetHash();
+
+    log0FileIndex_  = 0;
+    log0FileOffset_ = fin.tellg();
+  }
 
   //
   // 第一步，先尝试找到高度和哈希一致的块，若log1最前面的不符合，则回退直至找到一致的块
@@ -654,100 +731,102 @@ void Log1Producer::syncBitcoind() {
              chain_.getCurHeight(), chain_.getCurHash().ToString().c_str());
   }
 
-  //
-  // 第二步，从一致块高度开始，每次加一，向前追，直至与bitcoind高度一致
-  //
-  int32_t bitcoindBestHeight = _bitcoind_getBestHeight(bitcoind);
-  assert(bitcoindBestHeight > 0);
-  LOG_INFO("bitcoind best height: %d", bitcoindBestHeight);
+  if (chain_.getCurHeight() > log0FirstLineHeight) {
+    THROW_EXCEPTION_DBEX("chain_.getCurHeight(): %d is higher than log0FirstLineHeight: %d, "
+                         "please restart bitcoind to make sure log0FirstLineHeight is higher than %d",
+                         chain_.getCurHeight(), log0FirstLineHeight, chain_.getCurHeight());
+  }
 
-  while (chain_.getCurHeight() < bitcoindBestHeight && running_) {
+  //
+  // 第二步，从一致块高度开始，每次加一，向前追，直至与 log0FirstLineHeight 高度一致
+  //
+  LOG_INFO("log0 first block height: %d", log0FirstLineHeight);
+  while (chain_.getCurHeight() < log0FirstLineHeight && running_) {
     const int32_t height = chain_.getCurHeight() + 1;
     const string hashStr = _bitcoind_getBlockHashByHeight(bitcoind, chain_.getCurHeight() + 1);
     LOG_INFO("sync bitcoind block(+), height: %d, hash: %s", height, hashStr.c_str());
 
     CBlock block;
     _bitcoind_getBlockByHash(bitcoind, hashStr, block);
+
     assert(block.GetHash().ToString() == hashStr);
+    assert(chain_.getCurHash() == block.hashPrevBlock);
 
     chain_.push(height, block.GetHash(), block.hashPrevBlock);
     writeLog1Block(height, block);
   }
-
-  //
-  // 第三步
-  // 获取当前内存交易，准备写入log1。 获取交易后，再次检测高度，防止高度发生变化。
-  // 若高度不变，写入所有的内存txs至log1。若高度发生变化，则退出。
-  //
-  vector<CTransaction> mempoolTxs;
-  _bitcoind_getmempool_txs(bitcoind, mempoolTxs);
-  if (bitcoindBestHeight != _bitcoind_getBestHeight(bitcoind)) {
-    THROW_EXCEPTION_DBEX("bitcoind's height has been changed, exit. please restart log1producer again.");
-  }
-
-  // 写入一条回撤指令，会令log2producer reject掉当前所有未确认交易
-  writeLog1(Log1::TYPE_CLEAR_MEMTXS, "");
-
-  // 写入当前内存txs
-  for (const auto &mempoolTx : mempoolTxs) {
-    writeLog1Tx(mempoolTx);
-  }
-
 }
 
-void Log1Producer::syncLog0() {
-  if (!running_) { return; }
-  LogScope ls("Log1Producer::syncLog0()");
-  bool syncSuccess = false;
-
-  try {
-    fs::path beginFile(Strings::Format("%s/BEGIN", log0Dir_.c_str()));
-    log0BeginFileLastModifyTime_ = fs::last_write_time(beginFile);
-  }
-  catch (boost::filesystem::filesystem_error &e)
-  {
-    THROW_EXCEPTION_DBEX("can't get log0 begin file last modify time: %s", e.what());
-  }
-
-  //
-  // 遍历 log0 所有文件，直至找到一样的块，若找到则同步完成
-  //
-  std::set<int32_t> filesIdxs;  // log0 所有文件
-  fs::path filesPath(Strings::Format("%s/files", log0Dir_.c_str()));
-  tryCreateDirectory(filesPath);
-  for (fs::directory_iterator end, it(filesPath); it != end; ++it) {
-    filesIdxs.insert(atoi(it->path().stem().c_str()));
-  }
-
-  // 反序遍历，从最新的文件开始找
-  for (auto it = filesIdxs.rbegin(); it != filesIdxs.rend(); it++) {
-    ifstream fin(Strings::Format("%s/files/%d.log", log0Dir_.c_str(), *it));
-    string line;
-    Log1 log0Item;  // log0 里记录的也是log1格式
-    while (getline(fin, line)) {
-      log0Item.parse(line);
-      if (log0Item.isTx()) { continue; }
-      assert(log0Item.isBlock());
-      if (log0Item.blockHeight_         != chain_.getCurHeight() ||
-          log0Item.getBlock().GetHash() != chain_.getCurHash()) {
-        continue;
-      }
-      // 找到高度和哈希一致的块
-      log0FileIndex_  = *it;
-      log0FileOffset_ = fin.tellg();
-      LOG_INFO("sync log0 success, file idx: %d, offset: %lld",
-               log0FileIndex_, log0FileOffset_);
-      syncSuccess = true;
-      break;
-    } /* /while */
-
-    if (syncSuccess) { break; }
-  } /* /for */
-
-  if (!syncSuccess) {
-    THROW_EXCEPTION_DBEX("sync log0 failure");
-  }
+void Log1Producer::writeLog0IdxOffset() {
+  const string status = Strings::Format("%d,%lld", log0FileIndex_, log0FileOffset_);
+  filePutContents(log0StatusFile_, status);
 }
+
+void Log1Producer::getLog0IdxOffset() {
+  string content;
+  if (!fileGetContents(log0StatusFile_, content)) {
+    THROW_EXCEPTION_DBEX("fileGetContents failure, file: %s", log0StatusFile_.c_str());
+  }
+  vector<string> arr = split(content, ',');
+  assert(arr.size() == 2);
+
+  log0FileIndex_  = atoi(arr[0].c_str());
+  log0FileOffset_ = atoi64(arr[1].c_str());
+}
+
+//void Log1Producer::syncLog0() {
+//  if (!running_) { return; }
+//  LogScope ls("Log1Producer::syncLog0()");
+//  bool syncSuccess = false;
+//
+//  try {
+//    fs::path beginFile(Strings::Format("%s/BEGIN", log0Dir_.c_str()));
+//    log0BeginFileLastModifyTime_ = fs::last_write_time(beginFile);
+//  }
+//  catch (boost::filesystem::filesystem_error &e)
+//  {
+//    THROW_EXCEPTION_DBEX("can't get log0 begin file last modify time: %s", e.what());
+//  }
+//
+//  //
+//  // 遍历 log0 所有文件，直至找到一样的块，若找到则同步完成
+//  //
+//  std::set<int32_t> filesIdxs;  // log0 所有文件
+//  fs::path filesPath(Strings::Format("%s/files", log0Dir_.c_str()));
+//  tryCreateDirectory(filesPath);
+//  for (fs::directory_iterator end, it(filesPath); it != end; ++it) {
+//    filesIdxs.insert(atoi(it->path().stem().c_str()));
+//  }
+//
+//  // 反序遍历，从最新的文件开始找
+//  for (auto it = filesIdxs.rbegin(); it != filesIdxs.rend(); it++) {
+//    ifstream fin(Strings::Format("%s/files/%d.log", log0Dir_.c_str(), *it));
+//    string line;
+//    Log1 log0Item;  // log0 里记录的也是log1格式
+//    while (getline(fin, line)) {
+//      log0Item.parse(line);
+//      if (log0Item.isTx()) { continue; }
+//      assert(log0Item.isBlock());
+//      if (log0Item.blockHeight_         != chain_.getCurHeight() ||
+//          log0Item.getBlock().GetHash() != chain_.getCurHash()) {
+//        continue;
+//      }
+//      // 找到高度和哈希一致的块
+//      log0FileIndex_  = *it;
+//      log0FileOffset_ = fin.tellg();
+//      LOG_INFO("sync log0 success, file idx: %d, offset: %lld",
+//               log0FileIndex_, log0FileOffset_);
+//      syncSuccess = true;
+//      break;
+//    } /* /while */
+//
+//    if (syncSuccess) { break; }
+//  } /* /for */
+//
+//  if (!syncSuccess) {
+//    THROW_EXCEPTION_DBEX("sync log0 failure");
+//  }
+//}
 
 void Log1Producer::tryRemoveOldLog0() {
   const int32_t keepLogNum = (int32_t)Config::GConfig.getInt("log0.files.max.num", 24 * 3);
@@ -862,9 +941,9 @@ void Log1Producer::run() {
       //
       // Tx
       //
-      if (log0Item.isTx()) {
+      if (log0Item.isAcceptTx() || log0Item.isRemoveTx()) {
         // 交易的容错是最强的，即使当前块已经错乱了，推入交易仍然不会出问题
-        writeLog1Tx(log0Item.getTx());
+        writeLog1Tx(log0Item.type_, log0Item.getTx());
       }
       //
       // Block
@@ -880,6 +959,11 @@ void Log1Producer::run() {
         THROW_EXCEPTION_DBEX("invalid log0 type, log line: %s", line.c_str());
       }
     } /* /for */
+
+    // 更新最后读取的文件 index & offset
+    // 这里假定处理 lines 的过程中，程序是不会被 'kill -9' 的，正常的'ctrl + c'是可以处理的
+    writeLog0IdxOffset();
+
   } /* /while */
 }
 
@@ -945,10 +1029,10 @@ void Log1Producer::writeLog1(const int32_t type, const string &line) {
   }
 }
 
-void Log1Producer::writeLog1Tx(const CTransaction &tx) {
+void Log1Producer::writeLog1Tx(const int32_t type, const CTransaction &tx) {
   const string hex = EncodeHexTx(tx);
   const string hashStr = tx.GetHash().ToString();
-  writeLog1(Log1::TYPE_TX,
+  writeLog1(type,
             Strings::Format("%s|%s", hashStr.c_str(), hex.c_str()));
 
   LOG_INFO("write log1 tx: %s", hashStr.c_str());

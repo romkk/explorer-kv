@@ -20,6 +20,7 @@
 #include "MySQLConnection.h"
 
 #include <iomanip>
+#include <fstream>
 #include <string>
 #include <sstream>
 #include <vector>
@@ -193,13 +194,13 @@ int64_t insertRawBlock(MySQLConnection &db, const CBlock &blk, const int32_t hei
   const uint256 blockHash = blk.GetHash();
 
   // check is exist
-  sql = Strings::Format("SELECT `id`,`block_hash` FROM `0_raw_blocks` "
+  sql = Strings::Format("SELECT `id`,`block_hash`,`block_height` FROM `0_raw_blocks` "
                         " WHERE `block_hash` = '%s' ",
                         blockHash.ToString().c_str());
   db.query(sql, res);
   if (res.numRows() == 1) {
     row = res.nextRow();
-    assert(atoi(row[1]) == height);
+    assert(atoi(row[2]) == height);
     return atoi64(row[0]);
   }
 
@@ -400,4 +401,29 @@ std::string escapeJson(const std::string &s) {
     }
   }
   return o.str();
+}
+
+bool fileGetContents(const string &fname, string &content) {
+  std::ifstream fIn;
+  fIn.open(fname.c_str(), std::ios::in);
+  if (!fIn) {
+    return false;
+  }
+
+  stringstream ss;
+  ss << fIn.rdbuf();
+  content = ss.str();
+
+  return true;
+}
+
+bool filePutContents(const string &fname, const string &content, bool append) {
+  std::ofstream fOut;
+  fOut.open(fname.c_str(), append ? std::ios::app : std::ios::out);
+  if (!fOut) {
+    return false;
+  }
+  fOut << content;
+  fOut.close();
+  return true;
 }

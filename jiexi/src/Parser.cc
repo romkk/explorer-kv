@@ -261,25 +261,12 @@ void TxInfoCache::getTxInfo(MySQLConnection &db,
 
 /////////////////////////////////  Parser  ///////////////////////////////////
 Parser::Parser(): running_(true), unconfirmedTxsSize_(0), unconfirmedTxsCount_(0),
-kvdb_(Config::GConfig.get("rocksdb.path", "")), notifyProducer_(nullptr), currBlockHeight_(-1), txlogsBuffer_(200),
+kvdb_(Config::GConfig.get("rocksdb.path", "")), currBlockHeight_(-1), txlogsBuffer_(200),
 recognizeBlock_(Config::GConfig.get("pools.json", ""), &kvdb_)
 {
   notifyFileLog2Producer_ = Config::GConfig.get("notify.log2producer.file");
   if (notifyFileLog2Producer_.empty()) {
     THROW_EXCEPTION_DBEX("empty config: notify.log2producer.file");
-  }
-
-  //
-  // notification.dir
-  //
-  {
-    string dir = Config::GConfig.get("notification.dir", ".");
-    if (*(std::prev(dir.end())) == '/') {  // remove last '/'
-      dir.resize(dir.length() - 1);
-    }
-    notifyBeginHeight_ = Config::GConfig.getInt("notification.begin.height", -1);
-    notifyProducer_ = new NotifyProducer(dir);
-    notifyProducer_->init();
   }
 
   if (!recognizeBlock_.loadConfigJson()) {
@@ -308,12 +295,6 @@ Parser::~Parser() {
   LOG_INFO("stop watch notify thread...");
   if (threadWatchNotify_.joinable()) {
     threadWatchNotify_.join();
-  }
-
-  LOG_INFO("stop notify producer...");
-  if (notifyProducer_ != nullptr) {
-    delete notifyProducer_;
-    notifyProducer_ = nullptr;
   }
 }
 
@@ -656,15 +637,6 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
 
   // 设置当前块高度
   currBlockHeight_ = txLog2->blkHeight_;
-
-  // 写入事件通知
-  {
-    string sbuf;
-    NotifyItem nitem;
-    nitem.loadblock(NOTIFY_EVENT_BLOCK_ACCEPT, blk.GetHash(), txLog2->blkHeight_);
-    sbuf.append(nitem.toStr() + "\n");
-    notifyProducer_->write(sbuf);
-  }
 }
 
 
@@ -823,50 +795,6 @@ void Parser::removeUnconfirmedTxPool(class TxLog2 *txLog2) {
     const string value = Strings::Format("%lld", unconfirmedTxsSize_);
     kvdb_.set(key, value);
   }
-}
-
-bool Parser::isWriteNotificationLogs() {
-  if (notifyProducer_ == nullptr ||
-      (currBlockHeight_ != -1 && notifyBeginHeight_ != -1 && currBlockHeight_ < notifyBeginHeight_)) {
-    // 当前高度未达到时，不启动事件通知
-    return false;
-  }
-  return true;
-}
-
-// 写入通知日志文件
-void Parser::writeNotificationLogs(const map<string, int64_t> &addressBalance,
-                                   class TxLog2 *txLog2) {
-  static string buffer;
-  static NotifyItem item;
-
-  if (!isWriteNotificationLogs()) {
-    return;
-  }
-
-  buffer.clear();
-  for (auto it : addressBalance) {
-    int32_t type = 0;
-    switch (txLog2->type_) {
-      case LOG2TYPE_TX_ACCEPT:
-        type = NOTIFY_EVENT_TX_ACCEPT;
-        break;
-      case LOG2TYPE_TX_CONFIRM:
-        type = NOTIFY_EVENT_TX_CONFIRM;
-        break;
-      case LOG2TYPE_TX_UNCONFIRM:
-        type = NOTIFY_EVENT_TX_UNCONFIRM;
-        break;
-      case LOG2TYPE_TX_REJECT:
-        type = NOTIFY_EVENT_TX_REJECT;
-        break;
-      default:
-        break;
-    }
-    item.loadtx(type, it.first, txLog2->txHash_, txLog2->blkHeight_, it.second);
-    buffer.append(item.toStr() + "\n");
-  }
-  notifyProducer_->write(buffer);
 }
 
 // 插入交易的raw hex

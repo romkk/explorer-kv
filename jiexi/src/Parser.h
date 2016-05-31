@@ -21,7 +21,6 @@
 
 #include "Common.h"
 #include "MySQLConnection.h"
-#include "NotifyLog.h"
 #include "Log2Producer.h"
 #include "Util.h"
 
@@ -222,10 +221,6 @@ private:
   Inotify inotify_;
   thread threadWatchNotify_;
 
-  // 事件通知系统的日志
-  NotifyProducer *notifyProducer_;
-  // 达到此高度后才允许通知日志输出，-1表示无限制。防止启动时追快造成短时间内大量生成大量通知事件
-  int32_t notifyBeginHeight_;
   void threadWatchNotifyFile();
   int32_t currBlockHeight_;
 
@@ -292,10 +287,6 @@ private:
   void _rejectTx_MoveToLastUnconfirmed(AddressInfo *addr, AddressTxNode *node);
 
   void writeLastProcessTxlogTime();
-
-  // 写入通知日志文件
-  bool isWriteNotificationLogs();
-  void writeNotificationLogs(const map<string, int64_t> &addressBalance, class TxLog2 *txLog2);
 
 
 public:

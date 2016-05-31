@@ -423,8 +423,6 @@ void Parser::run() {
 }
 
 void Parser::threadHandleTxlogs() {
-  string blockHash;  // 目前仅用在URL回调上
-
   while (running_) {
     TxLog2 txLog2;
 
@@ -445,7 +443,7 @@ void Parser::threadHandleTxlogs() {
     else if (txLog2.type_ == LOG2TYPE_TX_CONFIRM) {
       // confirm 时才能 acceptBlock()
       if (txLog2.tx_.IsCoinBase()) {
-        acceptBlock(&txLog2, blockHash);
+        acceptBlock(&txLog2);
         // 触发块识别
         recognizeBlock_.recognizeBlocks(txLog2.blkHeight_, txLog2.blkHeight_, true);
       }
@@ -468,11 +466,6 @@ void Parser::threadHandleTxlogs() {
     updateLastTxlog2Id(txLog2.id_);
 
     writeLastProcessTxlogTime();
-
-    if (blockHash.length()) {  // 目前仅用在URL回调上，仅使用一次
-      callBlockRelayParseUrl(blockHash);
-      blockHash.clear();
-    }
   } /* /while */
 
   return;
@@ -591,7 +584,7 @@ void _insertBlockTxs(KVDB &kvdb, const CBlock &blk) {
 }
 
 // 接收一个新块
-void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
+void Parser::acceptBlock(TxLog2 *txLog2) {
   MySQLConnection dbExplorer(Config::GConfig.get("db.explorer.uri"));
 
   // 获取块Raw Hex
@@ -603,8 +596,7 @@ void Parser::acceptBlock(TxLog2 *txLog2, string &blockHash) {
   if (!DecodeHexBlk(blk, blkRawHex)) {
     THROW_EXCEPTION_DBEX("decode block hex failure, hex: %s", blkRawHex.c_str());
   }
-  blockHash = blk.GetHash().ToString();
-  LOG_INFO("accept block: %d, %s", txLog2->blkHeight_, blockHash.c_str());
+  LOG_INFO("accept block: %d, %s", txLog2->blkHeight_, blk.GetHash().ToString().c_str());
 
   // 插入块数据
   _insertBlock(kvdb_, blk, txLog2->blkHeight_, (int32_t)blkRawHex.length()/2, txLog2->maxBlkTimestamp_);

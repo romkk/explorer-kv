@@ -49,8 +49,6 @@ string getTxHexByHash(MySQLConnection &db, const uint256 &txHash);
 int64_t insertRawBlock(MySQLConnection &db, const CBlock &blk, const int32_t height);
 int64_t insertRawTx(MySQLConnection &db, const CTransaction &tx);
 
-void callBlockRelayParseUrl(const string &blockHash);
-
 string EncodeHexTx(const CTransaction &tx);
 string EncodeHexBlock(const CBlock &block);
 

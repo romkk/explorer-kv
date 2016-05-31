@@ -260,18 +260,6 @@ int64_t insertRawTx(MySQLConnection &db, const CTransaction &tx) {
   return (int64_t)db.getInsertId();
 }
 
-
-// 回调块解析URL
-void callBlockRelayParseUrl(const string &blockHash) {
-  string url = Config::GConfig.get("block.relay.parse.url", "");
-  if (url.length() == 0) { return; }
-
-  boost::replace_all(url, "%s", blockHash);
-
-  LOG_INFO("call block relay parse url: %s", url.c_str());
-  boost::thread t(curlCallUrl, url); // thread runs free
-}
-
 string EncodeHexTx(const CTransaction& tx) {
   CDataStream ssTx(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
   ssTx << tx;

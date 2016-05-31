@@ -247,7 +247,7 @@ private:
   void updateLastTxlog2Id(const int64_t newId);
 
   // block
-  void acceptBlock(TxLog2 *txLog2, string &blockHash);
+  void acceptBlock(TxLog2 *txLog2);
   void rejectBlock(TxLog2 *txLog2);
 
   // tx

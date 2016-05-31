@@ -1175,9 +1175,6 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
 
   // 处理未确认计数器和记录
   addUnconfirmedTxPool(txLog2);
-
-  // notification logs
-  writeNotificationLogs(addressBalance, txLog2);
 }
 
 void Parser::flushAddressInfo(const map<string, int64_t> &addressBalance) {
@@ -1365,9 +1362,6 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
 
   // 处理未确认计数器和记录
   removeUnconfirmedTxPool(txLog2);
-
-  // notification logs
-  writeNotificationLogs(addressBalance, txLog2);
 }
 
 // unconfirm tx (address node)
@@ -1448,9 +1442,6 @@ void Parser::unconfirmTx(class TxLog2 *txLog2) {
 
   // 处理未确认计数器和记录
   addUnconfirmedTxPool(txLog2);
-
-  // notification logs
-  writeNotificationLogs(addressBalance, txLog2);
 }
 
 // 移除一个字符串（64，哈希）
@@ -1560,15 +1551,6 @@ void Parser::rejectBlock(TxLog2 *txLog2) {
 
   // 设置当前块高度
   currBlockHeight_ = txLog2->blkHeight_;
-
-  // 写入事件通知
-  {
-    string sbuf;
-    NotifyItem nitem;
-    nitem.loadblock(NOTIFY_EVENT_BLOCK_REJECT, blockHash, height);
-    sbuf.append(nitem.toStr() + "\n");
-    notifyProducer_->write(sbuf);
-  }
 }
 
 
@@ -1739,9 +1721,6 @@ void Parser::rejectTx(class TxLog2 *txLog2) {
 
   // 处理未确认计数器和记录
   removeUnconfirmedTxPool(txLog2);
-
-  // notification logs
-  writeNotificationLogs(addressBalance, txLog2);
 }
 
 // 获取上次 txlog2 的进度ID

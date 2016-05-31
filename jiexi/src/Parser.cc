@@ -261,7 +261,7 @@ void TxInfoCache::getTxInfo(MySQLConnection &db,
 
 /////////////////////////////////  Parser  ///////////////////////////////////
 Parser::Parser(): running_(true), unconfirmedTxsSize_(0), unconfirmedTxsCount_(0),
-kvdb_(Config::GConfig.get("rocksdb.path", "")), currBlockHeight_(-1), txlogsBuffer_(200),
+kvdb_(Config::GConfig.get("rocksdb.path", "")), txlogsBuffer_(200),
 recognizeBlock_(Config::GConfig.get("pools.json", ""), &kvdb_)
 {
   notifyFileLog2Producer_ = Config::GConfig.get("notify.log2producer.file");
@@ -626,9 +626,6 @@ void Parser::acceptBlock(TxLog2 *txLog2) {
                                        txLog2->maxBlkTimestamp_, txLog2->blkHeight_);
     kvdb_.set(key, Strings::Format("%s", blk.GetHash().ToString().c_str()));
   }
-
-  // 设置当前块高度
-  currBlockHeight_ = txLog2->blkHeight_;
 }
 
 
@@ -1548,9 +1545,6 @@ void Parser::rejectBlock(TxLog2 *txLog2) {
     }
     kvdb_.set(prevBlkKey, value);
   }
-
-  // 设置当前块高度
-  currBlockHeight_ = txLog2->blkHeight_;
 }
 
 

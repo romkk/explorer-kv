@@ -220,9 +220,7 @@ private:
   string notifyFileLog2Producer_;
   Inotify inotify_;
   thread threadWatchNotify_;
-
-  void threadWatchNotifyFile();
-  int32_t currBlockHeight_;
+  void threadWatchNotifyFile();  // 监听log2：NOTIFY_LOG2_TO_TPARSER
 
   // API Httpd
   APIServer apiServer_;

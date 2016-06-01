@@ -55,6 +55,10 @@ file(GLOB PRETX_SOURCES src/tparser/MainPreTx.cc)
 add_executable(pre_tx ${PRETX_SOURCES})
 target_link_libraries(pre_tx explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${TCMALLOC_LIBRARY} ${THRID_LIBRARIES})
 
+file(GLOB PRETXDB_SOURCES src/tparser/MainPreTxDB.cc)
+add_executable(pre_txdb ${PRETXDB_SOURCES})
+target_link_libraries(pre_txdb explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${TCMALLOC_LIBRARY} ${THRID_LIBRARIES})
+
 file(GLOB PREPARSER_SOURCES src/tparser/MainPreParser.cc)
 add_executable(pre_parser ${PREPARSER_SOURCES})
 target_link_libraries(pre_parser explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${TCMALLOC_LIBRARY} ${THRID_LIBRARIES})

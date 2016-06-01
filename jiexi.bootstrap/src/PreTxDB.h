@@ -15,8 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef Explorer_PreTx_h
-#define Explorer_PreTx_h
+#ifndef Explorer_PreTxDB_h
+#define Explorer_PreTxDB_h
 
 #include "Common.h"
 #include "bitcoin/core.h"

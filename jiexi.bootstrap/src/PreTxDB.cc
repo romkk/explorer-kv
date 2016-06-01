@@ -151,7 +151,7 @@ void PreTxDB::threadConsume() {
       }
 
       // kv key is txhash
-      const string key = Strings::Format("%s", tx.GetHash().ToString().c_str());
+      const string key = tx.GetHash().ToString();
       const rocksdb::Slice skey(key.data(), key.size());
       const rocksdb::Slice svalue((const char *)txhex.data(), txhex.size());
       db_->Put(writeOptions_, skey, svalue);

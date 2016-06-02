@@ -124,7 +124,6 @@ class NotifyEventsProducer {
   // kvdb
   rocksdb::DB *kvdb_;
   rocksdb::Options options_;
-  rocksdb::WriteOptions writeOptions_;
   mutex kvLock_;  // NotifyEventsMaker也需要调用，所以这里加锁
 
   // 初始化

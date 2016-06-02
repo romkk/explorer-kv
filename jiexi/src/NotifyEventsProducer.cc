@@ -25,6 +25,14 @@
 
 #include <boost/filesystem.hpp>
 
+#include "rocksdb/cache.h"
+#include "rocksdb/compaction_filter.h"
+#include "rocksdb/db.h"
+#include "rocksdb/options.h"
+#include "rocksdb/slice.h"
+#include "rocksdb/table.h"
+#include "rocksdb/memtablerep.h"
+
 #include "NotifyEventsProducer.h"
 
 namespace fs = boost::filesystem;
@@ -50,11 +58,66 @@ NotifyEventsProducer::~NotifyEventsProducer() {
   if (makeNotifyEventsThread_.joinable()) {
     makeNotifyEventsThread_.join();
   }
+
+  if (notifyEventsMaker_) {
+    delete notifyEventsMaker_;
+    notifyEventsMaker_ = nullptr;
+  }
+
+  if (kvdb_ != nullptr) {
+    delete kvdb_;
+  }
 }
 
-// TODO
 void NotifyEventsProducer::openKVDB() {
+  options_.compression = rocksdb::kSnappyCompression;
+  options_.create_if_missing        = false;
+  //  options_.disableDataSync          = true;   // disable syncing of data files
 
+  //
+  // open Rocks DB
+  //
+  // Optimize RocksDB. This is the easiest way to get RocksDB to perform well
+  options_.IncreaseParallelism();
+  options_.OptimizeLevelStyleCompaction();
+
+  //
+  // https://github.com/facebook/rocksdb/blob/master/tools/benchmark.sh
+  //
+  options_.target_file_size_base    = (size_t)128 * 1024 * 1024;
+  options_.max_bytes_for_level_base = (size_t)1024 * 1024 * 1024;
+  options_.num_levels = 6;
+
+  options_.write_buffer_size = (size_t)128 * 1024 * 1024;
+  options_.max_write_buffer_number  = 8;
+  //  options_.disable_auto_compactions = true;
+  //
+  //  // params_bulkload
+  //  options_.max_background_compactions = 16;
+  //  options_.max_background_flushes = 7;
+  //  options_.level0_file_num_compaction_trigger = (size_t)10 * 1024 * 1024;
+  //  options_.level0_slowdown_writes_trigger     = (size_t)10 * 1024 * 1024;
+  //  options_.level0_stop_writes_trigger         = (size_t)10 * 1024 * 1024;
+  //
+  //  // memtable_factory: vector
+  //  options_.memtable_factory.reset(new rocksdb::VectorRepFactory);
+
+  // initialize BlockBasedTableOptions
+  auto cache1 = rocksdb::NewLRUCache(1 * 1024 * 1024 * 1024LL);
+  rocksdb::BlockBasedTableOptions bbt_opts;
+  bbt_opts.block_cache = cache1;
+  bbt_opts.cache_index_and_filter_blocks = 0;
+  bbt_opts.block_size = 32 * 1024;
+  bbt_opts.format_version = 2;
+  options_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbt_opts));
+
+  // open kvdb
+  const string kvpath = Config::GConfig.get("rocksdb.txdb.path", ".");
+  LOG_DEBUG("rocksdb path: %s", kvpath.c_str());
+  rocksdb::Status s = rocksdb::DB::Open(options_, kvpath, &kvdb_);
+  if (!s.ok()) {
+    THROW_EXCEPTION_DBEX("open rocks db fail");
+  }
 }
 
 void NotifyEventsProducer::loadMemrepoTxs() {
@@ -91,7 +154,7 @@ void NotifyEventsProducer::initNotifyEvents() {
   char **row;
 
   //
-  // TODO: 清理临时的记录（未完整状态的）
+  // 清理临时的记录（未完整状态的）
   //
   {
     sql = "DELETE FROM `0_notify_logs` WHERE `batch_id` = -1";
@@ -123,7 +186,8 @@ void NotifyEventsProducer::initNotifyEvents() {
     THROW_EXCEPTION_DBEX("invalid latest block: %d, %s",
                          currBlockHeight_, currBlockHash_.ToString().c_str());
   }
-  LOG_INFO("latest block, height: %d, hash: %s",
+  LOG_INFO("latest status, log1FileIndex: %d, log1FileOffset: %lld, height: %d, hash: %s",
+           log1FileIndex_, log1FileOffset_,
            currBlockHeight_, currBlockHash_.ToString().c_str());
 
   // 载入内存库中(未确认)交易
@@ -309,6 +373,7 @@ void NotifyEventsProducer::setRawBlock(const CBlock &blk) {
   // kv key is block hash
   const string key = blk.GetHash().ToString();
   string value;
+  LOG_DEBUG("setRawBlock: %s", key.c_str());
 
   // check if exist
   rocksdb::Status s = kvdb_->Get(rocksdb::ReadOptions(), key, &value);
@@ -320,7 +385,7 @@ void NotifyEventsProducer::setRawBlock(const CBlock &blk) {
   const string hex = EncodeHexBlock(blk);
   const rocksdb::Slice skey(key.data(), key.size());
   const rocksdb::Slice svalue((const char *)hex.data(), hex.size());
-  kvdb_->Put(writeOptions_, skey, svalue);
+  kvdb_->Put(rocksdb::WriteOptions(), skey, svalue);
 }
 
 void NotifyEventsProducer::setRawTx(const CTransaction &tx) {
@@ -329,6 +394,7 @@ void NotifyEventsProducer::setRawTx(const CTransaction &tx) {
   // kv key is txhash
   const string key = tx.GetHash().ToString();
   string value;
+  LOG_DEBUG("setRawTx: %s", key.c_str());
 
   // check if exist
   rocksdb::Status s = kvdb_->Get(rocksdb::ReadOptions(), key, &value);
@@ -340,7 +406,7 @@ void NotifyEventsProducer::setRawTx(const CTransaction &tx) {
   const string txhex = EncodeHexTx(tx);
   const rocksdb::Slice skey(key.data(), key.size());
   const rocksdb::Slice svalue((const char *)txhex.data(), txhex.size());
-  kvdb_->Put(writeOptions_, skey, svalue);
+  kvdb_->Put(rocksdb::WriteOptions(), skey, svalue);
 }
 
 void NotifyEventsProducer::getBlockByHash(const uint256 &hash, CBlock &blk) {
@@ -348,6 +414,8 @@ void NotifyEventsProducer::getBlockByHash(const uint256 &hash, CBlock &blk) {
 
   const string key = hash.ToString();
   string value;
+  LOG_DEBUG("getBlockByHash: %s", key.c_str());
+
   rocksdb::Status s = kvdb_->Get(rocksdb::ReadOptions(), key, &value);
   if (s.IsNotFound()) {
     THROW_EXCEPTION_DBEX("can't find block, hash: %s", key.c_str());
@@ -364,6 +432,8 @@ void NotifyEventsProducer::getTxByHash(const uint256 &txHash, CTransaction &tx) 
 
   const string key = txHash.ToString();
   string value;
+  LOG_DEBUG("getTxByHash: %s", key.c_str());
+
   rocksdb::Status s = kvdb_->Get(rocksdb::ReadOptions(), key, &value);
   if (s.IsNotFound()) {
     THROW_EXCEPTION_DBEX("can't find tx, hash: %s", key.c_str());
@@ -683,6 +753,10 @@ void NotifyEventsProducer::handleBlock(Log1 &log1Item) {
   //
   if (log1Item.blockHeight_ > currBlockHeight_) {
     assert(log1Item.blockHeight_ == currBlockHeight_ + 1);
+
+    // 设置当前高度和哈希
+    currBlockHeight_ = log1Item.blockHeight_;
+    currBlockHash_   = log1Item.getBlock().GetHash();
     handleBlockAccept(log1Item);
   }
   //
@@ -697,16 +771,14 @@ void NotifyEventsProducer::handleBlock(Log1 &log1Item) {
     getBlockByHash(currBlockHash_, currBlock);
     assert(currBlock.hashPrevBlock == log1Item.getBlock().GetHash());
 
+    currBlockHeight_ = log1Item.blockHeight_;
+    currBlockHash_   = log1Item.getBlock().GetHash();
     handleBlockRollback(currBlockHeight_, currBlock);
   }
   else {
     THROW_EXCEPTION_DBEX("block are same height, log1: %s",
                          log1Item.toString().c_str());
   }
-
-  // 设置当前高度和哈希
-  currBlockHeight_ = log1Item.blockHeight_;
-  currBlockHash_   = log1Item.getBlock().GetHash();
 }
 
 void NotifyEventsProducer::threadWatchNotifyFile() {
@@ -771,7 +843,9 @@ void NotifyEventsProducer::run() {
     }
 
     for (size_t i = 0; i < lines.size(); i++) {
-      const string &line   = lines[i];
+      if (!running_) { break; }
+
+      const string &line  = lines[i];
       currLog1FileOffset_ = offsets[i];
 
       Log1 log1Item;
@@ -907,11 +981,13 @@ void NotifyEventsMaker::getAddressBalanceDiff(const NotifyLog &notifyLog,
   notifyEventsProducer_->getTxByHash(notifyLog.hash_, tx);
 
   // inputs
-  for (const CTxIn &txin : tx.vin) {
-    CTransaction prev_tx;
-    notifyEventsProducer_->getTxByHash(txin.prevout.hash, prev_tx);
-    const CTxOut &ptxout = prev_tx.vout[txin.prevout.n];
-    _getOutputBalanceDiff(ptxout, balanceDiff, true/* inputs */);
+  if (!tx.IsCoinBase()) {
+    for (const CTxIn &txin : tx.vin) {
+      CTransaction prev_tx;
+      notifyEventsProducer_->getTxByHash(txin.prevout.hash, prev_tx);
+      const CTxOut &ptxout = prev_tx.vout[txin.prevout.n];
+      _getOutputBalanceDiff(ptxout, balanceDiff, true/* inputs */);
+    }
   }
 
   // outputs

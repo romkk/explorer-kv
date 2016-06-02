@@ -71,7 +71,10 @@ class NotifyEventsMaker {
   void updateStatus();
 
   const char *getTypeStr(const int32_t type);
-  void checkEventsTable(const string &tableName);
+  void checkEventsTable(const int32_t tableIdx);
+  string tableIdx2Name(const int32_t tableIdx);
+  void tryToRemoveOldTable(const int32_t tableIdx);
+
   void tryGetNotifyLog(vector<NotifyLog> &logs);
   void getAddressBalanceDiff(const NotifyLog &notifyLog, map<string, int64_t> &balanceDiff);
   void writeNotifyEvents(const NotifyLog &notifyLog, const map<string, int64_t> &balanceDiff);

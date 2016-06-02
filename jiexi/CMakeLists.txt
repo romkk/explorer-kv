@@ -71,6 +71,10 @@ file(GLOB LOG2PRODUCER_SOURCES src/log2producer/*.cc)
 add_executable(log2producer ${LOG2PRODUCER_SOURCES})
 target_link_libraries(log2producer explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${TCMALLOC_LIBRARY} ${THRID_LIBRARIES})
 
+file(GLOB NOTIFY_PRODUCER_SOURCES src/notifyproducer/*.cc)
+add_executable(notifyproducer ${NOTIFY_PRODUCER_SOURCES})
+target_link_libraries(notifyproducer explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${TCMALLOC_LIBRARY} ${THRID_LIBRARIES})
+
 file(GLOB_RECURSE TEST_SOURCES test/*.cc)
 add_executable(unittest ${TEST_SOURCES})
 target_link_libraries(unittest explorer ${MYSQL_LIBRARIES} ${OPENSSL_CRYPTO_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${Boost_LIBRARIES} ${ROCKSDB_LIBRARIES} ${THRID_LIBRARIES})

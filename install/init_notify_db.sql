@@ -1,27 +1,38 @@
--- Adminer 4.2.1 MySQL dump
+-- Adminer 4.2.4 MySQL dump
 
 SET NAMES utf8;
 SET time_zone = '+00:00';
 SET foreign_key_checks = 0;
 SET sql_mode = 'NO_AUTO_VALUE_ON_ZERO';
 
-DROP TABLE IF EXISTS `app_subcribe`;
-CREATE TABLE `app_subcribe` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `app_id` int(11) NOT NULL,
-  `address` varchar(35) NOT NULL,
+DROP TABLE IF EXISTS `0_memrepo_txs`;
+CREATE TABLE `0_memrepo_txs` (
+  `position` bigint(20) NOT NULL AUTO_INCREMENT,
+  `tx_hash` char(64) NOT NULL,
   `created_at` datetime NOT NULL,
-  `updated_at` datetime NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `app_id_address` (`app_id`,`address`)
+  PRIMARY KEY (`position`),
+  UNIQUE KEY `tx_hash` (`tx_hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 
-DROP TABLE IF EXISTS `meta_notifyd`;
-CREATE TABLE `meta_notifyd` (
+DROP TABLE IF EXISTS `0_notify_logs`;
+CREATE TABLE `0_notify_logs` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `batch_id` bigint(20) NOT NULL,
+  `type` int(11) NOT NULL,
+  `height` int(11) NOT NULL,
+  `hash` char(64) NOT NULL,
+  `created_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `batch_id` (`batch_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+
+DROP TABLE IF EXISTS `0_notify_meta`;
+CREATE TABLE `0_notify_meta` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `key` varchar(128) NOT NULL,
-  `value` varchar(512) NOT NULL,
+  `key` varchar(64) NOT NULL,
+  `value` varchar(1024) NOT NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
   PRIMARY KEY (`id`),
@@ -29,17 +40,17 @@ CREATE TABLE `meta_notifyd` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 
-DROP TABLE IF EXISTS `tpl_event_app`;
-CREATE TABLE `tpl_event_app` (
+DROP TABLE IF EXISTS `0_tpl_events`;
+CREATE TABLE `0_tpl_events` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `type` int(11) NOT NULL,
+  `type` varchar(20) NOT NULL,
+  `height` int(11) NOT NULL,
+  `address` char(35) NOT NULL,
+  `balance_diff` bigint(11) NOT NULL,
   `hash` char(64) NOT NULL,
-  `height` int(11) NOT NULL DEFAULT '-1',
-  `address` varchar(35) DEFAULT NULL,
-  `amount` bigint(20) NOT NULL DEFAULT '0',
-  `created_at` datetime NOT NULL,
+  `created_at` timestamp NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 
--- 2016-03-11 07:50:43
+-- 2016-06-02 11:24:57

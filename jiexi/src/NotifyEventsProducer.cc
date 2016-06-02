@@ -920,26 +920,43 @@ void NotifyEventsMaker::getAddressBalanceDiff(const NotifyLog &notifyLog,
   }
 }
 
-void NotifyEventsMaker::checkEventsTable(const string &tableName) {
-  static set<string> _tableNameCache;
+string NotifyEventsMaker::tableIdx2Name(const int32_t tableIdx) {
+  return Strings::Format("events_%08d", tableIdx);
+}
 
-  if (_tableNameCache.count(tableName)) {
+void NotifyEventsMaker::checkEventsTable(const int32_t tableIdx) {
+  static set<int32_t> _tableIdxCache;
+
+  if (_tableIdxCache.count(tableIdx)) {
     return;
   }
 
   MySQLResult res;
   string sql;
+  const string tableName = tableIdx2Name(tableIdx);
 
   sql = Strings::Format("SHOW TABLES LIKE '%s'", tableName.c_str());
   db_.query(sql, res);
   if (res.numRows() > 0) {
-    _tableNameCache.insert(tableName);
+    _tableIdxCache.insert(tableIdx);
     return;
   }
 
+  // create new table
   sql = Strings::Format("CREATE TABLE `%s` LIKE `0_tpl_events`", tableName.c_str());
   db_.updateOrThrowEx(sql);
-  _tableNameCache.insert(tableName);
+  _tableIdxCache.insert(tableIdx);
+
+  // remove old ones, max keep 30
+  const int32_t maxTableNum = (int32_t)Config::GConfig.getInt("notifyevents.table.max.num", 30);
+  tryToRemoveOldTable(tableIdx - maxTableNum);
+}
+
+void NotifyEventsMaker::tryToRemoveOldTable(const int32_t tableIdx) {
+  if (tableIdx < 0) { return; }
+
+  string sql = Strings::Format("DROP TABLE IF EXISTS `%s`", tableIdx2Name(tableIdx).c_str());
+  db_.update(sql);
 }
 
 const char *NotifyEventsMaker::getTypeStr(const int32_t type) {
@@ -970,8 +987,8 @@ void NotifyEventsMaker::writeNotifyEvents(const NotifyLog &notifyLog,
   // 用notifyLog.id除一下即可得到表序号
   //
   const int32_t tableIdx = (int32_t)(notifyLog.id_ / 500000);
-  const string tableName = Strings::Format("events_%08d", tableIdx);
-  checkEventsTable(tableName);
+  const string tableName = tableIdx2Name(tableIdx);
+  checkEventsTable(tableIdx);
 
   vector<string> values;
   const string nowStr = date("%F %T");

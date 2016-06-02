@@ -50,6 +50,43 @@
 #define NOTIFYLOG_TYPE_BLOCK_REJECT  600
 
 
+class NotifyEventsProducer;
+
+///////////////////////////////  NotifyEventsMaker  ////////////////////////////
+struct NotifyLog {
+  int64_t id_;
+  int32_t type_;
+  int32_t height_;
+  uint256 hash_;
+};
+
+class NotifyEventsMaker {
+  atomic<bool> running_;
+  MySQLConnection db_;
+  NotifyEventsProducer *notifyEventsProducer_; // 需要借助其KVDB
+
+  int64_t lastNotifyLogId_;  // 最后消费的 0_notify_logs.id
+
+  bool getLastStatus();
+  void updateStatus();
+
+  const char *getTypeStr(const int32_t type);
+  void checkEventsTable(const string &tableName);
+  void tryGetNotifyLog(vector<NotifyLog> &logs);
+  void getAddressBalanceDiff(const NotifyLog &notifyLog, map<string, int64_t> &balanceDiff);
+  void writeNotifyEvents(const NotifyLog &notifyLog, const map<string, int64_t> &balanceDiff);
+
+
+public:
+  NotifyEventsMaker(NotifyEventsProducer *notifyEventsProducer);
+  ~NotifyEventsMaker();
+
+  void init();
+  void stop();
+  void run();
+};
+
+
 /////////////////////////////  NotifyEventsProducer  ///////////////////////////
 class NotifyEventsProducer {
   string kTableNotifyLogsFields_;
@@ -72,10 +109,14 @@ class NotifyEventsProducer {
   int32_t currBlockHeight_;
   uint256 currBlockHash_;
 
-  // notify
+  // file notify
   string notifyFileLog1Producer_;
   Inotify inotify_;
   thread watchNotifyThread_;
+
+  // make notify events
+  NotifyEventsMaker *notifyEventsMaker_;
+  thread makeNotifyEventsThread_;
 
   // kvdb
   rocksdb::DB *kvdb_;
@@ -104,6 +145,7 @@ class NotifyEventsProducer {
   void getBlockByHash(const uint256 &hash, CBlock &blk);
 
   void threadWatchNotifyFile();
+  void threadMakeNotifyEvents();
 
   void clearMempoolTxs();
   void updateCosumeStatus();
@@ -114,34 +156,6 @@ public:
   ~NotifyEventsProducer();
 
   void getTxByHash(const uint256 &txHash, CTransaction &tx);
-
-  void init();
-  void stop();
-  void run();
-};
-
-
-
-///////////////////////////////  NotifyEventsMaker  ////////////////////////////
-class NotifyLog {
-  int32_t type_;
-  int32_t blockHeight_;
-  int32_t txHash_;
-};
-
-class NotifyEventsMaker {
-  atomic<bool> running_;
-  MySQLConnection db_;
-
-  // 最后消费的 0_notify_logs.id
-  int64_t lastNotifyLogId_;
-
-  bool getLastStatus();
-  void updateStatus();
-
-public:
-  NotifyEventsMaker();
-  ~NotifyEventsMaker();
 
   void init();
   void stop();

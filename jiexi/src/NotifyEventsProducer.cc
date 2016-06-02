@@ -15,6 +15,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include "bitcoin/base58.h"
+#include "bitcoin/util.h"
+
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,11 +31,12 @@ namespace fs = boost::filesystem;
 
 //////////////////////////////  NotifyEventsProducer  //////////////////////////
 NotifyEventsProducer::NotifyEventsProducer(): running_(false),
-db_(Config::GConfig.get("mysql.uri")), currBlockHeight_(-1), currLog1FileOffset_(-1)
+db_(Config::GConfig.get("mysql.uri")), currBlockHeight_(-1), currLog1FileOffset_(-1),
+notifyEventsMaker_(nullptr)
 {
-  // todo
   kTableNotifyLogsFields_ = "`batch_id`,`type`,`height`,`hash`,`created_at`";
 
+  // watch file inotify
   log1Dir_ = Config::GConfig.get("log1.dir");
   notifyFileLog1Producer_ = log1Dir_ + "/NOTIFY_LOG1_TO_LOG2";
   watchNotifyThread_ = thread(&NotifyEventsProducer::threadWatchNotifyFile, this);
@@ -42,6 +46,9 @@ NotifyEventsProducer::~NotifyEventsProducer() {
   changed_.notify_all();
   if (watchNotifyThread_.joinable()) {
     watchNotifyThread_.join();
+  }
+  if (makeNotifyEventsThread_.joinable()) {
+    makeNotifyEventsThread_.join();
   }
 }
 
@@ -280,6 +287,10 @@ void NotifyEventsProducer::init() {
   checkEnvironment();
   openKVDB();
   initNotifyEvents();
+
+  // 启动生成events线程
+  notifyEventsMaker_ = new NotifyEventsMaker(this);
+  makeNotifyEventsThread_ = thread(&NotifyEventsProducer::threadMakeNotifyEvents, this);
 }
 
 void NotifyEventsProducer::stop() {
@@ -288,6 +299,8 @@ void NotifyEventsProducer::stop() {
 
   inotify_.RemoveAll();
   changed_.notify_all();
+
+  notifyEventsMaker_->stop();
 }
 
 void NotifyEventsProducer::setRawBlock(const CBlock &blk) {
@@ -732,6 +745,11 @@ void NotifyEventsProducer::threadWatchNotifyFile() {
   }
 }
 
+void NotifyEventsProducer::threadMakeNotifyEvents() {
+  notifyEventsMaker_->init();
+  notifyEventsMaker_->run();
+}
+
 void NotifyEventsProducer::run() {
   LogScope ls("NotifyEventsProducer::run()");
 
@@ -779,18 +797,16 @@ void NotifyEventsProducer::run() {
         THROW_EXCEPTION_DBEX("invalid log1 type, log line: %s", line.c_str());
       }
     } /* /for */
-
-    // 通知
-    doNotifyTParser();
-
   } /* /while */
 }
 
 
 
 ///////////////////////////////  NotifyEventsMaker  ////////////////////////////
-NotifyEventsMaker::NotifyEventsMaker():
-lastNotifyLogId_(-1), db_(Config::GConfig.get("mysql.uri")) {
+NotifyEventsMaker::NotifyEventsMaker(NotifyEventsProducer *notifyEventsProducer):
+db_(Config::GConfig.get("mysql.uri")), notifyEventsProducer_(notifyEventsProducer),
+lastNotifyLogId_(-1), running_(false)
+{
 }
 
 NotifyEventsMaker::~NotifyEventsMaker() {
@@ -809,6 +825,15 @@ void NotifyEventsMaker::init() {
     getLastStatus();
   }
   assert(lastNotifyLogId_ != -1);
+
+  running_ = true;
+}
+
+void NotifyEventsMaker::stop() {
+  if (running_) {
+    running_ = false;
+    LOG_INFO("NotifyEventsMaker::stop()...");
+  }
 }
 
 bool NotifyEventsMaker::getLastStatus() {
@@ -828,18 +853,186 @@ bool NotifyEventsMaker::getLastStatus() {
 }
 
 void NotifyEventsMaker::updateStatus() {
-  static int64_t _lastNotifyLogId = -1;
+  string sql = Strings::Format("UPDATE `0_notify_meta` SET `value`='%lld',`updated_at`='%s' "
+                               " WHERE `key`='notifyevents.maker.lastlogid'",
+                               lastNotifyLogId_, date("%F %T").c_str());
+  db_.updateOrThrowEx(sql, 1);
+}
 
-  if (_lastNotifyLogId != lastNotifyLogId_) {
-    string sql = Strings::Format("UPDATE `0_notify_meta` SET `value`='%lld',`updated_at`='%s' "
-                                 " WHERE `key`='notifyevents.maker.lastlogid'",
-                                 lastNotifyLogId_, nowStr.c_str());
-    db_.updateOrThrowEx(sql, 1);
-    _lastNotifyLogId = lastNotifyLogId_;
+void NotifyEventsMaker::tryGetNotifyLog(vector<NotifyLog> &logs) {
+  logs.clear();
+
+  MySQLResult res;
+  char **row = nullptr;
+  string sql = Strings::Format("SELECT `id`,`type`,`height`,`hash` FROM `0_notify_logs` "
+                               " WHERE `id`> %lld ORDER BY `id` ASC LIMIT 5000",
+                               lastNotifyLogId_);
+  db_.query(sql, res);
+  if (res.numRows() == 0) {
+    return;
+  }
+
+  logs.resize(res.numRows());
+  size_t i = 0;
+  while ((row = res.nextRow()) != nullptr) {
+    assert(row[3] != nullptr);  // hash 总是存在的：块、交易
+    logs[i].id_     = atoi64(row[0]);
+    logs[i].type_   = atoi  (row[1]);
+    logs[i].height_ = atoi  (row[2]);
+    logs[i].hash_   = uint256(row[3]);
+    i++;
   }
 }
 
+void _getOutputBalanceDiff(const CTxOut &ptxout,
+                           map<string, int64_t> &balanceDiff,
+                           bool isInputs) {
+  txnouttype type;
+  vector<CTxDestination> addresses;
+  int nRequired;
+  if (!ExtractDestinations(ptxout.scriptPubKey, type, addresses, nRequired)) {
+    return;
+  }
 
+  set<CTxDestination> addresses_set(addresses.begin(), addresses.end());
+  for (const CTxDestination& addr : addresses_set) {
+    int64_t value = isInputs ? -1*ptxout.nValue : ptxout.nValue;
+    balanceDiff[CBitcoinAddress(addr).ToString()] += value;
+  }
+}
+
+void NotifyEventsMaker::getAddressBalanceDiff(const NotifyLog &notifyLog,
+                                              map<string, int64_t> &balanceDiff) {
+  CTransaction tx;
+  notifyEventsProducer_->getTxByHash(notifyLog.hash_, tx);
+
+  // inputs
+  for (const CTxIn &txin : tx.vin) {
+    CTransaction prev_tx;
+    notifyEventsProducer_->getTxByHash(txin.prevout.hash, prev_tx);
+    const CTxOut &ptxout = prev_tx.vout[txin.prevout.n];
+    _getOutputBalanceDiff(ptxout, balanceDiff, true/* inputs */);
+  }
+
+  // outputs
+  for (const CTxOut &txout : tx.vout) {
+    _getOutputBalanceDiff(txout, balanceDiff, false/* outputs */);
+  }
+}
+
+void NotifyEventsMaker::checkEventsTable(const string &tableName) {
+  static set<string> _tableNameCache;
+
+  if (_tableNameCache.count(tableName)) {
+    return;
+  }
+
+  MySQLResult res;
+  string sql;
+
+  sql = Strings::Format("SHOW TABLES LIKE '%s'", tableName.c_str());
+  db_.query(sql, res);
+  if (res.numRows() > 0) {
+    _tableNameCache.insert(tableName);
+    return;
+  }
+
+  sql = Strings::Format("CREATE TABLE `%s` LIKE `0_tpl_events`", tableName.c_str());
+  db_.updateOrThrowEx(sql);
+  _tableNameCache.insert(tableName);
+}
+
+const char *NotifyEventsMaker::getTypeStr(const int32_t type) {
+  switch (type) {
+    case NOTIFYLOG_TYPE_TX_ACCEPT:
+      return "TX_ACCEPT";
+    case NOTIFYLOG_TYPE_TX_CONFIRM:
+      return "TX_CONFIRM";
+    case NOTIFYLOG_TYPE_TX_UNCONFIRM:
+      return "TX_UNCONFIRM";
+    case NOTIFYLOG_TYPE_TX_REJECT:
+      return "TX_REJECT";
+    case NOTIFYLOG_TYPE_BLOCK_ACCEPT:
+      return "BLOCK_ACCEPT";
+    case NOTIFYLOG_TYPE_BLOCK_REJECT:
+      return "BLOCK_REJECT";
+    default:
+      break;
+  }
+  return "UNKNOWN";
+}
+
+void NotifyEventsMaker::writeNotifyEvents(const NotifyLog &notifyLog,
+                                          const map<string, int64_t> &balanceDiff) {
+  const string kTableFields = "`type`,`height`,`address`,`balance_diff`,`hash`,`created_at`";
+  //
+  // 每条交易对应的地址总体看来是一个几乎恒定的系数，所以我们每消费N条就分一个表.
+  // 用notifyLog.id除一下即可得到表序号
+  //
+  const int32_t tableIdx = (int32_t)(notifyLog.id_ / 500000);
+  const string tableName = Strings::Format("events_%08d", tableIdx);
+  checkEventsTable(tableName);
+
+  vector<string> values;
+  const string nowStr = date("%F %T");
+
+  if (notifyLog.type_ == NOTIFYLOG_TYPE_BLOCK_ACCEPT ||
+      notifyLog.type_ == NOTIFYLOG_TYPE_BLOCK_REJECT)
+  {
+    // 块类型消息
+    string item = Strings::Format("'%s',%d,'',0,'%s','%s'",
+                                  getTypeStr(notifyLog.type_),
+                                  notifyLog.height_,
+                                  notifyLog.hash_.ToString().c_str(),
+                                  nowStr.c_str());
+    values.push_back(item);
+  }
+  else
+  {
+    // 交易类型消息
+    for (const auto &it : balanceDiff) {
+      string item = Strings::Format("'%s',%d,'%s',%lld,'%s','%s'",
+                                    getTypeStr(notifyLog.type_),
+                                    notifyLog.height_, it.first.c_str(),
+                                    it.second, notifyLog.hash_.ToString().c_str(),
+                                    nowStr.c_str());
+      values.push_back(item);
+    }
+  }
+
+  lastNotifyLogId_ = notifyLog.id_;  // updateStatus() will read it
+
+  db_.execute("START TRANSACTION");
+  multiInsert(db_, tableName, kTableFields, values);
+  updateStatus();
+  db_.execute("COMMIT");
+}
+
+void NotifyEventsMaker::run() {
+  LogScope ls("NotifyEventsMaker::run()");
+  vector<NotifyLog> notifyLogs;
+
+  while (running_) {
+    // try to get notify logs
+    tryGetNotifyLog(notifyLogs);
+    if (notifyLogs.size() == 0) {
+      sleepMs(250);
+      continue;
+    }
+
+    for (const auto &notifyLog : notifyLogs) {
+      map<string, int64_t> balanceDiff;
+      if (!(notifyLog.type_ == NOTIFYLOG_TYPE_BLOCK_ACCEPT ||
+            notifyLog.type_ == NOTIFYLOG_TYPE_BLOCK_REJECT)) {
+        // 时间类型为交易，则获取其地址金额变更记录
+        getAddressBalanceDiff(notifyLog, balanceDiff);
+      }
+      writeNotifyEvents(notifyLog, balanceDiff);
+    } /* /for */
+
+    notifyLogs.clear();
+  } /* /while */
+}
 
 
 

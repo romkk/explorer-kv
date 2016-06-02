@@ -42,7 +42,7 @@
 
 /////////////////////////////  NotifyEventsProducer  ///////////////////////////
 class NotifyEventsProducer {
-  string kTableEventsFields_;
+  string kTableNotifyLogsFields_;
   mutex lock_;
   Condition changed_;
 
@@ -76,6 +76,7 @@ class NotifyEventsProducer {
   void checkEnvironment();
   void initNotifyEvents();
   void loadMemrepoTxs();
+  void openKVDB();
 
   void tryRemoveOldLog1();  // 移除旧的 log1 日志
   void tryReadLog1(vector<string> &lines, vector<int64_t> &offset);

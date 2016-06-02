@@ -31,8 +31,7 @@ NotifyEventsProducer::NotifyEventsProducer(): running_(false),
 db_(Config::GConfig.get("mysql.uri")), currBlockHeight_(-1), currLog1FileOffset_(-1)
 {
   // todo
-  kTableEventsFields_ = "`batch_id`, `type`, `block_height`, \
-  `block_id`, `max_block_timestamp`, `tx_hash`, `created_at`, `updated_at`";
+  kTableNotifyLogsFields_ = "`batch_id`, `type`, `block_height`, `tx_hash`, `created_at`";
 
   log1Dir_ = Config::GConfig.get("log1.dir");
   notifyFileLog1Producer_ = log1Dir_ + "/NOTIFY_LOG1_TO_LOG2";
@@ -44,6 +43,11 @@ NotifyEventsProducer::~NotifyEventsProducer() {
   if (watchNotifyThread_.joinable()) {
     watchNotifyThread_.join();
   }
+}
+
+// TODO
+void NotifyEventsProducer::openKVDB() {
+
 }
 
 void NotifyEventsProducer::loadMemrepoTxs() {
@@ -89,7 +93,7 @@ void NotifyEventsProducer::initNotifyEvents() {
 
   // 获取最后状态信息
   {
-    string sql = "SELECT `value` FROM `0_explorer_meta` WHERE `key`='notifyevents.status'";
+    string sql = "SELECT `value` FROM `0_notify_meta` WHERE `key`='notifyevents.status'";
     db_.query(sql, res);
     assert(res.numRows() == 1);
     row = res.nextRow();
@@ -99,7 +103,7 @@ void NotifyEventsProducer::initNotifyEvents() {
     log1FileIndex_   = atoi(arr[0].c_str());
     log1FileOffset_  = atoi64(arr[1].c_str());
     currBlockHeight_ = atoi(arr[2].c_str());
-    currBlockHash_   = uint256(arr[3]);
+    currBlockHash_   = arr.size() >= 4 ? uint256(arr[3]) : uint256();
   }
 
   if (currBlockHeight_ < 0) {
@@ -130,7 +134,7 @@ void NotifyEventsProducer::updateCosumeStatus() {
                                         log1FileIndex_, currLog1FileOffset_,
                                         currBlockHeight_, currBlockHash_.ToString().c_str());
   if (lastStatus != currStatus) {
-    sql = Strings::Format("UPDATE `0_explorer_meta` SET `value`='%s',`updated_at`='%s' "
+    sql = Strings::Format("UPDATE `0_notify_meta` SET `value`='%s',`updated_at`='%s' "
                           " WHERE `key`='notifyevents.status'",
                           currStatus.c_str(), nowStr.c_str());
     db_.updateOrThrowEx(sql);
@@ -252,15 +256,15 @@ void NotifyEventsProducer::checkEnvironment() {
   }
 
   //
-  // 检测 table.0_explorer_meta 是否存在记录：'notifyevents.status'
+  // 检测 table.0_notify_meta 是否存在记录：'notifyevents.status'
   // log1FileIndex | log1FileOffset | blockHeight | blockHash
   //
   {
-    string sql = "SELECT `key` FROM `0_explorer_meta` WHERE `key`='notifyevents.status'";
+    string sql = "SELECT `key` FROM `0_notify_meta` WHERE `key`='notifyevents.status'";
     MySQLResult res;
     db_.query(sql, res);
     if (res.numRows() == 0) {
-      sql = Strings::Format("INSERT INTO `0_explorer_meta` (`key`, `value`, `created_at`, `updated_at`)"
+      sql = Strings::Format("INSERT INTO `0_notify_meta` (`key`, `value`, `created_at`, `updated_at`)"
                             " VALUES ('notifyevents.status',  '0|0|-1|', '%s', '%s')",
                             nowStr.c_str(), nowStr.c_str());
       db_.updateOrThrowEx(sql, 1);
@@ -272,6 +276,7 @@ void NotifyEventsProducer::init() {
   running_ = true;
 
   checkEnvironment();
+  openKVDB();
   initNotifyEvents();
 }
 
@@ -347,15 +352,12 @@ void NotifyEventsProducer::handleTxAccept(Log1 &log1Item) {
   setRawTx(tx);
 
   // 无冲突，插入DB
-  sql = Strings::Format("INSERT INTO `0_txlogs2` (`batch_id`, `type`, `block_height`, "
-                        " `block_id`,`max_block_timestamp`,`tx_hash`,`created_at`,`updated_at`) "
+  sql = Strings::Format("INSERT INTO `0_notify_logs` (`batch_id`, `type`, "
+                        " `block_height`, `tx_hash`,`created_at`) "
                         " VALUES ("
-                        " (SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `0_txlogs2` as t1), "
-                        " %d, -1, -1, %lld, '%s', '%s', '%s');",
-                        LOG2TYPE_TX_ACCEPT,
-                        '',  // 设置为前面最大的块时间戳
-                        hash.ToString().c_str(),
-                        nowStr.c_str(), nowStr.c_str());
+                        " (SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `0_notify_logs` as t1), "
+                        " %d, -1, '%s', '%s');",
+                        LOG2TYPE_TX_ACCEPT, hash.ToString().c_str(), nowStr.c_str());
 
   db_.execute("START TRANSACTION");
   db_.updateOrThrowEx(sql, 1);
@@ -386,21 +388,18 @@ void NotifyEventsProducer::handleTxReject(Log1 &log1Item) {
   vector<string> values;
   const string nowStr = date("%F %T");
   for (auto &it : removeHashes) {
-    string item = Strings::Format("-1,%d,-1,-1,0,'%s','%s','%s'",
+    string item = Strings::Format("-1,%d,-1,'%s','%s'",
                                   LOG2TYPE_TX_REJECT,
-                                  it.ToString().c_str(),
-                                  nowStr.c_str(), nowStr.c_str());
+                                  it.ToString().c_str(), nowStr.c_str());
     values.push_back(item);
   }
 
   // 插入本批次数据
-  multiInsert(db_, "0_txlogs2", kTableTxlogs2Fields_, values);
+  multiInsert(db_, "0_notify_logs", kTableNotifyLogsFields_, values);
 
   // 提交本批数据
   commitBatch(values.size());
 }
-
-
 
 void NotifyEventsProducer::handleBlockAccept(Log1 &log1Item) {
   //
@@ -464,10 +463,9 @@ void NotifyEventsProducer::handleBlockAccept(Log1 &log1Item) {
   // 冲突的交易，需要做拒绝处理，注意顺序
   // conflictTxs 中其实是逆序，因为前面是先剔除冲突交易树的叶子节点
   for (auto &it : conflictTxs) {
-    string item = Strings::Format("-1,%d,-1,-1,0,'%s','%s','%s'",
+    string item = Strings::Format("-1,%d,-1,'%s','%s'",
                                   LOG2TYPE_TX_REJECT,
-                                  it.ToString().c_str(),
-                                  nowStr.c_str(), nowStr.c_str());
+                                  it.ToString().c_str(), nowStr.c_str());
     values.push_back(item);
   }
 
@@ -478,24 +476,21 @@ void NotifyEventsProducer::handleBlockAccept(Log1 &log1Item) {
 
     // 首次处理的，需要补 accept 操作
     if (alreadyInMemTxHashs.find(txhash) == alreadyInMemTxHashs.end()) {
-      item = Strings::Format("-1,%d,-1,-1,%lld,'%s','%s','%s'",
-                             LOG2TYPE_TX_ACCEPT, '',
-                             txhash.ToString().c_str(),
-                             nowStr.c_str(), nowStr.c_str());
+      item = Strings::Format("-1,%d,-1,'%s','%s'",
+                             LOG2TYPE_TX_ACCEPT,
+                             txhash.ToString().c_str(), nowStr.c_str());
       values.push_back(item);
     }
 
     // confirm
-    item = Strings::Format("-1,%d,%d,%lld,%lld,'%s','%s','%s'",
-                           LOG2TYPE_TX_CONFIRM,
-                           log1Item.blockHeight_, blockId, '',
-                           txhash.ToString().c_str(),
-                           nowStr.c_str(), nowStr.c_str());
+    item = Strings::Format("-1,%d,%d,'%s','%s'",
+                           LOG2TYPE_TX_CONFIRM, log1Item.blockHeight_,
+                           txhash.ToString().c_str(), nowStr.c_str());
     values.push_back(item);
   }
 
   // 插入本批次数据
-  multiInsert(db_, "0_txlogs2", kTableTxlogs2Fields_, values);
+  multiInsert(db_, "0_notify_logs", kTableNotifyLogsFields_, values);
 
   // 提交本批数据
   commitBatch(values.size());
@@ -509,13 +504,13 @@ void NotifyEventsProducer::commitBatch(const size_t expectAffectedRows) {
   char **row;
 
   // fetch next batch_id
-  sql = "SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `0_txlogs2`";
+  sql = "SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `0_notify_logs`";
   db_.query(sql, res);
   row = res.nextRow();
   const int64_t nextBatchID = atoi64(row[0]);
 
   // update batch_id
-  sql = Strings::Format("UPDATE `0_txlogs2` SET `batch_id`=%lld WHERE `batch_id`=-1",
+  sql = Strings::Format("UPDATE `0_notify_logs` SET `batch_id`=%lld WHERE `batch_id`=-1",
                         nextBatchID);
   //
   // 使用事务提交，保证更新成功的数据就是既定的数量。有差错则异常，DB事务无法提交。
@@ -530,9 +525,6 @@ void NotifyEventsProducer::commitBatch(const size_t expectAffectedRows) {
 // 清理txlogs2的内存交易
 void NotifyEventsProducer::clearMempoolTxs() {
   //
-  // <del>由于 table.0_memrepo_txs 是有交易前后依赖顺序的，所以逆序读出，批量移除即可。
-  // 即交易前后相关性借助 table.0_memrepo_txs 来完成。</del>
-  //
   // 不可以依赖 table.0_memrepo_txs 的交易前后顺序，是可能有问题的. 应该遍历 memRepo_
   // 并逐个移除。
   //
@@ -542,16 +534,15 @@ void NotifyEventsProducer::clearMempoolTxs() {
   // 遍历，移除所有内存交易（未确认）
   while (memRepo_.size() > 0) {
     const uint256 hash = memRepo_.removeTx();
-    string item = Strings::Format("-1,%d,-1,-1,0,'%s','%s','%s'",
+    string item = Strings::Format("-1,%d,-1,'%s','%s'",
                                   LOG2TYPE_TX_REJECT,
-                                  hash.ToString().c_str(),
-                                  nowStr.c_str(), nowStr.c_str());
+                                  hash.ToString().c_str(), nowStr.c_str());
     values.push_back(item);
   }
   assert(memRepo_.size() == 0);
 
   // 插入本批次数据
-  multiInsert(db_, "0_txlogs2", kTableTxlogs2Fields_, values);
+  multiInsert(db_, "0_notify_logs", kTableNotifyLogsFields_, values);
 
   // 提交本批数据
   commitBatch(values.size());
@@ -598,33 +589,26 @@ void NotifyEventsProducer::handleBlockRollback(const int32_t height, const CBloc
   vector<string> values;
   const string nowStr = date("%F %T");
 
-  // get block ID
-  const int64_t blockId = insertRawBlock(db_, blk, height);
-
   // 新块的交易，做反确认操作，反序遍历
   for (auto tx = blk.vtx.rbegin(); tx != blk.vtx.rend(); ++tx) {
-    string item = Strings::Format("-1,%d,%d,%lld,%lld,'%s','%s','%s'",
-                                  LOG2TYPE_TX_UNCONFIRM,
-                                  height, blockId,
-                                  '',
+    string item = Strings::Format("-1,%d,%d,'%s','%s'",
+                                  LOG2TYPE_TX_UNCONFIRM, height,
                                   tx->GetHash().ToString().c_str(),
-                                  nowStr.c_str(), nowStr.c_str());
+                                  nowStr.c_str());
     values.push_back(item);
   }
 
   // coinbase tx 需要 reject
   {
-    string item = Strings::Format("-1,%d,%d,%lld,%lld,'%s','%s','%s'",
-                                  LOG2TYPE_TX_REJECT,
-                                  height, blockId,
-                                  '',
+    string item = Strings::Format("-1,%d,%d,'%s','%s'",
+                                  LOG2TYPE_TX_REJECT, height,
                                   blk.vtx[0].GetHash().ToString().c_str(),
-                                  nowStr.c_str(), nowStr.c_str());
+                                  nowStr.c_str());
     values.push_back(item);
   }
 
   // 插入本批次数据
-  multiInsert(db_, "0_txlogs2", kTableTxlogs2Fields_, values);
+  multiInsert(db_, "0_notify_logs", kTableNotifyLogsFields_, values);
 
   // 提交本批数据
   commitBatch(values.size());

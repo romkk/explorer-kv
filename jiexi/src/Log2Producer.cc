@@ -858,9 +858,6 @@ void Log2Producer::commitBatch(const size_t expectAffectedRows) {
 // 清理txlogs2的内存交易
 void Log2Producer::clearMempoolTxs() {
   //
-  // <del>由于 table.0_memrepo_txs 是有交易前后依赖顺序的，所以逆序读出，批量移除即可。
-  // 即交易前后相关性借助 table.0_memrepo_txs 来完成。</del>
-  //
   // 不可以依赖 table.0_memrepo_txs 的交易前后顺序，是可能有问题的. 应该遍历 memRepo_
   // 并逐个移除。
   //

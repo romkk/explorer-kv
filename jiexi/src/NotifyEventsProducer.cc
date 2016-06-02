@@ -31,7 +31,7 @@ NotifyEventsProducer::NotifyEventsProducer(): running_(false),
 db_(Config::GConfig.get("mysql.uri")), currBlockHeight_(-1), currLog1FileOffset_(-1)
 {
   // todo
-  kTableNotifyLogsFields_ = "`batch_id`, `type`, `block_height`, `tx_hash`, `created_at`";
+  kTableNotifyLogsFields_ = "`batch_id`,`type`,`height`,`hash`,`created_at`";
 
   log1Dir_ = Config::GConfig.get("log1.dir");
   notifyFileLog1Producer_ = log1Dir_ + "/NOTIFY_LOG1_TO_LOG2";
@@ -124,7 +124,7 @@ void NotifyEventsProducer::initNotifyEvents() {
 }
 
 void NotifyEventsProducer::updateCosumeStatus() {
-  static string lastStatus;
+  static string _lastStatus;
 
   string sql;
   const string nowStr = date("%F %T");
@@ -133,11 +133,13 @@ void NotifyEventsProducer::updateCosumeStatus() {
   const string currStatus = Strings::Format("%d|%lld|%d|%s",
                                         log1FileIndex_, currLog1FileOffset_,
                                         currBlockHeight_, currBlockHash_.ToString().c_str());
-  if (lastStatus != currStatus) {
+  if (_lastStatus != currStatus) {
     sql = Strings::Format("UPDATE `0_notify_meta` SET `value`='%s',`updated_at`='%s' "
                           " WHERE `key`='notifyevents.status'",
                           currStatus.c_str(), nowStr.c_str());
-    db_.updateOrThrowEx(sql);
+    db_.updateOrThrowEx(sql, 1);
+
+    _lastStatus = currStatus;
   }
 }
 
@@ -289,6 +291,8 @@ void NotifyEventsProducer::stop() {
 }
 
 void NotifyEventsProducer::setRawBlock(const CBlock &blk) {
+  ScopeLock sl(kvLock_);
+
   // kv key is block hash
   const string key = blk.GetHash().ToString();
   string value;
@@ -307,6 +311,8 @@ void NotifyEventsProducer::setRawBlock(const CBlock &blk) {
 }
 
 void NotifyEventsProducer::setRawTx(const CTransaction &tx) {
+  ScopeLock sl(kvLock_);
+
   // kv key is txhash
   const string key = tx.GetHash().ToString();
   string value;
@@ -322,6 +328,38 @@ void NotifyEventsProducer::setRawTx(const CTransaction &tx) {
   const rocksdb::Slice skey(key.data(), key.size());
   const rocksdb::Slice svalue((const char *)txhex.data(), txhex.size());
   kvdb_->Put(writeOptions_, skey, svalue);
+}
+
+void NotifyEventsProducer::getBlockByHash(const uint256 &hash, CBlock &blk) {
+  ScopeLock sl(kvLock_);
+
+  const string key = hash.ToString();
+  string value;
+  rocksdb::Status s = kvdb_->Get(rocksdb::ReadOptions(), key, &value);
+  if (s.IsNotFound()) {
+    THROW_EXCEPTION_DBEX("can't find block, hash: %s", key.c_str());
+  }
+
+  blk.SetNull();
+  if (!DecodeHexBlk(blk, value)) {
+    THROW_EXCEPTION_DBEX("decode block fail, hash: %s, hex: %s", key.c_str(), value.c_str());
+  }
+}
+
+void NotifyEventsProducer::getTxByHash(const uint256 &txHash, CTransaction &tx) {
+  ScopeLock sl(kvLock_);
+
+  const string key = txHash.ToString();
+  string value;
+  rocksdb::Status s = kvdb_->Get(rocksdb::ReadOptions(), key, &value);
+  if (s.IsNotFound()) {
+    THROW_EXCEPTION_DBEX("can't find tx, hash: %s", key.c_str());
+  }
+
+  tx.SetNull();
+  if (!DecodeHexTx(tx, value)) {
+    THROW_EXCEPTION_DBEX("decode tx fail, hash: %s, hex: %s", key.c_str(), value.c_str());
+  }
 }
 
 void NotifyEventsProducer::handleTxAccept(Log1 &log1Item) {
@@ -353,11 +391,11 @@ void NotifyEventsProducer::handleTxAccept(Log1 &log1Item) {
 
   // 无冲突，插入DB
   sql = Strings::Format("INSERT INTO `0_notify_logs` (`batch_id`, `type`, "
-                        " `block_height`, `tx_hash`,`created_at`) "
+                        " `height`, `hash`,`created_at`) "
                         " VALUES ("
                         " (SELECT IFNULL(MAX(`batch_id`), 0) + 1 FROM `0_notify_logs` as t1), "
                         " %d, -1, '%s', '%s');",
-                        LOG2TYPE_TX_ACCEPT, hash.ToString().c_str(), nowStr.c_str());
+                        NOTIFYLOG_TYPE_TX_ACCEPT, hash.ToString().c_str(), nowStr.c_str());
 
   db_.execute("START TRANSACTION");
   db_.updateOrThrowEx(sql, 1);
@@ -389,7 +427,7 @@ void NotifyEventsProducer::handleTxReject(Log1 &log1Item) {
   const string nowStr = date("%F %T");
   for (auto &it : removeHashes) {
     string item = Strings::Format("-1,%d,-1,'%s','%s'",
-                                  LOG2TYPE_TX_REJECT,
+                                  NOTIFYLOG_TYPE_TX_REJECT,
                                   it.ToString().c_str(), nowStr.c_str());
     values.push_back(item);
   }
@@ -464,10 +502,15 @@ void NotifyEventsProducer::handleBlockAccept(Log1 &log1Item) {
   // conflictTxs 中其实是逆序，因为前面是先剔除冲突交易树的叶子节点
   for (auto &it : conflictTxs) {
     string item = Strings::Format("-1,%d,-1,'%s','%s'",
-                                  LOG2TYPE_TX_REJECT,
+                                  NOTIFYLOG_TYPE_TX_REJECT,
                                   it.ToString().c_str(), nowStr.c_str());
     values.push_back(item);
   }
+
+  // 块事件：块接收
+  values.push_back(Strings::Format("-1,%d,%d,'%s','%s'",
+                                   NOTIFYLOG_TYPE_BLOCK_ACCEPT, log1Item.blockHeight_,
+                                   hash.ToString().c_str(), nowStr.c_str()));
 
   // 新块的交易，做确认操作
   for (auto &tx : blk.vtx) {
@@ -477,14 +520,14 @@ void NotifyEventsProducer::handleBlockAccept(Log1 &log1Item) {
     // 首次处理的，需要补 accept 操作
     if (alreadyInMemTxHashs.find(txhash) == alreadyInMemTxHashs.end()) {
       item = Strings::Format("-1,%d,-1,'%s','%s'",
-                             LOG2TYPE_TX_ACCEPT,
+                             NOTIFYLOG_TYPE_TX_ACCEPT,
                              txhash.ToString().c_str(), nowStr.c_str());
       values.push_back(item);
     }
 
     // confirm
     item = Strings::Format("-1,%d,%d,'%s','%s'",
-                           LOG2TYPE_TX_CONFIRM, log1Item.blockHeight_,
+                           NOTIFYLOG_TYPE_TX_CONFIRM, log1Item.blockHeight_,
                            txhash.ToString().c_str(), nowStr.c_str());
     values.push_back(item);
   }
@@ -535,7 +578,7 @@ void NotifyEventsProducer::clearMempoolTxs() {
   while (memRepo_.size() > 0) {
     const uint256 hash = memRepo_.removeTx();
     string item = Strings::Format("-1,%d,-1,'%s','%s'",
-                                  LOG2TYPE_TX_REJECT,
+                                  NOTIFYLOG_TYPE_TX_REJECT,
                                   hash.ToString().c_str(), nowStr.c_str());
     values.push_back(item);
   }
@@ -589,10 +632,15 @@ void NotifyEventsProducer::handleBlockRollback(const int32_t height, const CBloc
   vector<string> values;
   const string nowStr = date("%F %T");
 
+  // 块事件：块拒绝
+  values.push_back(Strings::Format("-1,%d,%d,'%s','%s'",
+                                   NOTIFYLOG_TYPE_BLOCK_REJECT, height,
+                                   hash.ToString().c_str(), nowStr.c_str()));
+
   // 新块的交易，做反确认操作，反序遍历
   for (auto tx = blk.vtx.rbegin(); tx != blk.vtx.rend(); ++tx) {
     string item = Strings::Format("-1,%d,%d,'%s','%s'",
-                                  LOG2TYPE_TX_UNCONFIRM, height,
+                                  NOTIFYLOG_TYPE_TX_UNCONFIRM, height,
                                   tx->GetHash().ToString().c_str(),
                                   nowStr.c_str());
     values.push_back(item);
@@ -601,7 +649,7 @@ void NotifyEventsProducer::handleBlockRollback(const int32_t height, const CBloc
   // coinbase tx 需要 reject
   {
     string item = Strings::Format("-1,%d,%d,'%s','%s'",
-                                  LOG2TYPE_TX_REJECT, height,
+                                  NOTIFYLOG_TYPE_TX_REJECT, height,
                                   blk.vtx[0].GetHash().ToString().c_str(),
                                   nowStr.c_str());
     values.push_back(item);
@@ -614,24 +662,6 @@ void NotifyEventsProducer::handleBlockRollback(const int32_t height, const CBloc
   commitBatch(values.size());
 
   LOG_INFO("block txs: %llu", blk.vtx.size());
-}
-
-void NotifyEventsProducer::getBlockByHash(const uint256 &hash, CBlock &blk) {
-  MySQLResult res;
-  string sql;
-  char **row;
-
-  const string key = hash.ToString();
-  string value;
-  rocksdb::Status s = kvdb_->Get(rocksdb::ReadOptions(), key, &value);
-  if (s.IsNotFound()) {
-    THROW_EXCEPTION_DBEX("can't find block, hash: %s", key.c_str());
-  }
-
-  blk.SetNull();
-  if (!DecodeHexBlk(blk, value)) {
-    THROW_EXCEPTION_DBEX("decode block fail, hash: %s, hex: %s", key.c_str(), value.c_str());
-  }
 }
 
 void NotifyEventsProducer::handleBlock(Log1 &log1Item) {
@@ -755,4 +785,62 @@ void NotifyEventsProducer::run() {
 
   } /* /while */
 }
+
+
+
+///////////////////////////////  NotifyEventsMaker  ////////////////////////////
+NotifyEventsMaker::NotifyEventsMaker():
+lastNotifyLogId_(-1), db_(Config::GConfig.get("mysql.uri")) {
+}
+
+NotifyEventsMaker::~NotifyEventsMaker() {
+
+}
+
+void NotifyEventsMaker::init() {
+  db_.open();
+
+  if (!getLastStatus()) {
+    const string nowStr = date("%F %T");
+    string sql = Strings::Format("INSERT INTO `0_notify_meta` (`key`, `value`, `created_at`, `updated_at`)"
+                                 " VALUES ('notifyevents.maker.lastlogid',  '0', '%s', '%s')",
+                                 nowStr.c_str(), nowStr.c_str());
+    db_.updateOrThrowEx(sql, 1);
+    getLastStatus();
+  }
+  assert(lastNotifyLogId_ != -1);
+}
+
+bool NotifyEventsMaker::getLastStatus() {
+  string sql;
+  MySQLResult res;
+  char **row = nullptr;
+
+  sql = "SELECT `value` FROM `0_notify_meta` WHERE `key`='notifyevents.maker.lastlogid'";
+  db_.query(sql, res);
+  if (res.numRows() == 0) {
+    return false;
+  }
+
+  row = res.nextRow();
+  lastNotifyLogId_ = atoi64(row[0]);
+  return true;
+}
+
+void NotifyEventsMaker::updateStatus() {
+  static int64_t _lastNotifyLogId = -1;
+
+  if (_lastNotifyLogId != lastNotifyLogId_) {
+    string sql = Strings::Format("UPDATE `0_notify_meta` SET `value`='%lld',`updated_at`='%s' "
+                                 " WHERE `key`='notifyevents.maker.lastlogid'",
+                                 lastNotifyLogId_, nowStr.c_str());
+    db_.updateOrThrowEx(sql, 1);
+    _lastNotifyLogId = lastNotifyLogId_;
+  }
+}
+
+
+
+
+
 

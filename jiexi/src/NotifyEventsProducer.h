@@ -39,6 +39,16 @@
 #include <iostream>
 #include <fstream>
 
+// notify logs type: tx
+#define NOTIFYLOG_TYPE_TX_ACCEPT     100
+#define NOTIFYLOG_TYPE_TX_CONFIRM    200
+#define NOTIFYLOG_TYPE_TX_UNCONFIRM  300
+#define NOTIFYLOG_TYPE_TX_REJECT     400
+
+// notify logs type: block
+#define NOTIFYLOG_TYPE_BLOCK_ACCEPT  500
+#define NOTIFYLOG_TYPE_BLOCK_REJECT  600
+
 
 /////////////////////////////  NotifyEventsProducer  ///////////////////////////
 class NotifyEventsProducer {
@@ -71,6 +81,7 @@ class NotifyEventsProducer {
   rocksdb::DB *kvdb_;
   rocksdb::Options options_;
   rocksdb::WriteOptions writeOptions_;
+  mutex kvLock_;  // NotifyEventsMaker也需要调用，所以这里加锁
 
   // 初始化
   void checkEnvironment();
@@ -86,24 +97,51 @@ class NotifyEventsProducer {
 
   void handleBlock(Log1 &log1Item);
   void handleBlockAccept  (Log1 &log1Item);
-
   void handleBlockRollback(const int32_t height, const CBlock &blk);
 
   void setRawTx(const CTransaction &tx);
   void setRawBlock(const CBlock &blk);
   void getBlockByHash(const uint256 &hash, CBlock &blk);
-  void getTxByHash(const uint256 &txHash, CTransaction &tx);
 
   void threadWatchNotifyFile();
 
   void clearMempoolTxs();
   void updateCosumeStatus();
-
   void commitBatch(const size_t expectAffectedRows);
 
 public:
   NotifyEventsProducer();
   ~NotifyEventsProducer();
+
+  void getTxByHash(const uint256 &txHash, CTransaction &tx);
+
+  void init();
+  void stop();
+  void run();
+};
+
+
+
+///////////////////////////////  NotifyEventsMaker  ////////////////////////////
+class NotifyLog {
+  int32_t type_;
+  int32_t blockHeight_;
+  int32_t txHash_;
+};
+
+class NotifyEventsMaker {
+  atomic<bool> running_;
+  MySQLConnection db_;
+
+  // 最后消费的 0_notify_logs.id
+  int64_t lastNotifyLogId_;
+
+  bool getLastStatus();
+  void updateStatus();
+
+public:
+  NotifyEventsMaker();
+  ~NotifyEventsMaker();
 
   void init();
   void stop();

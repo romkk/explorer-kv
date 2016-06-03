@@ -373,7 +373,7 @@ void NotifyEventsProducer::setRawBlock(const CBlock &blk) {
   // kv key is block hash
   const string key = blk.GetHash().ToString();
   string value;
-  LOG_DEBUG("setRawBlock: %s", key.c_str());
+//  LOG_DEBUG("setRawBlock: %s", key.c_str());
 
   // check if exist
   rocksdb::Status s = kvdb_->Get(rocksdb::ReadOptions(), key, &value);
@@ -394,7 +394,7 @@ void NotifyEventsProducer::setRawTx(const CTransaction &tx) {
   // kv key is txhash
   const string key = tx.GetHash().ToString();
   string value;
-  LOG_DEBUG("setRawTx: %s", key.c_str());
+//  LOG_DEBUG("setRawTx: %s", key.c_str());
 
   // check if exist
   rocksdb::Status s = kvdb_->Get(rocksdb::ReadOptions(), key, &value);
@@ -414,7 +414,7 @@ void NotifyEventsProducer::getBlockByHash(const uint256 &hash, CBlock &blk) {
 
   const string key = hash.ToString();
   string value;
-  LOG_DEBUG("getBlockByHash: %s", key.c_str());
+//  LOG_DEBUG("getBlockByHash: %s", key.c_str());
 
   rocksdb::Status s = kvdb_->Get(rocksdb::ReadOptions(), key, &value);
   if (s.IsNotFound()) {
@@ -432,7 +432,7 @@ void NotifyEventsProducer::getTxByHash(const uint256 &txHash, CTransaction &tx) 
 
   const string key = txHash.ToString();
   string value;
-  LOG_DEBUG("getTxByHash: %s", key.c_str());
+//  LOG_DEBUG("getTxByHash: %s", key.c_str());
 
   rocksdb::Status s = kvdb_->Get(rocksdb::ReadOptions(), key, &value);
   if (s.IsNotFound()) {
@@ -997,14 +997,6 @@ void NotifyEventsMaker::getAddressBalanceDiff(const NotifyLog &notifyLog,
   }
 }
 
-string NotifyEventsMaker::tableIdx2Name(const int32_t tableIdx) {
-  return Strings::Format("events_%08d", tableIdx);
-}
-
-int32_t NotifyEventsMaker::tableIndex(const int64_t notifyLogId) {
-  return (int32_t)(notifyLogId / 500000);
-}
-
 void NotifyEventsMaker::checkEventsTable(const int32_t tableIdx) {
   static set<int32_t> _tableIdxCache;
 
@@ -1075,12 +1067,20 @@ void NotifyEventsMaker::tryToRemoveNotifyLogs(const int64_t notifyLogId) {
   db_.update(sql);
 }
 
-void NotifyEventsMaker::writeNotifyEvents(const NotifyLog &notifyLog,
-                                          const map<string, int64_t> &balanceDiff) {
+string NotifyEventsMaker::tableIdx2Name(const int32_t tableIdx) {
+  return Strings::Format("events_%08d", tableIdx);
+}
+
+int32_t NotifyEventsMaker::tableIndex(const int64_t notifyLogId) {
   //
   // 每条交易对应的地址总体看来是一个几乎恒定的系数，所以我们每消费N条就分一个表.
   // 用notifyLog.id除一下即可得到表序号
   //
+  return (int32_t)(notifyLogId / 500000);
+}
+
+void NotifyEventsMaker::writeNotifyEvents(const NotifyLog &notifyLog,
+                                          const map<string, int64_t> &balanceDiff) {
   const int32_t tableIdx = tableIndex(notifyLog.id_);
   const string tableName = tableIdx2Name(tableIdx);
   checkEventsTable(tableIdx);
@@ -1166,7 +1166,7 @@ void NotifyEventsMaker::run() {
       }
       writeNotifyEvents(notifyLog, balanceDiff);
 
-      // 每条记录大约 128 字节，每2万提交一次
+      // 每条记录不到 200 字节，每2万提交一次
       if (eventsValues_.size() > 20000) {
         commitToDB();
       }

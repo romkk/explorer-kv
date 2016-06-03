@@ -940,7 +940,7 @@ void NotifyEventsMaker::tryGetNotifyLog(vector<NotifyLog> &logs) {
   MySQLResult res;
   char **row = nullptr;
   string sql = Strings::Format("SELECT `id`,`type`,`height`,`hash` FROM `0_notify_logs` "
-                               " WHERE `id`> %lld ORDER BY `id` ASC LIMIT 5000",
+                               " WHERE `id`> %lld ORDER BY `id` ASC LIMIT 50000",
                                lastNotifyLogId_);
   db_.query(sql, res);
   if (res.numRows() == 0) {

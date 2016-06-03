@@ -878,8 +878,9 @@ void NotifyEventsProducer::run() {
 
 ///////////////////////////////  NotifyEventsMaker  ////////////////////////////
 NotifyEventsMaker::NotifyEventsMaker(NotifyEventsProducer *notifyEventsProducer):
+running_(false),
 db_(Config::GConfig.get("mysql.uri")), notifyEventsProducer_(notifyEventsProducer),
-lastNotifyLogId_(-1), running_(false)
+lastNotifyLogId_(-1), lastEventsTableIdx_(-1)
 {
 }
 
@@ -1000,6 +1001,10 @@ string NotifyEventsMaker::tableIdx2Name(const int32_t tableIdx) {
   return Strings::Format("events_%08d", tableIdx);
 }
 
+int32_t NotifyEventsMaker::tableIndex(const int64_t notifyLogId) {
+  return (int32_t)(notifyLogId / 500000);
+}
+
 void NotifyEventsMaker::checkEventsTable(const int32_t tableIdx) {
   static set<int32_t> _tableIdxCache;
 
@@ -1055,20 +1060,43 @@ const char *NotifyEventsMaker::getTypeStr(const int32_t type) {
   return "UNKNOWN";
 }
 
+void NotifyEventsMaker::tryToRemoveNotifyLogs(const int64_t notifyLogId) {
+  // 最多保留 300万 条记录
+  const int64_t kMaxkeepItems = 3000000;
+
+  // 每 20万 触发一次
+  if (notifyLogId % 200000 != 0 || notifyLogId < kMaxkeepItems) {
+    return;
+  }
+
+  LOG_INFO("delete 0_notify_logs where id < %lld ", notifyLogId - kMaxkeepItems);
+  string sql = Strings::Format("DELETE FROM `0_notify_logs` WHERE `id` < %lld",
+                               notifyLogId - kMaxkeepItems);
+  db_.update(sql);
+}
+
 void NotifyEventsMaker::writeNotifyEvents(const NotifyLog &notifyLog,
                                           const map<string, int64_t> &balanceDiff) {
-  const string kTableFields = "`type`,`height`,`address`,`balance_diff`,`hash`,`created_at`";
   //
   // 每条交易对应的地址总体看来是一个几乎恒定的系数，所以我们每消费N条就分一个表.
   // 用notifyLog.id除一下即可得到表序号
   //
-  const int32_t tableIdx = (int32_t)(notifyLog.id_ / 500000);
+  const int32_t tableIdx = tableIndex(notifyLog.id_);
   const string tableName = tableIdx2Name(tableIdx);
   checkEventsTable(tableIdx);
 
-  vector<string> values;
-  const string nowStr = date("%F %T");
+  // 首次设置table index
+  if (lastEventsTableIdx_ == -1) {
+    lastEventsTableIdx_ = tableIdx;
+  }
 
+  // 发生表切换，主动触发提交至DB. 必须保障 dbValues_ 的记录都是位于同一张events表中
+  if (tableIdx != lastEventsTableIdx_) {
+    commitToDB();
+    lastEventsTableIdx_ = tableIdx;
+  }
+
+  const string nowStr = date("%F %T");
   if (notifyLog.type_ == NOTIFYLOG_TYPE_BLOCK_ACCEPT ||
       notifyLog.type_ == NOTIFYLOG_TYPE_BLOCK_REJECT)
   {
@@ -1078,7 +1106,7 @@ void NotifyEventsMaker::writeNotifyEvents(const NotifyLog &notifyLog,
                                   notifyLog.height_,
                                   notifyLog.hash_.ToString().c_str(),
                                   nowStr.c_str());
-    values.push_back(item);
+    eventsValues_.push_back(item);
   }
   else
   {
@@ -1089,16 +1117,29 @@ void NotifyEventsMaker::writeNotifyEvents(const NotifyLog &notifyLog,
                                     notifyLog.height_, it.first.c_str(),
                                     it.second, notifyLog.hash_.ToString().c_str(),
                                     nowStr.c_str());
-      values.push_back(item);
+      eventsValues_.push_back(item);
     }
   }
 
   lastNotifyLogId_ = notifyLog.id_;  // updateStatus() will read it
 
+  tryToRemoveNotifyLogs(notifyLog.id_);
+}
+
+void NotifyEventsMaker::commitToDB() {
+  const string kTableFields = "`type`,`height`,`address`,`balance_diff`,`hash`,`created_at`";
+  const string tableName = tableIdx2Name(lastEventsTableIdx_);
+
+  if (eventsValues_.empty()) {
+    return;
+  }
+
   db_.execute("START TRANSACTION");
-  multiInsert(db_, tableName, kTableFields, values);
+  multiInsert(db_, tableName, kTableFields, eventsValues_);
   updateStatus();
   db_.execute("COMMIT");
+
+  eventsValues_.clear();
 }
 
 void NotifyEventsMaker::run() {
@@ -1113,7 +1154,10 @@ void NotifyEventsMaker::run() {
       continue;
     }
 
+    LOG_INFO("load notify logs: %llu", notifyLogs.size());
     for (const auto &notifyLog : notifyLogs) {
+      if (!running_) { break; }
+
       map<string, int64_t> balanceDiff;
       if (!(notifyLog.type_ == NOTIFYLOG_TYPE_BLOCK_ACCEPT ||
             notifyLog.type_ == NOTIFYLOG_TYPE_BLOCK_REJECT)) {
@@ -1121,7 +1165,13 @@ void NotifyEventsMaker::run() {
         getAddressBalanceDiff(notifyLog, balanceDiff);
       }
       writeNotifyEvents(notifyLog, balanceDiff);
+
+      // 每条记录大约 128 字节，每2万提交一次
+      if (eventsValues_.size() > 20000) {
+        commitToDB();
+      }
     } /* /for */
+    commitToDB();
 
     notifyLogs.clear();
   } /* /while */

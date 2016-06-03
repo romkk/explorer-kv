@@ -67,17 +67,25 @@ class NotifyEventsMaker {
 
   int64_t lastNotifyLogId_;  // 最后消费的 0_notify_logs.id
 
+  int32_t lastEventsTableIdx_;
+  vector<string> eventsValues_;  // 待提交至DB的events记录
+
   bool getLastStatus();
   void updateStatus();
 
   const char *getTypeStr(const int32_t type);
   void checkEventsTable(const int32_t tableIdx);
+
+  int32_t tableIndex(const int64_t notifyLogId);
   string tableIdx2Name(const int32_t tableIdx);
+
   void tryToRemoveOldTable(const int32_t tableIdx);
+  void tryToRemoveNotifyLogs(const int64_t notifyLogId);
 
   void tryGetNotifyLog(vector<NotifyLog> &logs);
   void getAddressBalanceDiff(const NotifyLog &notifyLog, map<string, int64_t> &balanceDiff);
   void writeNotifyEvents(const NotifyLog &notifyLog, const map<string, int64_t> &balanceDiff);
+  void commitToDB();
 
 
 public:

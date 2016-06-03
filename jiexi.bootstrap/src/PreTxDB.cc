@@ -122,6 +122,12 @@ void PreTxDB::run() {
   while (runningProduceThreads_ > 0 || runningConsumeThreads_ > 0) {
     sleep(1);
   }
+
+  if (running_) {
+    LOG_INFO("compact db...");
+    // compact rocksdb
+    db_->CompactRange(rocksdb::CompactRangeOptions(), nullptr, nullptr);
+  }
 }
 
 void PreTxDB::threadConsume() {

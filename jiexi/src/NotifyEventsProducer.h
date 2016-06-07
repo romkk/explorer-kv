@@ -74,6 +74,7 @@ class NotifyEventsMaker {
   void updateStatus();
 
   const char *getTypeStr(const int32_t type);
+  bool isEventsTableExist(const int32_t tableIdx);
   void checkEventsTable(const int32_t tableIdx);
 
   int32_t tableIndex(const int64_t notifyLogId);

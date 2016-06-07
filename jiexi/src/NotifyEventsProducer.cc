@@ -997,38 +997,67 @@ void NotifyEventsMaker::getAddressBalanceDiff(const NotifyLog &notifyLog,
   }
 }
 
-void NotifyEventsMaker::checkEventsTable(const int32_t tableIdx) {
+bool NotifyEventsMaker::isEventsTableExist(const int32_t tableIdx) {
   static set<int32_t> _tableIdxCache;
 
   if (_tableIdxCache.count(tableIdx)) {
-    return;
+    return true;
   }
 
+  // 判断表是否存在
   MySQLResult res;
-  string sql;
-  const string tableName = tableIdx2Name(tableIdx);
-
-  sql = Strings::Format("SHOW TABLES LIKE '%s'", tableName.c_str());
+  string sql = Strings::Format("SHOW TABLES LIKE '%s'", tableIdx2Name(tableIdx).c_str());
   db_.query(sql, res);
-  if (res.numRows() > 0) {
+
+  if (res.numRows() == 1) {
     _tableIdxCache.insert(tableIdx);
-    return;
+    return true;
   }
 
-  // create new table
-  sql = Strings::Format("CREATE TABLE `%s` LIKE `0_tpl_events`", tableName.c_str());
-  db_.updateOrThrowEx(sql);
-  _tableIdxCache.insert(tableIdx);
+  return false;
+}
 
-  // remove old ones, max keep 30
-  const int32_t maxTableNum = (int32_t)Config::GConfig.getInt("notifyevents.table.max.num", 30);
-  tryToRemoveOldTable(tableIdx - maxTableNum);
+void NotifyEventsMaker::checkEventsTable(const int32_t tableIdx) {
+  // 首次设置table index
+  if (lastEventsTableIdx_ == -1) {
+    lastEventsTableIdx_ = tableIdx;
+  }
+
+  if (isEventsTableExist(tableIdx)) {
+    return;
+  }
+  assert(tableIdx == lastEventsTableIdx_ + 1);
+
+  // 提交当前的未提交数据，可能存在未提交数据。这里会提交EOF记录，必须保证EOF之后不会再有记录
+  commitToDB();
+
+  string sql;
+  // 创建新表
+  sql = Strings::Format("CREATE TABLE `%s` LIKE `0_tpl_events`",
+                        tableIdx2Name(tableIdx).c_str());
+  db_.updateOrThrowEx(sql);
+
+  // 移除旧表
+  tryToRemoveOldTable(tableIdx);
+
+  // 上一个表中插入 EOF 记录
+  sql = Strings::Format("INSERT INTO `%s` (`type`, `height`, `address`, "
+                        " `balance_diff`, `hash`, `created_at`) "
+                        " VALUES ('__EOF__', '0', '', '0', '', '%s');",
+                        tableIdx2Name(lastEventsTableIdx_).c_str(),
+                        date("%F %T").c_str());
+  db_.update(sql);
+
+  // 切换表索引
+  lastEventsTableIdx_ = tableIdx;
 }
 
 void NotifyEventsMaker::tryToRemoveOldTable(const int32_t tableIdx) {
-  if (tableIdx < 0) { return; }
+  const int32_t maxTableNum = (int32_t)Config::GConfig.getInt("notifyevents.table.max.num", 30);
+  if (tableIdx - maxTableNum < 0) { return; }
 
-  string sql = Strings::Format("DROP TABLE IF EXISTS `%s`", tableIdx2Name(tableIdx).c_str());
+  string sql = Strings::Format("DROP TABLE IF EXISTS `%s`",
+                               tableIdx2Name(tableIdx - maxTableNum).c_str());
   db_.update(sql);
 }
 
@@ -1084,17 +1113,6 @@ void NotifyEventsMaker::writeNotifyEvents(const NotifyLog &notifyLog,
   const int32_t tableIdx = tableIndex(notifyLog.id_);
   const string tableName = tableIdx2Name(tableIdx);
   checkEventsTable(tableIdx);
-
-  // 首次设置table index
-  if (lastEventsTableIdx_ == -1) {
-    lastEventsTableIdx_ = tableIdx;
-  }
-
-  // 发生表切换，主动触发提交至DB. 必须保障 dbValues_ 的记录都是位于同一张events表中
-  if (tableIdx != lastEventsTableIdx_) {
-    commitToDB();
-    lastEventsTableIdx_ = tableIdx;
-  }
 
   const string nowStr = date("%F %T");
   if (notifyLog.type_ == NOTIFYLOG_TYPE_BLOCK_ACCEPT ||

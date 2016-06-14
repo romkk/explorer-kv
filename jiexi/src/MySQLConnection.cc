@@ -89,6 +89,12 @@ void MySQLConnection::open() {
     close();
     THROW_EXCEPTION_EX(mysql_errno(conn), "mysql_set_character_set failed: %s", mysql_error(conn));
   }
+
+  // set timezone
+  {
+    const string sql = "SET time_zone = \"+00:00\"";
+    mysql_query(conn, sql.c_str());
+  }
 }
 
 void MySQLConnection::close() {

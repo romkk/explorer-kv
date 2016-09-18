@@ -54,7 +54,6 @@ void Log1::parse(const string &line) {
 
   // 按照 ',' 切分，最多切三份
   const vector<string> arr1 = split(line, ',', 3);
-
   // type
   const int32_t type = atoi(arr1[1].c_str());
 
@@ -449,6 +448,7 @@ void Log1Producer::initLog1() {
     // TODO: 性能优化，少读取一些log1日志文件
     for (auto fileIdx : filesIdxs) {
       ifstream fin(Strings::Format("%s/files/%d.log", log1Dir_.c_str(), fileIdx));
+      LOG_INFO("read: %s/files/%d.log", log1Dir_.c_str(), fileIdx);
       string line;
       Log1 log1Item;
       while (getline(fin, line)) {

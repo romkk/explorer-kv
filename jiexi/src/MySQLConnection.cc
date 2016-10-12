@@ -157,7 +157,7 @@ query:
   // 2013: Lost connection to MySQL server
   //
   if (queryTimes < 2 && (error_no == 2006 || error_no == 2013)) {
-    sleep(3);
+    sleep(30);
     if (mysql_ping(conn) == 0) {
       LOG_WARN("reconnect success");
     } else {

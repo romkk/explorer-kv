@@ -18,7 +18,6 @@
 
 #include "Log1Producer.h"
 
-#include "BitcoinRpc.h"
 #include "Common.h"
 #include "Util.h"
 
@@ -31,6 +30,11 @@
 
 namespace fs = boost::filesystem;
 
+inline bool _bitcoindRpcCall(const char *reqData, string &response) {
+  return bitcoindRpcCall(Config::GConfig.get("bitcoind.url"    ).c_str(),
+                         Config::GConfig.get("bitcoind.userpwd").c_str(),
+                         reqData, response);
+}
 
 ///////////////////////////////////  Log1  /////////////////////////////////////
 Log1::Log1() {
@@ -284,15 +288,38 @@ void Log1Producer::stop() {
   changed_.notify_all();
 }
 
+static bool _checkBitcoind() {
+  string response;
+  string request = "{\"jsonrpc\":\"1.0\",\"id\":\"1\",\"method\":\"getinfo\",\"params\":[]}";
+  if (!_bitcoindRpcCall(request.c_str(), response)) {
+    return false;
+  }
+  JsonNode r;
+  if (!JsonNode::parse(response.c_str(),
+                       response.c_str() + response.length(), r)) {
+    return false;
+  }
+  // check fields
+  if (r["result"].type() != Utilities::JS::type::Obj ||
+      r["result"]["connections"].type() != Utilities::JS::type::Int ||
+      r["result"]["blocks"].type()      != Utilities::JS::type::Int) {
+    return false;
+  }
+  if (r["result"]["connections"].int32() <= 0) {
+    return false;
+  }
+
+  return true;
+}
+
 //
 // 执行顺序是特定的，如需调整请谨慎考虑。初始化中有故障，均会抛出异常，中断程序
 //
 void Log1Producer::init() {
   running_ = true;
 
-  // 检测bitcoind是否正常
-  BitcoinRpc bitcoind(Config::GConfig.get("bitcoind.uri"));
-  if (!bitcoind.CheckBitcoind()) {
+  // check bitcoind
+  if (_checkBitcoind() == false) {
     THROW_EXCEPTION_DBEX("bitcoind is not working or error");
   }
 
@@ -478,14 +505,16 @@ void Log1Producer::initLog1() {
 // _bitcoind_xxxxx() 系列函数内部有重复代码，因为单独移出来后有问题，疑似 JsonNode 的Bug
 // 所以，每个函数都重复了请求、解析代码
 //
-static string _bitcoind_getBlockHashByHeight(BitcoinRpc &bitcoind, const int32_t height) {
+static string _bitcoind_getBlockHashByHeight(const int32_t height) {
   const string request = Strings::Format("{\"id\":1,\"method\":\"getblockhash\",\"params\":[%d]}",
                                          height);
   string response;
-  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
-  if (ret != 0) {
+
+  // rpc call
+  if (_bitcoindRpcCall(request.c_str(), response) == false) {
     THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
   }
+
   JsonNode r;
   JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
   if (r["error"].type() != Utilities::JS::type::Undefined &&
@@ -497,13 +526,15 @@ static string _bitcoind_getBlockHashByHeight(BitcoinRpc &bitcoind, const int32_t
   return r["result"].str();
 }
 
-static string _bitcoind_getInfo(BitcoinRpc &bitcoind) {
+static string _bitcoind_getInfo() {
   const string request = Strings::Format("{\"id\":1,\"method\":\"getinfo\",\"params\":[]}");
   string response;
-  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
-  if (ret != 0) {
+
+  // rpc call
+  if (_bitcoindRpcCall(request.c_str(), response) == false) {
     THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
   }
+
   JsonNode r;
   JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
   if (r["error"].type() != Utilities::JS::type::Undefined &&
@@ -515,14 +546,16 @@ static string _bitcoind_getInfo(BitcoinRpc &bitcoind) {
   return r["result"].str();
 }
 
-static void _bitcoind_getBlockByHash(BitcoinRpc &bitcoind, const string &hashStr, CBlock &block) {
+static void _bitcoind_getBlockByHash(const string &hashStr, CBlock &block) {
   const string request = Strings::Format("{\"id\":1,\"method\":\"getblock\",\"params\":[\"%s\", false]}",
                                          hashStr.c_str());
   string response;
-  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
-  if (ret != 0) {
+
+  // rpc call
+  if (_bitcoindRpcCall(request.c_str(), response) == false) {
     THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
   }
+
   vector<string> strArr = split(response, '"', 5);
   assert(strArr.size() == 5);
   if (!DecodeHexBlk(block, strArr[3])) {
@@ -532,13 +565,15 @@ static void _bitcoind_getBlockByHash(BitcoinRpc &bitcoind, const string &hashStr
   }
 }
 
-static int32_t _bitcoind_getBestHeight(BitcoinRpc &bitcoind) {
+static int32_t _bitcoind_getBestHeight() {
   const string request = Strings::Format("{\"id\":1,\"method\":\"getinfo\",\"params\":[]}");
   string response;
-  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
-  if (ret != 0) {
+
+  // rpc call
+  if (_bitcoindRpcCall(request.c_str(), response) == false) {
     THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
   }
+
   JsonNode r;
   JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
   if (r["error"].type() != Utilities::JS::type::Undefined &&
@@ -549,119 +584,6 @@ static int32_t _bitcoind_getBestHeight(BitcoinRpc &bitcoind) {
   }
   return r["result"]["blocks"].int32();
 }
-
-//static void _bitcoind_getrawtransaction(BitcoinRpc &bitcoind, const uint256 &hash, CTransaction &tx, bool verbose) {
-//  const string request = Strings::Format("{\"id\":1,\"method\":\"getrawtransaction\",\"params\":[\"%s\", %d]}",
-//                                         hash.ToString().c_str(), verbose ? 1 : 0);
-//  string response;
-//  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
-//  if (ret != 0) {
-//    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
-//  }
-//  vector<string> strArr = split(response, '"', 5);
-//  assert(strArr.size() == 5);
-//  if (!DecodeHexTx(tx, strArr[3])) {
-//    LOG_ERROR("rpc request : %s", request.c_str());
-//    LOG_ERROR("rpc response: %s", response.c_str());
-//    THROW_EXCEPTION_DBEX("decode tx failure, hex: %s", strArr[3].c_str());
-//  }
-//}
-//
-//// 获取内存交易列表，并根据交易之间的关联性排好序
-//static void _bitcoind_getmempool_txs(BitcoinRpc &bitcoind, vector<CTransaction> &txs) {
-//  string request;
-//  string response;
-//  JsonNode r;
-//  map<uint256, set<uint256> > allTxhash;
-//
-//  vector<uint256> sortedTxs;  // 按照依赖顺序已经排好序的交易
-//  set<uint256> sortedTxsSet;
-//
-//  //
-//  // getrawmempool
-//  //
-//  request = Strings::Format("{\"id\":1,\"method\":\"getrawmempool\",\"params\":[true]}");
-//  const int ret = bitcoind.jsonCall(request, response, 5000/* timeout: ms */);
-//  if (ret != 0) {
-//    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
-//  }
-//  r.reset();
-//  JsonNode::parse(response.c_str(), response.c_str() + response.length(), r);
-//  if (r["error"].type() != Utilities::JS::type::Undefined &&
-//      r["error"].type() == Utilities::JS::type::Obj) {
-//    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, code: %d, error: %s",
-//                         r["error"]["code"].int32(),
-//                         r["error"]["message"].str().c_str());
-//  }
-//
-//  for (auto node : r["result"].array()) {
-//    const string hashStr = std::string(node.key_start(),node.key_end());
-//    allTxhash[uint256(hashStr)] = set<uint256>();
-//
-//    for (auto dependTx : node["depends"].array()) {
-//      allTxhash[uint256(hashStr)].insert(uint256(dependTx.str()));
-//    }
-//  }
-//
-//  // 循环遍历
-//  // 最多循环次数： allTxhash.size()
-//  while (1) {
-//    const size_t lastSize = sortedTxs.size();
-//
-//    assert(sortedTxs.size() == sortedTxsSet.size());
-//    if (sortedTxs.size() == allTxhash.size()) {
-//      break;  // 所有交易均已经存放至vector中
-//    }
-//
-//    for (auto it = allTxhash.begin(); it != allTxhash.end(); ) {
-//      // alias
-//      const uint256 &hash         = it->first;
-//      const set<uint256> &depends = it->second;
-//
-//      // 没有依赖关系的直接推入
-//      if (depends.size() == 0) {
-//        sortedTxs.push_back(hash);
-//        sortedTxsSet.insert(hash);
-//        allTxhash.erase(it++);
-//
-//        continue;
-//      }
-//
-//      // 判断依赖交易是否存在
-//      bool allDependsExist = true;
-//      for (auto dependTx : depends) {
-//        if (sortedTxsSet.find(dependTx) == sortedTxsSet.end()) {
-//          allDependsExist = false;
-//          break;
-//        }
-//      }
-//      if (allDependsExist) {
-//        sortedTxs.push_back(hash);
-//        sortedTxsSet.insert(hash);
-//        allTxhash.erase(it++);
-//      } else {
-//        it++;
-//      }
-//    }
-//
-//    if (lastSize == sortedTxs.size()) {
-//      LOG_INFO("no more txs, sorted: %llu, all: %llu", sortedTxs.size(), allTxhash.size());
-//      break;
-//    }
-//  }
-//  LOG_INFO("getrawmempool size: %llu", sortedTxs.size());
-//
-//  //
-//  // getrawtransaction
-//  //
-//  txs.clear();
-//  txs.reserve(sortedTxs.size());
-//  for (auto hash : sortedTxs) {
-//    CTransaction tx;
-//    _bitcoind_getrawtransaction(bitcoind, hash, tx, 0);
-//    txs.push_back(tx);
-//  }
-//}
 
 void Log1Producer::syncBitcoind() {
   if (!running_) { return; }
@@ -674,7 +596,6 @@ void Log1Producer::syncBitcoind() {
   // 第一步，先尝试找到高度和哈希一致的块，若log1最前面的不符合，则回退直至找到一致的块
   // 第二步，从一致块高度开始，每次加一，向前追，直至与bitcoind高度一致
   //
-  BitcoinRpc bitcoind(Config::GConfig.get("bitcoind.uri"));
 
   int32_t log0FirstLineHeight = -1;
   uint256 log0FirstLineHash;
@@ -707,7 +628,7 @@ void Log1Producer::syncBitcoind() {
       break;
     }
     // 检测最后一个块(即chain_的当前块)是否一致
-    const string bitcoindHashStr = _bitcoind_getBlockHashByHeight(bitcoind, chain_.getCurHeight());
+    const string bitcoindHashStr = _bitcoind_getBlockHashByHeight(chain_.getCurHeight());
     if (chain_.getCurHash().ToString() == bitcoindHashStr) {
       LOG_INFO("found begin block, height: %d, hash: %s",
                chain_.getCurHeight(), chain_.getCurHash().ToString().c_str());
@@ -725,7 +646,7 @@ void Log1Producer::syncBitcoind() {
 
     // 写log1
     CBlock block;
-    _bitcoind_getBlockByHash(bitcoind, chain_.getCurHash().ToString(), block);
+    _bitcoind_getBlockByHash(chain_.getCurHash().ToString(), block);
     writeLog1Block(chain_.getCurHeight(), block);
     LOG_INFO("sync bitcoind block(-), height: %d, hash: %s",
              chain_.getCurHeight(), chain_.getCurHash().ToString().c_str());
@@ -743,11 +664,11 @@ void Log1Producer::syncBitcoind() {
   LOG_INFO("log0 first block height: %d", log0FirstLineHeight);
   while (chain_.getCurHeight() < log0FirstLineHeight && running_) {
     const int32_t height = chain_.getCurHeight() + 1;
-    const string hashStr = _bitcoind_getBlockHashByHeight(bitcoind, chain_.getCurHeight() + 1);
+    const string hashStr = _bitcoind_getBlockHashByHeight(chain_.getCurHeight() + 1);
     LOG_INFO("sync bitcoind block(+), height: %d, hash: %s", height, hashStr.c_str());
 
     CBlock block;
-    _bitcoind_getBlockByHash(bitcoind, hashStr, block);
+    _bitcoind_getBlockByHash(hashStr, block);
 
     assert(block.GetHash().ToString() == hashStr);
     assert(chain_.getCurHash() == block.hashPrevBlock);

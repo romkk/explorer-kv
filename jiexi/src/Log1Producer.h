@@ -19,7 +19,6 @@
 #ifndef Explorer_Log1Producer_h
 #define Explorer_Log1Producer_h
 
-#include "BitcoinRpc.h"
 #include "Common.h"
 #include "Util.h"
 #include "utilities_js.hpp"
@@ -95,10 +94,10 @@ class Log1Producer {
   int log1LockFd_;
   FILE *log1FileHandler_;
 
-  // 最后生成的文件索引
+  // last file index
   int32_t log1FileIndex_;
 
-  // 最近N个块链
+  // latest N blocks
   Chain chain_;
 
   /****************** log0 ******************/

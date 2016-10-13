@@ -65,6 +65,17 @@ std::string escapeJson(const std::string &s);
 bool fileGetContents(const string &fname, string &content);
 bool filePutContents(const string &fname, const string &content, bool append=false);
 
+//
+// HTTP Get/Post
+//
+bool httpGET (const char *url, string &response, long timeoutMs);
+bool httpGET (const char *url, const char *userpwd,
+              string &response, long timeoutMs);
+bool httpPOST(const char *url, const char *userpwd,
+              const char *postData, string &response, long timeoutMs);
+bool bitcoindRpcCall(const char *url, const char *userpwd, const char *reqData,
+                     string &response);
+
 ////////////////////////////////  BoundedBuffer  ////////////////////////////////
 template <class T>
 class BoundedBuffer {

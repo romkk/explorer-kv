@@ -20,7 +20,6 @@
 
 #include "bitcoin/uint256.h"
 #include "bitcoin/base58.h"
-#include "bitcoin/core.h"
 #include "bitcoin/util.h"
 
 typedef void (*handleFunction)(evhtp_request_t *req, const vector<string> &params, const string &queryId);
@@ -142,7 +141,7 @@ void kv_output(evhtp_request_t *req, const string &queryId,
   // CheckSum-SHA256
   {
     uint256 respHash;
-    SHA256(fbb.GetBufferPointer(), fbb.GetSize(), (unsigned char*)&respHash);
+    CSHA256().Write(fbb.GetBufferPointer(), fbb.GetSize()).Finalize((unsigned char*)&respHash);
     evhtp_headers_add_header(req->headers_out,
                              evhtp_header_new("CheckSum-SHA256", respHash.ToString().c_str(), 1, 1));
   }

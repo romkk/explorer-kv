@@ -117,88 +117,9 @@ TEST(Common, date) {
   ASSERT_EQ(str2time("2014-12-08 15:07:34", "%F %T"), 1418051254);
 }
 
-TEST(Common, bitsdiff) {
-  ASSERT_EQ(DiffToBits(1), 0x1d00ffff);
-  ASSERT_EQ(DiffToBits(2), 0x1c7fff80);
-  ASSERT_EQ(DiffToBits(4), 0x1c3fffc0);
-  ASSERT_EQ(DiffToBits(6), 0x1c2aaa80);
-  ASSERT_EQ(DiffToBits(384), 0x1c00aaaa);
-  ASSERT_EQ(DiffToBits(384*256), 0x1b00aaaa);
-}
-
-TEST(Common, TargetToBdiff) {
-  // 0x00000000FFFF0000000000000000000000000000000000000000000000000000 /
-  // 0x00000000000404CB000000000000000000000000000000000000000000000000
-  // = 16307.420938523983 (bdiff)
-  ASSERT_EQ(TargetToBdiff("0x00000000000404CB000000000000000000000000000000000000000000000000"), 16307);
-}
-
-
-TEST(Common, TargetToPdiff) {
-  // 0x00000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF /
-  // 0x00000000000404CB000000000000000000000000000000000000000000000000
-  // = 16307.669773817162 (pdiff)
-  ASSERT_EQ(TargetToBdiff("0x00000000000404CB000000000000000000000000000000000000000000000000"), 16307);
-}
-
-TEST(Common, VerifyMessage) {
-  bool res = VerifyMessage("1HZwkjkeaoZfTSaJxDw6aKkxp45agDiEzN",
-                           "HKxvict8nte+YLbXaYdma4bLytJ7gaeSwCY8zayzEmSqR3F/rB/XaaFS/U4SUAL2XSubsPLqLFqllEndu6nDGr8=",
-                           "This is an example of a signed message.");
-  ASSERT_EQ(res, true);
-  
-  res = VerifyMessage("1HZwkjkeaoZfTSaJxDw6aKkxp45agDiEz1",
-                      "HKxvict8nte+YLbXaYdma4bLytJ7gaeSwCY8zayzEmSqR3F/rB/XaaFS/U4SUAL2XSubsPLqLFqllEndu6nDGr8=",
-                      "This is an example of a signed message.");
-  ASSERT_EQ(res, false);
-  
-  res = VerifyMessage("1HZwkjkeaoZfTSaJxDw6aKkxp45agDiEzN",
-                      "JKxvict8nte+YLbXaYdma4bLytJ7gaeSwCY8zayzEmSqR3F/rB/XaaFS/U4SUAL2XSubsPLqLFqllEndu6nDGr8=",
-                      "This is an example of a signed message.");
-  ASSERT_EQ(res, false);
-  
-  res = VerifyMessage("1HZwkjkeaoZfTSaJxDw6aKkxp45agDiEzN",
-                      "HKxvict8nte+YLbXaYdma4bLytJ7gaeSwCY8zayzEmSqR3F/rB/XaaFS/U4SUAL2XSubsPLqLFqllEndu6nDGr8=",
-                      "this is an example of a signed message.");
-  ASSERT_EQ(res, false);
-}
-
-TEST(Common, SignMessage) {
-  // address:
-  //   1MgwqdXUhxL6Ba96TbDGpjnQeoyYZ2KsLm (Compressed)
-  //   1NEojqoUPRutfCo5rWB5xdfZs51uocFqr  (unCompressed)
-  // private:
-  //   b58: L5Cts73AZr2SPTHgpuumC3maBeMt2zw14PbL4mHgsYsoaHcPrP99
-  //   hex: EE478AEAB75CBDA07B53AA797C046286AB3A83760C075AE93477C3A9C3CB6874
-  const unsigned char privKey[] = {
-    0xEE, 0x47, 0x8A, 0xEA, 0xB7, 0x5C, 0xBD, 0xA0, 0x7B, 0x53, 0xAA, 0x79, 0x7C,
-    0x04, 0x62, 0x86, 0xAB, 0x3A, 0x83, 0x76, 0x0C, 0x07, 0x5A, 0xE9, 0x34, 0x77,
-    0xC3, 0xA9, 0xC3, 0xCB, 0x68, 0x74};
-  bool verifyRes;
-  CKey key;
-  string signature, strMessage = "this sign message";
-  
-  // test Compressed
-  key.Set(privKey, privKey + sizeof(privKey)/sizeof(privKey[0]), true);
-  ASSERT_EQ(SignMessage(key, strMessage, signature), true);
-  verifyRes = VerifyMessage("1MgwqdXUhxL6Ba96TbDGpjnQeoyYZ2KsLm", signature, strMessage);
-  ASSERT_EQ(verifyRes, true);
-  
-  // test unCompressed
-  key.Set(privKey, privKey + sizeof(privKey)/sizeof(privKey[0]), false);
-  ASSERT_EQ(SignMessage(key, strMessage, signature), true);
-  verifyRes = VerifyMessage("1NEojqoUPRutfCo5rWB5xdfZs51uocFqr", signature, strMessage);
-  ASSERT_EQ(verifyRes, true);
-
-  // test Compressed
-  key.Set(privKey, privKey + sizeof(privKey)/sizeof(privKey[0]), false);
-  ASSERT_EQ(SignMessage(key, strMessage, signature), true);
-  verifyRes = VerifyMessage("1MgwqdXUhxL6Ba96TbDGpjnQeoyYZ2KsLm", signature, strMessage);
-  ASSERT_EQ(verifyRes, false);
-  
-  // test unCompressed
-  key.Set(privKey, privKey + sizeof(privKey)/sizeof(privKey[0]), true);
-  ASSERT_EQ(SignMessage(key, strMessage, signature), true);
-  verifyRes = VerifyMessage("1NEojqoUPRutfCo5rWB5xdfZs51uocFqr", signature, strMessage);
-  ASSERT_EQ(verifyRes, false);
+TEST(Common, BitsToDifficulty) {
+  // 0x1b0404cb: https://en.bitcoin.it/wiki/Difficulty
+  double d;
+  BitsToDifficulty(0x1b0404cbu, &d);  // diff = 16307.420939
+  ASSERT_EQ((uint64_t)(d * 10000.0), 163074209ull);
 }

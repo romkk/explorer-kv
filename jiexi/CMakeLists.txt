@@ -47,7 +47,7 @@ if(NOT OPENSSL_FOUND)
   message(FATAL_ERROR "OpenSSL not found!")
 endif(NOT OPENSSL_FOUND)
 
-find_package(Boost 1.36.0 COMPONENTS thread filesystem system regex)
+find_package(Boost 1.36.0 COMPONENTS thread filesystem system regex program_options)
 if(NOT Boost_FOUND)
   message(FATAL_ERROR "Boost not found!")
 endif(NOT Boost_FOUND)

@@ -26,8 +26,6 @@
 
 #include "inotify-cxx.h"
 
-#include "bitcoin/core.h"
-
 #include <iostream>
 #include <fstream>
 

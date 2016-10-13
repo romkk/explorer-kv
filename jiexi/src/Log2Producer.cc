@@ -20,7 +20,13 @@
 #include <stdlib.h>
 #include <sys/file.h>
 
+#include <chrono>
+#include <fstream>
+
 #include <boost/filesystem.hpp>
+
+#include "bitcoin/core_io.h"
+#include "bitcoin/utilstrencodings.h"
 
 #include "Log2Producer.h"
 #include "KVDB.h"
@@ -319,7 +325,7 @@ static void _initLog2_loadMemrepoTxs(MySQLConnection &db,
   }
 
   while ((row = res.nextRow()) != nullptr) {
-    const uint256 hash(row[0]);
+    const uint256 hash = uint256S(row[0]);
     const string txHex = getTxHexByHash(db, hash);
 
     CTransaction tx;
@@ -368,14 +374,14 @@ void Log2Producer::initLog2() {
     // 获取 tparser 最后消费记录ID
     string value;
     if (kvdb.getMayNotExist("90_tparser_txlogs_offset_id", value) == true /* exit */) {
-      jiexiLastTxlog2Offset = atoi64(value);
+      jiexiLastTxlog2Offset = strtoll(value.c_str(), nullptr, 10);
     }
 
     sql = "SELECT `id` FROM `0_txlogs2` ORDER BY `id` DESC LIMIT 1";
     db_.query(sql, res);
     if (res.numRows() != 0) {
       row = res.nextRow();
-      lastTxlogs2Id = atoi64(row[0]);
+      lastTxlogs2Id = strtoll(row[0], nullptr, 10);
     }
     if (jiexiLastTxlog2Offset != lastTxlogs2Id) {
       THROW_EXCEPTION_DBEX("kvdb.90_tparser_txlogs_offset_id(%lld) is NOT match table.0_txlogs2's max id(%lld), "
@@ -388,12 +394,12 @@ void Log2Producer::initLog2() {
     vector<string> keys, values;
     // KVDB_PREFIX_BLOCK_HEIGHT
     kvdb.range("10_9999999999", "10_0000000000", 1, keys, values);
-    log2BlockBeginHeight = atoi(keys[0].substr(3));
-    log2BlockBeginHash   = uint256(values[0]);
+    log2BlockBeginHeight = atoi(keys[0].substr(3).c_str());
+    log2BlockBeginHash   = uint256S(values[0]);
   }
   else {
     // kvdb 没有记录，则以配置文件的块信息作为起始块
-    log2BlockBeginHash   = uint256(Config::GConfig.get("log2.begin.block.hash"));
+    log2BlockBeginHash   = uint256S(Config::GConfig.get("log2.begin.block.hash"));
     log2BlockBeginHeight = (int32_t)Config::GConfig.getInt("log2.begin.block.height");
   }
 
@@ -421,7 +427,7 @@ void Log2Producer::initLog2() {
     int i = -1;
     for (auto value : values) {
       i++;
-      const uint256 hash(value);
+      const uint256 hash = uint256S(value);
       const string key = Strings::Format("%s%s", KVDB_PREFIX_BLOCK_OBJECT, hash.ToString().c_str());
       string blkvalue;
       kvdb.get(key, blkvalue);
@@ -525,7 +531,7 @@ void Log2Producer::tryReadLog1(vector<string> &lines, vector<int64_t> &offset) {
   //
   // 打开文件并尝试读取新行
   //
-  ifstream log1Ifstream(currFile);
+  std::ifstream log1Ifstream(currFile);
   if (!log1Ifstream.is_open()) {
     THROW_EXCEPTION_DBEX("open file failure: %s", currFile.c_str());
   }
@@ -1077,7 +1083,7 @@ void Log2Producer::run() {
     if (lines.size() == 0) {
       UniqueLock ul(lock_);
       // 默认等待N毫秒，直至超时，中间有人触发，则立即continue读取记录
-      changed_.wait_for(ul, chrono::milliseconds(10*1000));
+      changed_.wait_for(ul, std::chrono::milliseconds(10*1000));
       continue;
     }
 

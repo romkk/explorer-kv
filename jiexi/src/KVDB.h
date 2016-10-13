@@ -19,8 +19,8 @@
 #ifndef KVDB_H_
 #define KVDB_H_
 
-#include "bitcoin/core.h"
 #include "bitcoin/key.h"
+#include "bitcoin/primitives/transaction.h"
 
 #include "rocksdb/db.h"
 #include "rocksdb/slice.h"

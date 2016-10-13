@@ -47,13 +47,14 @@
 #include <mach/mach.h>
 #include <mach/mach_time.h>
 #endif
+
 #include "Common.h"
 
-#include "bitcoin/uint256.h"
+#include "bitcoin/arith_uint256.h"
 #include "bitcoin/base58.h"
-#include "bitcoin/core.h"
+#include "bitcoin/uint256.h"
 #include "bitcoin/util.h"
-
+#include "bitcoin/utilstrencodings.h"
 
 static const char _hexchars[] = "0123456789abcdef";
 
@@ -250,121 +251,16 @@ bool GetLocalPrimaryMacAddress(string &primaryMac, const uint32 primaryIp) {
 }
 
 
-
-uint64 TargetToBdiff(uint256 &target) {
-  CBigNum m, t;
-  m.SetHex("0x00000000FFFF0000000000000000000000000000000000000000000000000000");
-  t.setuint256(target);
-  return strtoull((m / t).ToString().c_str(), NULL, 10);
+uint64 TargetToDiff(const uint256 &target) {
+  arith_uint256 t = UintToArith256(target);
+  uint64_t difficulty;
+  BitsToDifficulty(t.GetCompact(), &difficulty);
+  return difficulty;
 }
 
-uint64 TargetToBdiff(const string &str) {
-  CBigNum m, t;
-  m.SetHex("0x00000000FFFF0000000000000000000000000000000000000000000000000000");
-  t.SetHex(str);
-  return strtoull((m / t).ToString().c_str(), NULL, 10);
-}
-
-uint64 TargetToPdiff(const uint256 &target) {
-  CBigNum m, t;
-  m.SetHex("0x00000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
-  t.setuint256(target);
-  return strtoull((m / t).ToString().c_str(), NULL, 10);
-}
-
-uint64 TargetToPdiff(const string &str) {
-  CBigNum m, t;
-  m.SetHex("0x00000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
-  t.SetHex(str);
-  return strtoull((m / t).ToString().c_str(), NULL, 10);
-}
-
-
-static const uint32 BITS_DIFF1 = 0x1d00ffff;
-
-void BitsToTarget(uint32 bits, uint256 & target) {
-  uint64 nbytes = (bits >> 24) & 0xff;
-  target = bits & 0xffffffULL;
-  target <<= (8 * ((uint8)nbytes - 3));
-}
-
-uint32 DiffToBits(uint64 diff) {
-  uint64 origdiff = diff;
-  uint64 nbytes = (BITS_DIFF1 >> 24) & 0xff;
-  uint64 value = BITS_DIFF1 & 0xffffffULL;
-
-  if (diff == 0) {
-    LOG_FATAL("[DiffToBits] diff is zero");
-    THROW_EXCEPTION_EX(EINVAL, "diff is zero");
-  }
-
-  while (diff % 256 == 0) {
-    nbytes -= 1;
-    diff /= 256;
-  }
-  if (value % diff == 0) {
-    value /= diff;
-  } else if ((value << 8) % diff == 0) {
-    nbytes -= 1;
-    value <<= 8;
-    value /= diff;
-  } else {
-    THROW_EXCEPTION_EX(EINVAL, "diff(%llu) not perfect, can't convert to bits",
-                       origdiff);
-  }
-  if (value > 0x00ffffffULL) {
-    // overflow... should not happen
-    THROW_EXCEPTION_EX(EOVERFLOW, "diff overflow, code bug");
-  }
-  return (uint32)(value | (nbytes << 24));
-}
-
-void DiffToTarget(uint64 diff, uint256 & target) {
-  BitsToTarget(DiffToBits(diff), target);
-}
-
-//
-// bitcoin verify message
-//
-const string strMessageMagic = "Bitcoin Signed Message:\n";
-bool VerifyMessage(const string &strAddress, const string &strSign,
-                   const string &strMessage) {
-  CBitcoinAddress addr(strAddress);
-  if (!addr.IsValid()) {
-    return false;
-  }
-  CKeyID keyID;
-  if (!addr.GetKeyID(keyID)) {
-    return false;
-  }
-  bool fInvalid = false;
-  vector<unsigned char> vchSig = DecodeBase64(strSign.c_str(), &fInvalid);
-  if (fInvalid) {
-    return false;
-  }
-  CHashWriter ss(SER_GETHASH, 0);
-  ss << strMessageMagic;
-  ss << strMessage;
-  
-  CPubKey pubkey;
-  if (!pubkey.RecoverCompact(ss.GetHash(), vchSig)) {
-    return false;
-  }
-  return (pubkey.GetID() == keyID);
-}
-
-
-bool SignMessage(const CKey &key, const string &strMessage, string &signature) {
-  CHashWriter ss(SER_GETHASH, 0);
-  ss << strMessageMagic;
-  ss << strMessage;
-  
-  vector<unsigned char> vchSig;
-  if (!key.SignCompact(ss.GetHash(), vchSig))
-    return false;
-  
-  signature = EncodeBase64(&vchSig[0], vchSig.size());
-  return true;
+uint64 TargetToDiff(const string &str) {
+  uint256 t = uint256S(str);
+  return TargetToDiff(t);
 }
 
 //
@@ -454,14 +350,6 @@ void writeTime2File(const char *filename, uint64 t) {
 
 void killSelf() {
   kill(getpid(), SIGINT);
-}
-
-void runCommand(const std::string &strCommand) {
-  LOG_INFO("runCommond: %s", strCommand.c_str());
-  
-  int nErr = ::system(strCommand.c_str());
-  if (nErr)
-    LOG_ERROR("runCommand error: system(%s) returned %d\n", strCommand.c_str(), nErr);
 }
 
 //

@@ -99,12 +99,12 @@ int main(int argc, char **argv) {
   
   // check testnet
   if (Config::GConfig.getBool("testnet", false)) {
-    SelectParams(CChainParams::TESTNET);
+    SelectParams(CBaseChainParams::TESTNET);
     LOG_WARN("using bitcoin testnet");
   } else {
-    SelectParams(CChainParams::MAIN);
+    SelectParams(CBaseChainParams::MAIN);
   }
-  
+
   // set log level
   if (IsDebug()) {
     Log::SetLevel(LOG_LEVEL_DEBUG);

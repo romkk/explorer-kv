@@ -24,6 +24,8 @@
 #include <stdlib.h>
 #include <sys/file.h>
 
+#include <chrono>
+
 #include <boost/filesystem.hpp>
 
 namespace fs = boost::filesystem;
@@ -96,7 +98,7 @@ bool NotifyItem::parse(const string &line) {
     assert(arr.size() == 6);
     snprintf(address_, sizeof(address_), "%s", arr[2].c_str());
     height_ = atoi(arr[3].c_str());
-    hash_ = uint256(arr[4].c_str());
+    hash_   = uint256S(arr[4].c_str());
     amount_ = atoll(arr[5].c_str());
     return true;
   }
@@ -105,7 +107,7 @@ bool NotifyItem::parse(const string &line) {
   if (type_ >= 10 && type_ <= 11) {
     assert(arr.size() == 4);
     height_ = atoi(arr[2].c_str());
-    hash_ = uint256(arr[3].c_str());
+    hash_   = uint256S(arr[3].c_str());
     return true;
   }
 
@@ -640,7 +642,7 @@ void Notify::threadConsumeNotifyLogs() {
     if (lines.size() == 0) {
       UniqueLock ul(lock_);
       // 默认等待N毫秒，直至超时，中间有人触发，则立即continue读取记录
-      changed_.wait_for(ul, chrono::milliseconds(10*1000));
+      changed_.wait_for(ul, std::chrono::milliseconds(10*1000));
       continue;
     }
 
@@ -803,7 +805,7 @@ void NotifyLogReader::readLines(int32_t currFileIndex, int64_t currFileOffset,
   //
   // 打开文件并尝试读取新行
   //
-  ifstream logStream(currFile);
+  std::ifstream logStream(currFile);
   if (!logStream.is_open()) {
     THROW_EXCEPTION_DBEX("open file failure: %s", currFile.c_str());
   }

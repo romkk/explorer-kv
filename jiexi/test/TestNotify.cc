@@ -48,13 +48,13 @@ TEST(Notify, NotifyItem2) {
 
   // load tx
   item.loadtx(20, "18KsvEx5zhNtsatBsTqDvKV5wk73GwSdXx",
-              uint256("f3f13a843b8f69a850ad8e45becae5ccd9cc3f5c85f5eb78a54bb9971c50ed9b"),
+              uint256S("f3f13a843b8f69a850ad8e45becae5ccd9cc3f5c85f5eb78a54bb9971c50ed9b"),
               -1, 725865);
   item.timestamp_ = str2time("2016-01-01 12:13:14");
   ASSERT_EQ(item.toStr(), "2016-01-01 12:13:14,20,18KsvEx5zhNtsatBsTqDvKV5wk73GwSdXx,-1,f3f13a843b8f69a850ad8e45becae5ccd9cc3f5c85f5eb78a54bb9971c50ed9b,725865");
 
   // load block
-  item.loadblock(10, uint256("000000000000000004dd73b0dc84ae2a7bb790d92a3fb457cafca2c221206aa0"), 401656);
+  item.loadblock(10, uint256S("000000000000000004dd73b0dc84ae2a7bb790d92a3fb457cafca2c221206aa0"), 401656);
   item.timestamp_ = str2time("2016-01-01 12:13:14");
   ASSERT_EQ(item.toStr(), "2016-01-01 12:13:14,10,401656,000000000000000004dd73b0dc84ae2a7bb790d92a3fb457cafca2c221206aa0");
 }

@@ -146,7 +146,10 @@ uint32 GetLocalPrimaryIpInt();
 bool getMacAddress(char *macAddr, const char *if_name);
 bool GetLocalPrimaryMacAddress(string &primaryMac, const uint32 primaryIp);
 
-inline void BitsToDifficulty(uint32 bits, double &difficulty) {
+uint64 TargetToDiff(const uint256 &target);
+uint64 TargetToDiff(const string &str);
+
+inline void BitsToDifficulty(uint32 bits, double *difficulty) {
   int nShift = (bits >> 24) & 0xff;
   double dDiff = (double)0x0000ffff / (double)(bits & 0x00ffffff);
   while (nShift < 29) {
@@ -157,27 +160,14 @@ inline void BitsToDifficulty(uint32 bits, double &difficulty) {
     dDiff /= 256.0;
     nShift--;
   }
-  difficulty = dDiff;
+  *difficulty = dDiff;
 }
 
-inline void BitsToDifficulty(uint32 bits, uint64 &difficulty) {
+inline void BitsToDifficulty(uint32 bits, uint64 *difficulty) {
   double diff;
-  BitsToDifficulty(bits, diff);
-  difficulty = (uint64)diff;
+  BitsToDifficulty(bits, &diff);
+  *difficulty = (uint64)diff;
 }
-
-void BitsToTarget(uint32 bits, uint256 & target);
-uint64 TargetToBdiff(uint256 &target);
-uint64 TargetToBdiff(const string &str);
-uint64 TargetToPdiff(const uint256 &target);
-uint64 TargetToPdiff(const string &str);
-// only support perfect diff, like 2^i, 3*(2^i), 5*(2^i)
-uint32 DiffToBits(uint64 diff);
-void DiffToTarget(uint64 diff, uint256 & target);
-
-bool SignMessage(const CKey &key, const string &strMessage, string &signature);
-bool VerifyMessage(const string &strAddress, const string &strSign,
-                   const string &strMessage);
 
 uint64_t hash_16_bytes(uint64_t low, uint64_t high);
 
@@ -196,7 +186,6 @@ void writePid2FileOrExit(const char *filename);
 void writeTime2File(const char *filename, uint64 t);
 void killSelf();
 
-void runCommand(const std::string &strCommand);
 
 string date(const char *format, const time_t timestamp);
 inline string date(const char *format) {

@@ -27,7 +27,6 @@
 
 #include "inotify-cxx.h"
 
-#include "bitcoin/core.h"
 #include "bitcoin/key.h"
 
 #include "KVDB.h"

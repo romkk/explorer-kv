@@ -26,7 +26,16 @@
 #include <stdlib.h>
 #include <sys/file.h>
 
+#include <chrono>
+#include <fstream>
+
 #include <boost/filesystem.hpp>
+
+#include "bitcoin/core_io.h"
+#include "bitcoin/primitives/block.h"
+#include "bitcoin/primitives/transaction.h"
+#include "bitcoin/utilstrencodings.h"
+#include "bitcoin/streams.h"
 
 namespace fs = boost::filesystem;
 
@@ -48,8 +57,9 @@ void Log1::reset() {
   type_        = -1;
   blockHeight_ = -1;
   content_.clear();
-  tx_.SetNull();
-  block_.SetNull();
+
+  tx_    = CTransaction();
+  block_ = CBlock();
 }
 
 // 解析当行 log1 类型的日志，解析失败则抛出异常
@@ -468,14 +478,14 @@ void Log1Producer::initLog1() {
     const int32_t beginHeight = (int32_t)Config::GConfig.getInt("log1.begin.block.height");
     uint256 beginHash = uint256();
     if (beginHeight >= 0) {
-      beginHash = uint256(Config::GConfig.get("log1.begin.block.hash"));
+      beginHash = uint256S(Config::GConfig.get("log1.begin.block.hash"));
     }
     chain_.pushFirst(beginHeight, beginHash);
   } else {
     // 利用set自动排序，从小向大遍历所有文件，重新载入块链
     // TODO: 性能优化，少读取一些log1日志文件
     for (auto fileIdx : filesIdxs) {
-      ifstream fin(Strings::Format("%s/files/%d.log", log1Dir_.c_str(), fileIdx));
+      std::ifstream fin(Strings::Format("%s/files/%d.log", log1Dir_.c_str(), fileIdx));
       string line;
       Log1 log1Item;
       while (getline(fin, line)) {
@@ -602,7 +612,7 @@ void Log1Producer::syncBitcoind() {
 
   // 读取 log0 0.log 首行
   {
-    ifstream fin(Strings::Format("%s/files/0.log", log0Dir_.c_str()));
+    std::ifstream fin(Strings::Format("%s/files/0.log", log0Dir_.c_str()));
     string line;
     Log1 log0Item;  // log0 里记录的也是log1格式
     if (!getline(fin, line)) {
@@ -797,7 +807,7 @@ void Log1Producer::tryReadLog0(vector<string> &lines) {
   //
   // 打开文件并尝试读取新行
   //
-  ifstream log0Ifstream(currFile);
+  std::ifstream log0Ifstream(currFile);
   if (!log0Ifstream.is_open()) {
     THROW_EXCEPTION_DBEX("open file failure: %s", currFile.c_str());
   }
@@ -852,7 +862,7 @@ void Log1Producer::run() {
     if (lines.size() == 0) {
       UniqueLock ul(lock_);
       // 默认等待N毫秒，直至超时，中间有人触发，则立即continue读取记录
-      changed_.wait_for(ul, chrono::milliseconds(3*1000));
+      changed_.wait_for(ul, std::chrono::milliseconds(3*1000));
       continue;
     }
 

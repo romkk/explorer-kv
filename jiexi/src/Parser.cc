@@ -17,6 +17,7 @@
  */
 
 #include <string>
+#include <chrono>
 #include <iostream>
 #include <fstream>
 
@@ -28,7 +29,10 @@
 #include "Util.h"
 
 #include "bitcoin/base58.h"
+#include "bitcoin/core_io.h"
+#include "bitcoin/chainparams.h"
 #include "bitcoin/util.h"
+#include "bitcoin/utilstrencodings.h"
 
 /////////////////////////////////  RawBlock  ///////////////////////////////////
 
@@ -524,10 +528,11 @@ void _insertBlock(KVDB &kvdb, const CBlock &blk, const int32_t height,
   fbb.ForceDefaults(true);
 
   double difficulty = 0;
-  BitsToDifficulty(header.nBits, difficulty);
-  const uint64_t pdiff = TargetToPdiff(blockHash);
+  BitsToDifficulty(header.nBits, &difficulty);
+  const uint64_t pdiff = TargetToDiff(blockHash);
 
-  const int64_t rewardBlock = GetBlockValue(height, 0);
+  const CChainParams& chainparams = Params();
+  const int64_t rewardBlock = GetBlockSubsidy(height, chainparams.GetConsensus());
   const int64_t rewardFees  = blk.vtx[0].GetValueOut() - rewardBlock;
   assert(rewardFees >= 0);
 
@@ -1058,9 +1063,9 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
   // 2. tx hash: e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468
   // 该交易在两个不同的高度块(91722, 91880)中出现过
   if ((txLog2->blkHeight_ == 91842 &&
-       txLog2->txHash_ == uint256("d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599")) ||
+       txLog2->txHash_ == uint256S("d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599")) ||
       (txLog2->blkHeight_ == 91880 &&
-       txLog2->txHash_ == uint256("e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468"))) {
+       txLog2->txHash_ == uint256S("e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468"))) {
     LOG_WARN("ignore tx, height: %d, hash: %s",
              txLog2->blkHeight_, txLog2->txHash_.ToString().c_str());
     return;
@@ -1115,9 +1120,9 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
           addressBalance[address] += prevValue * -1;
           fb_addressesVec.push_back(fbb.CreateString(address));
         }
-        fb_prevTxHash    = fbb.CreateString(in.prevout.hash.ToString());
-        fb_ScriptAsm     = fbb.CreateString(in.scriptSig.ToString());
-        prevPostion = in.prevout.n;
+        fb_prevTxHash = fbb.CreateString(in.prevout.hash.ToString());
+        fb_ScriptAsm  = fbb.CreateString(ScriptToAsmStr(in.scriptSig, true));
+        prevPostion   = in.prevout.n;
       }
 
       auto fb_prevAddresses = fbb.CreateVector(fb_addressesVec);
@@ -1167,7 +1172,7 @@ void Parser::acceptTx(class TxLog2 *txLog2) {
 
       // output Hex奇葩的交易：
       // http://tbtc.blockr.io/tx/info/c333a53f0174166236e341af9cad795d21578fb87ad7a1b6d2cf8aa9c722083c
-      string outputScriptAsm = out.scriptPubKey.ToString();
+      string outputScriptAsm = ScriptToAsmStr(out.scriptPubKey, true);
       const string outputScriptHex = HexStr(out.scriptPubKey.begin(), out.scriptPubKey.end());
       if (outputScriptAsm.length() > 2*1024*1024) {
         outputScriptAsm = "";
@@ -1424,7 +1429,10 @@ void Parser::confirmTx(class TxLog2 *txLog2) {
 
     // confirm时知道高度值，重新计算 coinbase tx fee
     if (txLog2->tx_.IsCoinBase()) {
-      const int64_t fee = txLog2->tx_.GetValueOut() - GetBlockValue(txLog2->blkHeight_, 0);
+      const CChainParams& chainparams = Params();
+      const int64_t rewardBlock = GetBlockSubsidy(txLog2->blkHeight_, chainparams.GetConsensus());
+
+      const int64_t fee = txLog2->tx_.GetValueOut() - rewardBlock;
       txObject->mutate_fee(fee);
     }
     txObject->mutate_block_height(txLog2->blkHeight_);
@@ -1849,7 +1857,7 @@ void Parser::threadProduceTxlogs() {
     if (tryFetchTxLog2FromDB(&txLog2, lastTxLog2Id, dbExplorer) == false) {
       UniqueLock ul(lock_);
       // 默认等待N毫秒，直至超时，中间有人触发，则立即continue读取记录
-      newTxlogs_.wait_for(ul, chrono::milliseconds(3*1000));
+      newTxlogs_.wait_for(ul, std::chrono::milliseconds(3*1000));
       continue;
     }
 
@@ -1888,7 +1896,7 @@ bool Parser::tryFetchTxLog2FromDB(class TxLog2 *txLog2, const int64_t lastId,
     txLog2->blkId_        = atoi64(row[3]);
     txLog2->maxBlkTimestamp_ = (uint32_t)atoi64(row[4]);
     txLog2->ymd_          = atoi(date("%Y%m%d", txLog2->maxBlkTimestamp_).c_str());
-    txLog2->txHash_       = uint256(row[5]);
+    txLog2->txHash_       = uint256S(row[5]);
     txLog2->createdAt_    = string(row[6]);
 
     if (!(txLog2->type_ == LOG2TYPE_TX_ACCEPT    ||

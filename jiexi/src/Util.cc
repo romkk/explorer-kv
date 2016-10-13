@@ -28,6 +28,13 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/thread.hpp>
 
+#include <curl/curl.h>
+
+#include "bitcoin/core_io.h"
+#include "bitcoin/streams.h"
+#include "bitcoin/util.h"
+#include "bitcoin/utilstrencodings.h"
+
 static std::vector<std::string> &split(const std::string &s, const char delim,
                                        std::vector<std::string> &elems,
                                        const int32_t limit) {
@@ -272,53 +279,6 @@ void callBlockRelayParseUrl(const string &blockHash) {
   boost::thread t(curlCallUrl, url); // thread runs free
 }
 
-string EncodeHexTx(const CTransaction& tx) {
-  CDataStream ssTx(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
-  ssTx << tx;
-  return HexStr(ssTx.begin(), ssTx.end());
-}
-
-string EncodeHexBlock(const CBlock &block) {
-  CDataStream ssBlock(SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
-  ssBlock << block;
-  return HexStr(ssBlock.begin(), ssBlock.end());
-}
-
-bool DecodeHexTx(CTransaction& tx, const std::string& strHexTx)
-{
-  if (!IsHex(strHexTx))
-    return false;
-
-  vector<unsigned char> txData(ParseHex(strHexTx));
-  CDataStream ssData(txData, SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
-  try {
-    ssData >> tx;
-  }
-  catch (const std::exception &) {
-    return false;
-  }
-
-  return true;
-}
-
-bool DecodeHexBlk(CBlock& block, const std::string& strHexBlk)
-{
-  if (!IsHex(strHexBlk))
-    return false;
-
-  std::vector<unsigned char> blockData(ParseHex(strHexBlk));
-  CDataStream ssBlock(blockData, SER_NETWORK, BITCOIN_PROTOCOL_VERSION);
-  try {
-    ssBlock >> block;
-  }
-  catch (const std::exception &) {
-    return false;
-  }
-
-  return true;
-}
-
-
 /* Converts a hex character to its integer value */
 static char from_hex(char ch) {
   return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10;
@@ -410,7 +370,7 @@ bool fileGetContents(const string &fname, string &content) {
     return false;
   }
 
-  stringstream ss;
+  std::stringstream ss;
   ss << fIn.rdbuf();
   content = ss.str();
 
@@ -499,13 +459,13 @@ bool httpPOST(const char *url, const char *userpwd,
 
   status = curl_easy_perform(curl);
   if (status != 0) {
-    LOG(ERROR) << "unable to request data from: " << url << ", error: " << curl_easy_strerror(status);
+    LOG_ERROR("unable to request data from: %s, error: %s", url, curl_easy_strerror(status));
     goto error;
   }
 
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
   if (code != 200) {
-    LOG(ERROR) << "server responded with code: " << code;
+    LOG_ERROR("server responded with code: %d", code);
     goto error;
   }
 

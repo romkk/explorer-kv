@@ -5,17 +5,15 @@
 // @author zhibiao.pan@bitmain.com
 // @since 2015-11
 //
-// 首个字段尽量避免非标量：如字符串、数组之类的，FB对这些支持的不太好
-//
 namespace fbe;  // flatbuffers explorer
 
 table APIResponse {
-  error_no: int;  // 非零表示错误，零为正常
+  error_no: int;         // zero means fine, non-zero means error
   error_msg: string;
-  offset_arr: [int];     // -1表示数据不存在
-  length_arr: [int];     // offset为-1的项，其length为0
-  type_arr  : [string];  // key对应的类型，未知为空字符串""
-  key_arr  :  [string];  // 查询的keys
+  offset_arr: [int];     // -1: no data
+  length_arr: [int];     // if item's offset is -1, length should be 0
+  type_arr  : [string];  // types, unknown type is empty string ""
+  key_arr  :  [string];  // query keys
   data: [ubyte]; 
 }
 
@@ -24,7 +22,7 @@ table TxInput {
   script_asm: string;
   script_hex: string;
   prev_tx_hash: string;
-  prev_position: int;  // coinbase tx prev_postion = -1, prev_value = 0
+  prev_position: int;    // coinbase tx prev_postion = -1, prev_value = 0
   prev_value: long;
   prev_addresses: [string];
 }
@@ -39,8 +37,8 @@ table TxOutput {
 
 // 01_{tx_hash}
 table Tx {
-  block_height: int;        // 未确认时为 -1
-  block_time: uint;         // 未确认时为 0
+  block_height: int;     // -1: means unconfirmed tx
+  block_time: uint;      // 0 when unconfirmed
   is_coinbase: bool;
   version: int;
   lock_time: uint;
@@ -53,7 +51,7 @@ table Tx {
   outputs_count: int;
   outputs_value: long;
   created_at: uint;
-  is_double_spend: bool;   // 是否为双花交易
+  is_double_spend: bool;
 }
 
 // 02_{tx_hash}_{position}
@@ -62,7 +60,7 @@ table TxSpentBy {
   tx_hash: string;
 }
 
-// 03\_{tx\_hash}
+// 03_{tx_hash}
 table UnconfirmedTx {
   tx_hash: string;
   fee: long;
@@ -77,8 +75,8 @@ table Block {
   timestamp: uint;
   bits: uint;
   nonce: uint;
-  prev_block_hash: string;    // 64个0 则表示没有
-  next_block_hash: string;    // 64个0 则表示没有
+  prev_block_hash: string;  // will be zero if no prev block
+  next_block_hash: string;  // will be zero if no next block
   size: int;
   pool_difficulty: long;
   difficulty: double;
@@ -86,8 +84,8 @@ table Block {
   reward_block: long;
   reward_fees: long;
   created_at: uint;
-  is_orphan: bool;            // 是否为孤块
-  curr_max_timestamp: uint;   // 截至当前所有块的最大时间戳
+  is_orphan: bool;          // if it's orphan block
+  curr_max_timestamp: uint; // the largest timestamp so far
 }
 
 // 12_{block_hash}_{n}
@@ -112,8 +110,8 @@ table Address {
 table AddressTx {
   balance_diff: long;
   tx_hash: string;
-  tx_height: int;       // 未确认为 -1
-  tx_block_time: uint;  // 交易所在的块时间，未确认为零
+  tx_height: int;       // -1 means unconfirmed tx
+  tx_block_time: uint;  // 0 when unconfirmed
 }
 
 // 23_{address}_{index}

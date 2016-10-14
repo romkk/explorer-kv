@@ -36,6 +36,7 @@ table TxOutput {
 }
 
 // 01_{tx_hash}
+// {tx_hash} in the key is "txid": tx.GetHash().GetHex()
 table Tx {
   block_height: int;     // -1: means unconfirmed tx
   block_time: uint;      // 0 when unconfirmed
@@ -52,6 +53,11 @@ table Tx {
   outputs_value: long;
   created_at: uint;
   is_double_spend: bool;
+
+  is_sw_tx: bool;        // if it's segwit tx
+  weight: int;           // weight = (stripped_size * 4) + witness_size
+  vsize: int;            // virtual transaction size: GetVirtualTransactionSize(tx)
+  witness_hash: string;  // uint256, witness hash: tx.GetWitnessHash().GetHex()
 }
 
 // 02_{tx_hash}_{position}
@@ -75,8 +81,8 @@ table Block {
   timestamp: uint;
   bits: uint;
   nonce: uint;
-  prev_block_hash: string;  // will be zero if no prev block
-  next_block_hash: string;  // will be zero if no next block
+  prev_block_hash: string;  // uin256 hex, will be zero if no prev block
+  next_block_hash: string;  // uin256 hex, will be zero if no next block
   size: int;
   pool_difficulty: long;
   difficulty: double;
@@ -86,6 +92,13 @@ table Block {
   created_at: uint;
   is_orphan: bool;          // if it's orphan block
   curr_max_timestamp: uint; // the largest timestamp so far
+
+  median_time: uint;        // unix timestamp, base on latest 11 blocks
+  chain_work: string;       // uint256 hex
+
+  is_sw_block: bool;        // if it's segwit block
+  stripped_size: int;       // stripped_size = total_size - witness_size
+  weight: int;              // weight = (stripped_size * 4) + witness_size
 }
 
 // 12_{block_hash}_{n}

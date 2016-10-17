@@ -167,18 +167,28 @@ inline void BitsToDifficulty(uint32 bits, uint64 &difficulty) {
   difficulty = (uint64)diff;
 }
 
-void BitsToTarget(uint32 bits, uint256 & target);
-uint64 TargetToBdiff(const uint256 &target);
-uint64 TargetToBdiff(const string &str);
-uint64 TargetToPdiff(const uint256 &target);
-uint64 TargetToPdiff(const string &str);
-// only support perfect diff, like 2^i, 3*(2^i), 5*(2^i)
-uint32 DiffToBits(uint64 diff);
-void DiffToTarget(uint64 diff, uint256 & target);
+uint64 TargetToDiff(const uint256 &target);
+uint64 TargetToDiff(const string &str);
 
-bool SignMessage(const CKey &key, const string &strMessage, string &signature);
-bool VerifyMessage(const string &strAddress, const string &strSign,
-                   const string &strMessage);
+inline void BitsToDifficulty(uint32 bits, double *difficulty) {
+  int nShift = (bits >> 24) & 0xff;
+  double dDiff = (double)0x0000ffff / (double)(bits & 0x00ffffff);
+  while (nShift < 29) {
+    dDiff *= 256.0;
+    nShift++;
+  }
+  while (nShift > 29) {
+    dDiff /= 256.0;
+    nShift--;
+  }
+  *difficulty = dDiff;
+}
+
+inline void BitsToDifficulty(uint32 bits, uint64 *difficulty) {
+  double diff;
+  BitsToDifficulty(bits, &diff);
+  *difficulty = (uint64)diff;
+}
 
 uint64_t hash_16_bytes(uint64_t low, uint64_t high);
 
@@ -194,8 +204,6 @@ inline string humanFormat1024(double size) {
 void writePid2FileOrExit(const char *filename);
 void writeTime2File(const char *filename, uint64 t);
 void killSelf();
-
-void runCommand(const std::string &strCommand);
 
 string date(const char *format, const time_t timestamp);
 inline string date(const char *format) {
@@ -214,8 +222,6 @@ inline void sleepMs(const uint32_t ms) {
     usleep((ms % 1000) * 1000);
   }
 }
-
-string score2Str(double s);
 
 inline bool isLanIP(uint32 ip) {
   ip = htonl(ip);

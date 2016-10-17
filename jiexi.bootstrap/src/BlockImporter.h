@@ -19,7 +19,6 @@
 #ifndef BLOCK_IMPORTER_H_
 #define BLOCK_IMPORTER_H_
 
-#include "BitcoinRpc.h"
 #include "Common.h"
 #include "Util.h"
 

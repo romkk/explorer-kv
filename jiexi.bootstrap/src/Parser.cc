@@ -35,7 +35,11 @@
 #include "Util.h"
 
 #include "bitcoin/base58.h"
+#include "bitcoin/core_io.h"
+#include "bitcoin/script/script.h"
+#include "bitcoin/streams.h"
 #include "bitcoin/util.h"
+#include "bitcoin/utilstrencodings.h"
 
 #include "explorer_generated.h"
 
@@ -324,7 +328,7 @@ TxHandler::TxHandler(const size_t txCount, const string &file) {
     if (i > txCount_) {
       THROW_EXCEPTION_DBEX("pre tx count not match, i: %lld, txCount_: %lld", i, txCount_);
     }
-    txInfo_[i].hash256_ = uint256(line);
+    txInfo_[i].hash256_ = uint256S(line);
     // blockHeight_ 尚未设置，后面设置output时会补上
   }
   // sort for binary search
@@ -354,7 +358,7 @@ vector<struct TxInfo>::iterator TxHandler::find(const uint256 &hash) {
 }
 
 vector<struct TxInfo>::iterator TxHandler::find(const string &hashStr) {
-  return find(uint256(hashStr));
+  return find(uint256S(hashStr));
 }
 
 void TxHandler::addOutputs(const CTransaction &tx, const int32_t height) {
@@ -371,7 +375,7 @@ void TxHandler::addOutputs(const CTransaction &tx, const int32_t height) {
 
     // script
     ptr->scriptHex_ = HexStr(out.scriptPubKey.begin(), out.scriptPubKey.end());
-    ptr->scriptAsm_ = out.scriptPubKey.ToString();
+    ptr->scriptAsm_ = ScriptToAsmStr(out.scriptPubKey, true);
 
     // asm大小超过1MB, 且大于hex的4倍，则认为asm是非法的，置空
     // output Hex奇葩的交易：
@@ -723,7 +727,7 @@ void PreParser::_saveBlock(const BlockInfo &b) {
   flatbuffers::FlatBufferBuilder fbb;
   fbb.ForceDefaults(true);
 
-  const uint64_t pdiff = TargetToPdiff(b.blockHash_);
+  const uint64_t pdiff = TargetToDiff(b.blockHash_);
   auto fb_mrklRoot    = fbb.CreateString(b.header_.hashMerkleRoot.ToString());
   auto fb_nextBlkHash = fbb.CreateString(b.nextBlockHash_.ToString());
   auto fb_prevBlkHash = fbb.CreateString(b.header_.hashPrevBlock.ToString());
@@ -778,7 +782,10 @@ void PreParser::parseBlock(const CBlock &blk, const int32_t height, const int32_
   cur.height_    = height;
   cur.nextBlockHash_ = uint256();
   cur.size_  = blockBytes;
-  cur.rewardBlock_ = GetBlockValue(height, 0);
+
+  const CChainParams& chainparams = Params();
+  cur.rewardBlock_ = GetBlockSubsidy(height, chainparams.GetConsensus());
+
   cur.rewardFee_   = blk.vtx[0].GetValueOut() - cur.rewardBlock_;
   cur.txCount_ = (int32_t)blk.vtx.size();
   cur.currMaxTimestamp_ = blkTs_.getMaxTimestamp();
@@ -935,9 +942,9 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
   // 2. tx hash: e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468
   // 该交易在两个不同的高度块(91722, 91880)中出现过
   if ((height == 91842 &&
-       txHash == uint256("d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599")) ||
+       txHash == uint256S("d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599")) ||
       (height == 91880 &&
-       txHash == uint256("e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468")))
+       txHash == uint256S("e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468")))
   {
     LOG_WARN("ignore tx, height: %d, hash: %s", height, txHash.ToString().c_str());
     return;
@@ -994,7 +1001,7 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
           fb_addressesVec.push_back(fbb.CreateString(address));
         }
         fb_prevTxHash    = fbb.CreateString(in.prevout.hash.ToString());
-        fb_ScriptAsm     = fbb.CreateString(in.scriptSig.ToString());
+        fb_ScriptAsm     = fbb.CreateString(ScriptToAsmStr(in.scriptSig, true));
         prevPostion = in.prevout.n;
 
         // 可以删除前向输入了，因每个前向输入只会使用一次
@@ -1044,7 +1051,7 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
 
       // output Hex奇葩的交易：
       // http://tbtc.blockr.io/tx/info/c333a53f0174166236e341af9cad795d21578fb87ad7a1b6d2cf8aa9c722083c
-      string outputScriptAsm = out.scriptPubKey.ToString();
+      string outputScriptAsm = ScriptToAsmStr(out.scriptPubKey, true);
       const string outputScriptHex = HexStr(out.scriptPubKey.begin(), out.scriptPubKey.end());
       if (outputScriptAsm.length() > 2*1024*1024) {
         outputScriptAsm = "";
@@ -1069,7 +1076,9 @@ void PreParser::parseTx(const int32_t height, const CTransaction &tx,
   const int64_t valueOut = tx.GetValueOut();
   int64_t fee = 0;
   if (tx.IsCoinBase()) {
-    fee = valueOut - GetBlockValue(height, 0);  // coinbase的fee为 block rewards
+    const CChainParams& chainparams = Params();
+    // coinbase tx's fee is tx fee, exclude block rewards
+    fee = valueOut - GetBlockSubsidy(height, chainparams.GetConsensus());
   } else {
     fee = valueIn - valueOut;
   }

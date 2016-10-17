@@ -21,10 +21,42 @@
 #include <boost/filesystem.hpp>
 #include <boost/thread.hpp>
 
+#include "utilities_js.hpp"
 
 namespace fs = boost::filesystem;
 
-static void _getblock(BitcoinRpc &rpc, int32_t height, string **data);
+inline bool _bitcoindRpcCall(const char *reqData, string &response) {
+  return bitcoindRpcCall(Config::GConfig.get("bitcoind.url"    ).c_str(),
+                         Config::GConfig.get("bitcoind.userpwd").c_str(),
+                         reqData, response);
+}
+
+static bool _checkBitcoind() {
+  string response;
+  string request = "{\"jsonrpc\":\"1.0\",\"id\":\"1\",\"method\":\"getinfo\",\"params\":[]}";
+  if (!_bitcoindRpcCall(request.c_str(), response)) {
+    return false;
+  }
+  JsonNode r;
+  if (!JsonNode::parse(response.c_str(),
+                       response.c_str() + response.length(), r)) {
+    return false;
+  }
+  // check fields
+  if (r["result"].type() != Utilities::JS::type::Obj ||
+      r["result"]["connections"].type() != Utilities::JS::type::Int ||
+      r["result"]["blocks"].type()      != Utilities::JS::type::Int) {
+    return false;
+  }
+  if (r["result"]["connections"].int32() <= 0) {
+    return false;
+  }
+
+  return true;
+}
+
+
+static void _getblock(int32_t height, string **data);
 
 
 BlockImporter::BlockImporter(const string &dir, const int32_t nProduceThreads,
@@ -66,11 +98,8 @@ void BlockImporter::run() {
   running_ = true;
 
   // check bitcoind
-  {
-    BitcoinRpc rpc(bitcoindUri_);
-    if (!rpc.CheckBitcoind()) {
-      THROW_EXCEPTION_DBEX("bitcoind does not work fine");
-    }
+  if (_checkBitcoind() == false) {
+    THROW_EXCEPTION_DBEX("bitcoind is not working or error");
   }
 
   // open file
@@ -130,7 +159,6 @@ void BlockImporter::threadConsumeBlock() {
 }
 
 void BlockImporter::threadProduceBlock() {
-  BitcoinRpc rpc(bitcoindUri_);
 
   while (running_) {
     //  获取一个高度
@@ -148,7 +176,7 @@ void BlockImporter::threadProduceBlock() {
     string *data = nullptr;
     for (auto i = 0; i < 5; i++) {
       try {
-        _getblock(rpc, height, &data);
+        _getblock(height, &data);
       } catch (std::exception & e) {
         LOG_WARN("_getblock exception: %s", e.what());
       }
@@ -172,19 +200,20 @@ void BlockImporter::threadProduceBlock() {
   runningProduceThreads_--;
 }
 
-void _getblock(BitcoinRpc &rpc, int32_t height, string **data) {
+void _getblock(int32_t height, string **data) {
   string request, response;
   JsonNode r, result;
-  int res;
 
   //
   // 获取高度对应的Hash
   //
   request = Strings::Format("{\"id\":1,\"method\":\"getblockhash\",\"params\":[%d]}", height);
-  res = rpc.jsonCall(request, response, 5000); // 0: success
-  if (res != 0) {
-    THROW_EXCEPTION_DBEX("rpc call fail, request: %s", request.c_str());
+
+  // rpc call
+  if (_bitcoindRpcCall(request.c_str(), response) == false) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
   }
+
   if (!JsonNode::parse(response.c_str(), response.c_str() + response.length(), r)) {
     THROW_EXCEPTION_DBEX("json parse failure: %s", response.c_str());
   }
@@ -198,10 +227,12 @@ void _getblock(BitcoinRpc &rpc, int32_t height, string **data) {
   // 获取 block raw hex
   //
   request = Strings::Format("{\"id\":2,\"method\":\"getblock\",\"params\":[\"%s\",false]}", blockhash.c_str());
-  res = rpc.jsonCall(request, response, 5000); // 0: success
-  if (res != 0) {
-    THROW_EXCEPTION_DBEX("rpc call fail, request: %s", request.c_str());
+
+  // rpc call
+  if (_bitcoindRpcCall(request.c_str(), response) == false) {
+    THROW_EXCEPTION_DBEX("bitcoind rpc call fail, req: %s", request.c_str());
   }
+
   if (!JsonNode::parse(response.c_str(), response.c_str() + response.length(), r)) {
     THROW_EXCEPTION_DBEX("json parse failure: %s", response.c_str());
   }

@@ -19,7 +19,7 @@
 #define Explorer_PreAddress_h
 
 #include "Common.h"
-#include "bitcoin/core.h"
+
 #include "bitcoin/key.h"
 
 struct PreAddressItem {

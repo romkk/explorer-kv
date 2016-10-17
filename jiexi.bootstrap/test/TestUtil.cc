@@ -28,37 +28,3 @@ TEST(Util, splitStr) {
   ASSERT_EQ(res[2], "");
   ASSERT_EQ(res[3], "Bb");
 }
-
-TEST(Util, BoundedBuffer1) {
-  BoundedBuffer<string> boundedBuffer(3);
-  boundedBuffer.pushFront("1");
-  boundedBuffer.pushFront("2");
-  boundedBuffer.pushFront("3");
-
-  string s;
-  boundedBuffer.popBack(&s);
-  ASSERT_EQ(s, "1");
-  boundedBuffer.popBack(&s);
-  ASSERT_EQ(s, "2");
-  boundedBuffer.popBack(&s);
-  ASSERT_EQ(s, "3");
-}
-
-TEST(Util, BoundedBuffer2) {
-  string s;
-  BoundedBuffer<string> boundedBuffer(3);
-
-  boundedBuffer.pushFront("1");
-  boundedBuffer.pushFront("2");
-  boundedBuffer.pushFront("3");
-  boundedBuffer.popBack(&s);
-  ASSERT_EQ(s, "1");
-  boundedBuffer.pushFront("4");
-
-  boundedBuffer.popBack(&s);
-  ASSERT_EQ(s, "2");
-  boundedBuffer.popBack(&s);
-  ASSERT_EQ(s, "3");
-  boundedBuffer.popBack(&s);
-  ASSERT_EQ(s, "4");
-}

@@ -28,8 +28,9 @@
 #include "Util.h"
 
 #include "bitcoin/base58.h"
+#include "bitcoin/streams.h"
 #include "bitcoin/util.h"
-
+#include "bitcoin/utilstrencodings.h"
 
 
 ////////////////////////////////////////////////////////////////////////////////

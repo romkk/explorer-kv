@@ -28,7 +28,9 @@
 #include "Util.h"
 
 #include "bitcoin/base58.h"
+#include "bitcoin/streams.h"
 #include "bitcoin/util.h"
+#include "bitcoin/utilstrencodings.h"
 
 PreTx::PreTx(): f_(nullptr) {
   const string file = Config::GConfig.get("pre.tx.output.file", "");
@@ -183,8 +185,8 @@ void PreTx::threadProcessBlock(const int32_t idx) {
       // 该交易在两个不同的高度块(91722, 91880)中出现过
       //
       const uint256 hash = tx.GetHash();
-      if ((curHeight == 91842 && hash == uint256("d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599")) ||
-          (curHeight == 91880 && hash == uint256("e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468")))
+      if ((curHeight == 91842 && hash == uint256S("d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599")) ||
+          (curHeight == 91880 && hash == uint256S("e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468")))
       {
         LOG_WARN("ignore tx, height: %d, hash: %s", curHeight, hash.ToString().c_str());
         continue;

@@ -19,7 +19,7 @@
 #define Explorer_PreTx_h
 
 #include "Common.h"
-#include "bitcoin/core.h"
+
 #include "bitcoin/key.h"
 
 // 预处理交易

@@ -23,7 +23,6 @@
 #include "Common.h"
 #include "Util.h"
 
-#include "bitcoin/core.h"
 #include "bitcoin/key.h"
 
 #include "rocksdb/db.h"
